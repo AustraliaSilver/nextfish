@@ -40,7 +40,7 @@ namespace Stockfish {
 namespace {
 
 // Version number or dev.
-constexpr std::string_view version = "Nextfish v62 (Plasma)";
+constexpr std::string_view version = "Nextfish v63 (Singularity Reborn)";
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 // cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
