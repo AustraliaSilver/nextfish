@@ -30,10 +30,11 @@ jobs:
 
     - name: Install Tuning Tools
       run: |
-        pip install requests
-        # Download fastchess v0.12.0 (The last version with built-in SPSA)
-        wget https://github.com/Disservin/fastchess/releases/download/v0.12.0/fastchess-v0.12.0-linux-x86-64.tar.gz
-        tar -zxvf fastchess-v0.12.0-linux-x86-64.tar.gz
+        # Download fastchess v1.7.0-alpha directly
+        wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
+        tar -xvf fastchess-linux-x86-64.tar
+        # The binary might be in a subfolder or current folder
+        if [ -f fastchess-linux-x86-64/fastchess ]; then mv fastchess-linux-x86-64/fastchess .; fi
         chmod +x fastchess
 
     - name: Build Nextfish
@@ -46,7 +47,7 @@ jobs:
 
     - name: Run SPSA Tuning
       run: |
-        # Chạy SPSA bằng lệnh chuẩn của phiên bản Stable
+        # Chạy SPSA với cú pháp chuẩn cho phiên bản mới
         ./fastchess -engine name=Tuned cmd=./nextfish \
                     -engine name=Base cmd=./nextfish \
                     -each proto=uci tc=2+0.05 option.Hash=16 option.Threads=1 \
