@@ -7,17 +7,17 @@ namespace Nextfish {
 
     using namespace Stockfish;
 
-    // Tunable parameters for v62 Plasma (SPSA optimized)
-    int WhiteOptimism = 21;
-    int BlackLossPessimism = -17;
-    int BlackEqualPessimism = -5;
-    int VolatilityThreshold = 14;
-    int CodeRedLMR = 63; // 0.63 * 100
-    int BlackLMR = 88;    // 0.88 * 100
+    // Tunable parameters for v62 Plasma (High Precision)
+    double WhiteOptimism = 20.85;
+    double BlackLossPessimism = -16.77;
+    double BlackEqualPessimism = -5.0;
+    double VolatilityThreshold = 13.83;
+    double CodeRedLMR = 63.31; 
+    double BlackLMR = 87.90;   
 
-    TUNE(SetRange(-50, 50), WhiteOptimism, BlackLossPessimism, BlackEqualPessimism);
-    TUNE(SetRange(5, 50), VolatilityThreshold);
-    TUNE(SetRange(40, 100), CodeRedLMR, BlackLMR);
+    // TUNE macro in Stockfish is designed for int. We keep them as internal doubles for manual precision.
+    // To enable tuning in the future with doubles, we would need to overload the TUNE macro, 
+    // but for now we hardcode the optimal SPSA values.
 
     using namespace Stockfish;
 
@@ -31,8 +31,10 @@ namespace Nextfish {
         Value score = ss->staticEval;
         Value prevScore = (ss - 1)->staticEval;
 
-        // 1. Pulsar Optimism (Dynamic)
-        int baseOptimism = (us == WHITE) ? WhiteOptimism : (score < 0 ? BlackLossPessimism : BlackEqualPessimism);
+        // 1. Pulsar Optimism (Dynamic & High Precision)
+        double baseOptimism = (us == WHITE) ? WhiteOptimism : (score < 0 ? BlackLossPessimism : BlackEqualPessimism);
+        
+        // Round only at the very last step
         advice.optimismAdjustment = int(baseOptimism * (1.0 - gamePhase * 0.3));
 
         // 2. Adaptive King Safety & Pawn Shield
@@ -51,14 +53,15 @@ namespace Nextfish {
         bool shieldBroken = (shield != 0) && (Stockfish::popcount(pos.pieces(us, PAWN) & shield) < 2);
 
         // 3. Code Red Precision Search
-        bool evalDropped = (prevScore != VALUE_NONE) && (score < prevScore - VolatilityThreshold);
+        // Use double for threshold comparison
+        bool evalDropped = (prevScore != VALUE_NONE) && (double(score) < double(prevScore) - VolatilityThreshold);
 
         if (ss->inCheck || evalDropped || heavyPressure || (us == BLACK && shieldBroken)) {
-            advice.reductionMultiplier = double(CodeRedLMR) / 100.0; 
+            advice.reductionMultiplier = CodeRedLMR / 100.0; 
             advice.reductionAdjustment = -1;
         } 
         else if (us == BLACK) {
-            advice.reductionMultiplier = double(BlackLMR) / 100.0;
+            advice.reductionMultiplier = BlackLMR / 100.0;
             advice.reductionAdjustment = 0;
         }
         else {
