@@ -12,29 +12,26 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y g++ make
-        # Download cutechess-cli v1.3.1 for Linux
-        wget https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-cli-1.3.1-linux64.tar.gz
-        tar -xvf cutechess-cli-1.3.1-linux64.tar.gz
-        # Move the binary out of the folder and rename it if needed
-        mv cutechess-cli/cutechess-cli ./cutechess-cli-bin
-        chmod +x cutechess-cli-bin
+        # Download fastchess (much lighter and no Qt dependencies)
+        wget https://github.com/FastChess/FastChess/releases/download/v0.10.0/fastchess-v0.10.0-linux-x86_64.tar.gz
+        tar -xvf fastchess-v0.10.0-linux-x86_64.tar.gz
+        chmod +x fastchess
 
     - name: Build Nextfish
       run: |
         cd src
-        # Set werror=no to prevent warnings from stopping the build
         make -j2 build ARCH=x86-64-modern COMP=gcc werror=no
         mv stockfish ../nextfish
 
     - name: Run Tournament
       run: |
-        # Chạy 50 ván nhanh để kiểm tra sức mạnh ngay sau khi push
-        ./cutechess-cli-bin -engine name=Nextfish_New cmd=./nextfish \
-                        -engine name=Stockfish_Base cmd=./nextfish option.EvalFile=none \
-                        -each proto=uci tc=2+0.05 \
-                        -games 2 -rounds 25 \
-                        -repeat -concurrency 2 \
-                        -pgnout results.pgn
+        # Chạy 50 ván bằng fastchess
+        ./fastchess -engine name=Nextfish_New cmd=./nextfish \
+                    -engine name=Stockfish_Base cmd=./nextfish option.EvalFile=none \
+                    -each proto=uci tc=2+0.05 \
+                    -rounds 25 -games 2 \
+                    -repeat -concurrency 2 \
+                    -pgnout results.pgn
       
     - name: Upload Tournament Results
       uses: actions/upload-artifact@v4
