@@ -27,13 +27,13 @@ jobs:
 
     - name: Run Tournament
       run: |
-        # Chạy 50 ván bằng fastchess
+        # Chạy 50 ván bằng fastchess (Cú pháp v1.7.0-alpha)
         ./fastchess -engine name=Nextfish_New cmd=./nextfish \
                     -engine name=Stockfish_Base cmd=./nextfish option.EvalFile=none \
                     -each proto=uci tc=2+0.05 \
                     -rounds 25 -games 2 \
                     -repeat -concurrency 2 \
-                    -pgnout results.pgn
+                    -pgnout file=results.pgn
       
     - name: Upload Tournament Results
       uses: actions/upload-artifact@v4
