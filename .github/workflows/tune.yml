@@ -15,8 +15,9 @@ jobs:
         # Download cutechess-cli v1.3.1 for Linux
         wget https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-cli-1.3.1-linux64.tar.gz
         tar -xvf cutechess-cli-1.3.1-linux64.tar.gz
-        # v1.3.1 tarball contains the binary directly or in a subfolder
-        chmod +x cutechess-cli
+        # Move the binary out of the folder and rename it if needed
+        mv cutechess-cli/cutechess-cli ./cutechess-cli-bin
+        chmod +x cutechess-cli-bin
 
     - name: Build Nextfish
       run: |
@@ -28,7 +29,7 @@ jobs:
     - name: Run Tournament
       run: |
         # Chạy 50 ván nhanh để kiểm tra sức mạnh ngay sau khi push
-        ./cutechess-cli -engine name=Nextfish_New cmd=./nextfish \
+        ./cutechess-cli-bin -engine name=Nextfish_New cmd=./nextfish \
                         -engine name=Stockfish_Base cmd=./nextfish option.EvalFile=none \
                         -each proto=uci tc=2+0.05 \
                         -games 2 -rounds 25 \
