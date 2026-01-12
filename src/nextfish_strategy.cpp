@@ -5,8 +5,8 @@
 
 namespace Nextfish {
 
-    // Tunable parameters for v62 Plasma (High Precision)
-    // Kept as internal variables for now to avoid TUNE macro complexity in Nextfish namespace
+    // Tunable parameters for v64 Quantum Leap (Based on stable v62 Plasma)
+    // Reverted experimental v63 logic.
     double WhiteOptimism = 20.85;
     double BlackLossPessimism = -16.77;
     double BlackEqualPessimism = -5.0;
@@ -66,7 +66,7 @@ namespace Nextfish {
     }
 
     double Strategy::getTimeFactor(Stockfish::Color us) {
-        // v62: Final push for Black's survival resource.
+        // v64: Stable time factor from v62
         return (us == Stockfish::BLACK) ? 1.35 : 0.80;
     }
 
