@@ -25,24 +25,26 @@ jobs:
     - name: Build Nextfish (Challenger)
       run: |
         cd src
-        make -j2 build ARCH=x86-64-modern COMP=gcc werror=no
-        # Manually download the BigNet required by v64
-        wget https://tests.stockfishchess.org/api/nn/nn-b1a57edbea57.nnue
-        cp nn-b1a57edbea57.nnue ../
+        make -j2 build ARCH=x86-64-bmi2 COMP=gcc werror=no
+        # make build auto-downloads the correct default net defined in evaluate.h
         mv stockfish ../nextfish
+
+    - name: Test Engine Stability
+      run: |
+        # Run a quick bench to see if it crashes
+        ./nextfish bench
 
     - name: Download Stockfish 17.1 (Baseline)
       run: |
         # Download official Stockfish 17.1 binary
         wget https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-avx2.tar
         tar -xvf stockfish-ubuntu-x86-64-avx2.tar
-        # The extraction folder name matches the tarball name usually
         mv stockfish/stockfish-ubuntu-x86-64-avx2 ./stockfish_17_1
         chmod +x stockfish_17_1
 
     - name: Run Elo Match (100 Games)
       run: |
-        # Chạy v1.7.0-alpha với đối thủ là SF 17.1 và sách khai cuộc UHO
+        # Chạy v1.7.0-alpha với đối thủ là SF 17.1
         ./fastchess -engine name=Nextfish cmd=./nextfish \
                     -engine name=Stockfish_17.1 cmd=./stockfish_17_1 \
                     -each proto=uci tc=10+0.2 option.Hash=16 option.Threads=1 \
