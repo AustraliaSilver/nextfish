@@ -44,7 +44,7 @@ jobs:
         # Chạy v1.7.0-alpha với đối thủ là SF 17.1
         ./fastchess -engine name=Nextfish cmd=./nextfish \
                     -engine name=Stockfish_17.1 cmd=./stockfish_17_1 \
-                    -each proto=uci tc=1+0.01 option.Hash=16 option.Threads=1 \
+                    -each proto=uci tc=10+0.2 option.Hash=16 option.Threads=1 \
                     -rounds 50 -games 2 \
                     -repeat -concurrency 2 \
                     -recover \
