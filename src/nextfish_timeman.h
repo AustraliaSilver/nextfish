@@ -26,7 +26,7 @@ public:
 
     // Compatibility functions
     template<typename FUNC>
-    Stockfish::TimePoint elapsed(FUNC nodes) const {
+    Stockfish::TimePoint elapsed(FUNC [[maybe_unused]] nodes) const {
         return elapsed_time(); // Simplified: always use wall time for now
     }
     Stockfish::TimePoint elapsed_time() const;

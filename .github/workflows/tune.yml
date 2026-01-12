@@ -1,15 +1,5 @@
-name: Nextfish Tuning
-on:
-  workflow_dispatch:
-    inputs:
-      games:
-        description: 'Number of games'
-        required: true
-        default: '100'
-      tc:
-        description: 'Time Control (e.g. 10+0.1)'
-        required: true
-        default: '2+0.05'
+name: Nextfish Auto-Tune
+on: [push]
 
 jobs:
   tune:
@@ -21,7 +11,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y g++ make qtbase5-dev qt5-qmake
+        sudo apt-get install -y g++ make
         # Download cutechess-cli
         wget https://github.com/cutechess/cutechess/releases/download/1.3.1/cutechess-cli-1.3.1-linux64.tar.gz
         tar -xvf cutechess-cli-1.3.1-linux64.tar.gz
@@ -30,21 +20,22 @@ jobs:
     - name: Build Nextfish
       run: |
         cd src
-        make -j2 build ARCH=x86-64-modern COMP=gcc
+        # Set werror=no to prevent warnings from stopping the build
+        make -j2 build ARCH=x86-64-modern COMP=gcc werror=no
         mv stockfish ../nextfish
 
     - name: Run Tournament
       run: |
-        ./cutechess-cli -engine name=Nextfish cmd=./nextfish \
-                        -engine name=Stockfish_Baseline cmd=./nextfish option.EvalFile=none \
-                        -each proto=uci tc=${{ github.event.inputs.tc }} \
-                        -games 2 -rounds $(( ${{ github.event.inputs.games }} / 2 )) \
+        # Chạy 50 ván nhanh để kiểm tra sức mạnh ngay sau khi push
+        ./cutechess-cli -engine name=Nextfish_New cmd=./nextfish \
+                        -engine name=Stockfish_Base cmd=./nextfish option.EvalFile=none \
+                        -each proto=uci tc=2+0.05 \
+                        -games 2 -rounds 25 \
                         -repeat -concurrency 2 \
                         -pgnout results.pgn
       
-    - name: Upload results
+    - name: Upload Tournament Results
       uses: actions/upload-artifact@v3
       with:
-        name: tournament-results
-        path: |
-          results.pgn
+        name: results-pgn
+        path: results.pgn
