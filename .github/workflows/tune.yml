@@ -12,9 +12,11 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y g++ make
-        # Download cutechess-cli
-        wget https://github.com/cutechess/cutechess/releases/download/1.3.1/cutechess-cli-1.3.1-linux64.tar.gz
-        tar -xvf cutechess-cli-1.3.1-linux64.tar.gz
+        # Download cutechess-cli (v1.2.0 is very stable for CI)
+        wget https://github.com/cutechess/cutechess/releases/download/v1.2.0/cutechess-1.2.0-linux64.tar.gz
+        tar -xvf cutechess-1.2.0-linux64.tar.gz
+        # Move the binary to current directory
+        mv cutechess-1.2.0/cutechess-cli .
         chmod +x cutechess-cli
 
     - name: Build Nextfish
