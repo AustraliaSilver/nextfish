@@ -12,9 +12,11 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y g++ make
-        # Download fastchess v1.7.0-alpha (.tar only)
+        # Download fastchess v1.7.0-alpha
         wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
         tar -xvf fastchess-linux-x86-64.tar
+        # Move binary from subfolder to current directory
+        mv fastchess-linux-x86-64/fastchess .
         chmod +x fastchess
 
     - name: Build Nextfish
