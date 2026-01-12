@@ -1,8 +1,14 @@
-name: Nextfish Auto-Tune
-on: [push]
+name: Nextfish SPSA Optimizer
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Total SPSA Iterations'
+        required: true
+        default: '1000'
 
 jobs:
-  tune:
+  spsa:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -12,10 +18,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y g++ make
-        # Download fastchess v1.7.0-alpha
         wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
         tar -xvf fastchess-linux-x86-64.tar
-        # Move binary from subfolder to current directory
         mv fastchess-linux-x86-64/fastchess .
         chmod +x fastchess
 
@@ -23,23 +27,39 @@ jobs:
       run: |
         cd src
         make -j2 build ARCH=x86-64-modern COMP=gcc werror=no
-        mv stockfish ../nextfish
-        # Download the default NNUE net for the engine to run
         make net
         cp *.nnue ../
+        mv stockfish ../nextfish
 
-    - name: Run Tournament
+    - name: Cache SPSA State
+      uses: actions/cache@v3
+      with:
+        path: spsa.state
+        key: spsa-v1-${{ github.run_id }}
+        restore-keys: |
+          spsa-v1-
+
+    - name: Run SPSA Tuning
       run: |
-        # Chạy 50 ván bằng fastchess (Cú pháp ổn định cho v1.7.0-alpha)
-        # Giới hạn Hash=16 và Threads=1 để tránh treo trên GitHub Runner
-        ./fastchess -engine name=Nextfish_New cmd=./nextfish \
-                    -engine name=Stockfish_Base cmd=./nextfish \
+        # SPSA sẽ tự động điều chỉnh các tham số dựa trên kết quả thắng thua
+        ./fastchess -engine name=Tuned cmd=./nextfish \
+                    -engine name=Base cmd=./nextfish \
                     -each proto=uci tc=2+0.05 option.Hash=16 option.Threads=1 \
-                    -rounds 25 -repeat -concurrency 2 -recover \
-                    -pgnout file=results.pgn
+                    -rounds ${{ github.event.inputs.iterations }} \
+                    -concurrency 2 \
+                    -recover \
+                    -spsa \
+                      param=WhiteOptimism,value=20,min=0,max=40,step=2.0,alpha=0.602,gamma=0.101 \
+                      param=BlackLossPessimism,value=-15,min=-40,max=0,step=2.0,alpha=0.602,gamma=0.101 \
+                      param=VolatilityThreshold,value=14,min=5,max=30,step=1.0,alpha=0.602,gamma=0.101 \
+                      param=CodeRedLMR,value=65,min=40,max=95,step=2.0,alpha=0.602,gamma=0.101 \
+                      param=BlackLMR,value=88,min=70,max=100,step=2.0,alpha=0.602,gamma=0.101 \
+                    -pgnout file=spsa_games.pgn
       
-    - name: Upload Tournament Results
+    - name: Upload SPSA Results
       uses: actions/upload-artifact@v4
       with:
-        name: results-pgn
-        path: results.pgn
+        name: spsa-final-state
+        path: |
+          spsa_games.pgn
+          fastchess.log
