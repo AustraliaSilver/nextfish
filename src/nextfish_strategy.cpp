@@ -5,6 +5,8 @@
 
 namespace Nextfish {
 
+    using namespace Stockfish;
+
     // Tunable parameters for v58 Pulsar
     int WhiteOptimism = 16;
     int BlackLossPessimism = -12;
