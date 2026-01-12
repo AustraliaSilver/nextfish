@@ -24,15 +24,18 @@ jobs:
         cd src
         make -j2 build ARCH=x86-64-modern COMP=gcc werror=no
         mv stockfish ../nextfish
+        # Download the default NNUE net for the engine to run
+        make net
+        cp *.nnue ../
 
     - name: Run Tournament
       run: |
-        # Chạy 50 ván bằng fastchess (Cú pháp v1.7.0-alpha)
+        # Chạy 50 ván bằng fastchess (Cú pháp ổn định cho v1.7.0-alpha)
+        # Giới hạn Hash=16 và Threads=1 để tránh treo trên GitHub Runner
         ./fastchess -engine name=Nextfish_New cmd=./nextfish \
-                    -engine name=Stockfish_Base cmd=./nextfish option.EvalFile=none \
-                    -each proto=uci tc=2+0.05 \
-                    -rounds 25 -games 2 \
-                    -repeat -concurrency 2 \
+                    -engine name=Stockfish_Base cmd=./nextfish \
+                    -each proto=uci tc=2+0.05 option.Hash=16 option.Threads=1 \
+                    -rounds 25 -repeat -concurrency 2 -recover \
                     -pgnout file=results.pgn
       
     - name: Upload Tournament Results
