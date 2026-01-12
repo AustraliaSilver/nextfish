@@ -12,8 +12,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y g++ make
-        # Download fastchess v0.12.0 from Disservin/fastchess
-        wget https://github.com/Disservin/fastchess/releases/download/v0.12.0/fastchess-linux-x86-64.tar.gz
+        # Download fastchess v1.7.0-alpha
+        wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar.gz
         tar -xvf fastchess-linux-x86-64.tar.gz
         chmod +x fastchess
 
