@@ -7,11 +7,11 @@ namespace Nextfish {
 
     using namespace Stockfish;
 
-    // Tunable parameters for v61 Ion (SPSA optimized)
-    int WhiteOptimism = 19;
+    // Tunable parameters for v62 Plasma (SPSA optimized)
+    int WhiteOptimism = 21;
     int BlackLossPessimism = -17;
     int BlackEqualPessimism = -5;
-    int VolatilityThreshold = 15;
+    int VolatilityThreshold = 14;
     int CodeRedLMR = 63; // 0.63 * 100
     int BlackLMR = 88;    // 0.88 * 100
 
