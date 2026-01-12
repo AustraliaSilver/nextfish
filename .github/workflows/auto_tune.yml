@@ -1,0 +1,62 @@
+name: Auto SPSA Tuning Loop
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  auto-tune:
+    # Chỉ chạy nếu commit message có chứa "[tune]"
+    if: contains(github.event.head_commit.message, '[tune]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Cấp quyền ghi để push code mới
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y g++ make wget python3
+        
+        # Download Fastchess
+        wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
+        tar -xvf fastchess-linux-x86-64.tar
+        if [ -f fastchess-linux-x86-64/fastchess ]; then mv fastchess-linux-x86-64/fastchess .; fi
+        chmod +x fastchess
+
+    - name: Build Engine
+      run: |
+        cd src
+        make -j2 build ARCH=x86-64-bmi2 COMP=gcc werror=no
+        # Tự động tải mạng mặc định
+        mv stockfish ../nextfish
+
+    - name: Run SPSA Tuning (15 Iterations)
+      run: |
+        # Chạy 300 ván (15 it * 20 games)
+        # Script sẽ sinh ra file tuned_params.json
+        python3 spsa_runner.py 15
+
+    - name: Apply New Parameters
+      run: |
+        # Đọc json và sửa file .cpp
+        python3 apply_tuning.py
+
+    - name: Commit & Push (Trigger Next Loop)
+      run: |
+        git config --global user.name 'Nextfish Auto-Tuner'
+        git config --global user.email 'bot@nextfish.ai'
+        
+        # Kiểm tra xem có gì thay đổi không
+        if [[ -n $(git status -s) ]]; then
+          git add src/nextfish_strategy.cpp
+          # Commit message vẫn giữ "[tune]" để kích hoạt vòng lặp tiếp theo
+          git commit -m "Auto-Tune: Updated parameters after 15 iterations [tune]"
+          git push
+        else
+          echo "No improvement found in this loop."
+        fi
