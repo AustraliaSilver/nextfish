@@ -5,14 +5,17 @@
 
 namespace Nextfish {
 
-    // Tunable parameters for v64 Quantum Leap (Based on stable v62 Plasma)
-    // Reverted experimental v63 logic.
+    // Tunable parameters for v65 Auto-Learn (SPSA Driven)
     double WhiteOptimism = 20.85;
     double BlackLossPessimism = -16.77;
     double BlackEqualPessimism = -5.0;
     double VolatilityThreshold = 13.83;
     double CodeRedLMR = 63.31; 
     double BlackLMR = 87.90;   
+    
+    // New parameters for SPSA Discovery
+    double WhiteAggression = 25.00;
+    double PanicTimeFactor = 2.00;
 
     Advice Strategy::consult(Stockfish::Color us, const Stockfish::Position& pos, const Stockfish::Search::Stack* ss, Stockfish::Depth depth, int moveCount) {
         Advice advice;
@@ -24,10 +27,15 @@ namespace Nextfish {
         Stockfish::Value score = ss->staticEval;
         Stockfish::Value prevScore = (ss - 1)->staticEval;
 
-        // 1. Pulsar Optimism (Dynamic & High Precision)
+        // 1. Adaptive Optimism
+        // Logic will now use WhiteAggression as a potential boost
         double baseOptimism = (us == Stockfish::WHITE) ? WhiteOptimism : (score < 0 ? BlackLossPessimism : BlackEqualPessimism);
         
-        // Round only at the very last step
+        // Boost White optimism slightly if King is safe (using WhiteAggression as a reference)
+        if (us == Stockfish::WHITE && !pos.checkers()) {
+             baseOptimism += (WhiteAggression - WhiteOptimism) * 0.2;
+        }
+
         advice.optimismAdjustment = int(baseOptimism * (1.0 - gamePhase * 0.3));
 
         // 2. Adaptive King Safety & Pawn Shield
@@ -38,15 +46,14 @@ namespace Nextfish {
         // Smart Shield Detection
         Stockfish::Bitboard shield = 0;
         Stockfish::File kf = Stockfish::file_of(ksq);
-        if (kf >= Stockfish::FILE_F) // King side (f, g, h)
+        if (kf >= Stockfish::FILE_F) 
             shield = (us == Stockfish::WHITE) ? 0xE000ULL : 0x00E0000000000000ULL;
-        else if (kf <= Stockfish::FILE_C) // Queen side (a, b, c)
+        else if (kf <= Stockfish::FILE_C) 
             shield = (us == Stockfish::WHITE) ? 0x0007ULL : 0x0007000000000000ULL;
         
         bool shieldBroken = (shield != 0) && (Stockfish::popcount(pos.pieces(us, Stockfish::PAWN) & shield) < 2);
 
-        // 3. Code Red Precision Search
-        // Use double for threshold comparison
+        // 3. Code Red Search Logic
         bool evalDropped = (prevScore != Stockfish::VALUE_NONE) && (double(score) < double(prevScore) - VolatilityThreshold);
 
         if (ss->inCheck || evalDropped || heavyPressure || (us == Stockfish::BLACK && shieldBroken)) {
@@ -66,7 +73,9 @@ namespace Nextfish {
     }
 
     double Strategy::getTimeFactor(Stockfish::Color us) {
-        // v64: Stable time factor from v62
+        // Use PanicTimeFactor if position is unstable (score dropping)
+        // For simplicity in getTimeFactor, we keep a base, 
+        // the dynamic part is usually handled in Search::time_management.
         return (us == Stockfish::BLACK) ? 1.35 : 0.80;
     }
 
