@@ -19,18 +19,11 @@ PARAMS = {
     "TempoBonus":            {"val": 0.0,   "min": -10.0, "max": 30.0,  "step": 2.0},
 }
 
-# SPSA Constants
-c = 2.0
-A = 100
-alpha = 0.602
-gamma = 0.101
+def log(msg):
+    print(msg)
+    sys.stdout.flush()
 
-# Games per iteration
-GAMES_PER_ITER = 20 
-
-def run_fastchess_match(params_A, params_B):
-    """Runs a match between Engine A (Tuned) and Engine B (Base)"""
-    
+def run_fastchess_match(params_A, params_B, games=20):
     opts_A = " ".join([f"option.{k}={v:.4f}" for k, v in params_A.items()])
     opts_B = " ".join([f"option.{k}={v:.4f}" for k, v in params_B.items()])
 
@@ -39,44 +32,42 @@ def run_fastchess_match(params_A, params_B):
         "-engine", "name=Tuned", "cmd=./nextfish", opts_A,
         "-engine", "name=Base",  "cmd=./nextfish", opts_B,
         "-each", "tc=10+0.1", "option.Hash=8", "option.Threads=1", "proto=uci",
-        "-rounds", str(GAMES_PER_ITER // 2), 
-        "-games", "2",
-        "-repeat",
-        "-concurrency", "2",
-        "-recover",
-        "-openings", "file=UHO_2022_8mvs_+110_+119.pgn", "format=pgn", "order=random",
-        "-pgnout", "file=spsa_chunk.pgn"
+        "-rounds", str(games // 2), "-games", "2", "-repeat",
+        "-concurrency", "2", "-recover",
+        "-openings", "file=UHO_2022_8mvs_+110_+119.pgn", "format=pgn", "order=random"
     ]
     
-    print(f"Running {GAMES_PER_ITER} games...")
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        output = result.stdout + result.stderr
+    # Redirect output to a temp file to avoid pipe buffer issues
+    with open("match.log", "w") as f:
+        process = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT)
+    
+    with open("match.log", "r") as f:
+        output = f.read()
         
-        # Correct Regex for parsing results
-        # Pattern: "Finished game ... (Tuned vs Base): 1-0"
-        # We need to escape the parenthesis inside the regex string properly
-        
-        # Wins for Tuned: (Tuned vs Base): 1-0 OR (Base vs Tuned): 0-1
-        w = len(re.findall(r"Tuned vs Base\): 1-0", output)) + \
-            len(re.findall(r"Base vs Tuned\): 0-1", output))
-            
-        # Losses for Tuned: (Tuned vs Base): 0-1 OR (Base vs Tuned): 1-0
-        l = len(re.findall(r"Tuned vs Base\): 0-1", output)) + \
-            len(re.findall(r"Base vs Tuned\): 1-0", output))
-            
-        # Draws: : 1/2-1/2
-        d = len(re.findall(r": 1/2-1/2", output))
-        
-        return w, l, d
-    except Exception as e:
-        print(f"Error executing match: {e}")
-        return 0, 0, 0
+    w = len(re.findall(r"Tuned vs Base\): 1-0", output)) + len(re.findall(r"Base vs Tuned\): 0-1", output))
+    l = len(re.findall(r"Tuned vs Base\): 0-1", output)) + len(re.findall(r"Base vs Tuned\): 1-0", output))
+    d = len(re.findall(r": 1/2-1/2", output))
+    
+    return w, l, d
 
 def spsa_optimize(iterations=15):
-    print(f"--- STARTING SPSA AUTO-TUNING ({iterations} iterations) ---")
+    log(f"--- INITIALIZING SPSA AUTO-LEARN ({iterations} iterations) ---")
     
+    # Check if engine works
+    try:
+        subprocess.run(["./nextfish", "bench"], capture_output=True, check=True)
+        log("Engine Check: OK")
+    except:
+        log("Engine Check: FAILED (Possible crash or missing net)")
+        return
+
+    c = 2.0
+    A = 100
+    alpha = 0.602
+    gamma = 0.101
+
     for k in range(1, iterations + 1):
+        log(f"Iteration {k}/{iterations} starting...")
         ck = c / (k + A)**gamma
         ak = 1.5 / (k + A)**alpha 
         
@@ -87,40 +78,28 @@ def spsa_optimize(iterations=15):
         for name, p in PARAMS.items():
             delta[name] = 1 if random.random() < 0.5 else -1
             change = ck * delta[name] * p["step"]
-            
             theta_plus[name]  = max(p["min"], min(p["max"], p["val"] + change))
             theta_minus[name] = max(p["min"], min(p["max"], p["val"] - change))
 
         w, l, d = run_fastchess_match(theta_plus, theta_minus)
         total = w + l + d
-        
-        # Avoid division by zero
         if total == 0:
-            print(f"Iter {k}: No games parsed. Skipping.")
+            log(f"  Warning: Iteration {k} failed to produce results.")
             continue
 
         score_diff = (w - l) / total
-        print(f"Iter {k}/{iterations}: Score Diff = {score_diff:.4f} (+{w} -{l} ={d})")
+        log(f"  Result: {w}W - {l}L - {d}D (Score Diff: {score_diff:.4f})")
         
         for name, p in PARAMS.items():
             gradient = score_diff / (2 * ck * delta[name])
             update = ak * gradient * p["step"] * 20.0 
-            
-            old_val = p["val"]
-            new_val = p["val"] + update
-            p["val"] = max(p["min"], min(p["max"], new_val))
-            
-            if abs(new_val - old_val) > 0.1:
-                print(f"  > {name}: {old_val:.2f} -> {new_val:.2f}")
+            p["val"] = max(p["min"], min(p["max"], p["val"] + update))
 
     final_results = {k: v["val"] for k, v in PARAMS.items()}
-    
-    print("\n--- FINAL PARAMETERS ---")
-    print(json.dumps(final_results, indent=2))
-    
     with open("tuned_params.json", "w") as f:
         json.dump(final_results, f)
+    log("\n--- SPSA LOOP FINISHED ---")
 
 if __name__ == "__main__":
     iters = int(sys.argv[1]) if len(sys.argv) > 1 else 15
-    spsa_optimize(iterations=iters)
+    spsa_optimize(iters)
