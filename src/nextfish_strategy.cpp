@@ -7,12 +7,12 @@ namespace Nextfish {
 
     using namespace Stockfish;
 
-    // Tunable parameters for v60 Neutron
-    int WhiteOptimism = 20;
-    int BlackLossPessimism = -15;
+    // Tunable parameters for v61 Ion (SPSA optimized)
+    int WhiteOptimism = 19;
+    int BlackLossPessimism = -17;
     int BlackEqualPessimism = -5;
-    int VolatilityThreshold = 14;
-    int CodeRedLMR = 65; // 0.65 * 100
+    int VolatilityThreshold = 15;
+    int CodeRedLMR = 63; // 0.63 * 100
     int BlackLMR = 88;    // 0.88 * 100
 
     TUNE(SetRange(-50, 50), WhiteOptimism, BlackLossPessimism, BlackEqualPessimism);
