@@ -7,13 +7,13 @@ namespace Nextfish {
 
     using namespace Stockfish;
 
-    // Tunable parameters for v58 Pulsar
-    int WhiteOptimism = 16;
-    int BlackLossPessimism = -12;
+    // Tunable parameters for v59 Quasar
+    int WhiteOptimism = 18;
+    int BlackLossPessimism = -14;
     int BlackEqualPessimism = -5;
-    int VolatilityThreshold = 15;
-    int CodeRedLMR = 68; // 0.68 * 100
-    int BlackLMR = 90;    // 0.90 * 100
+    int VolatilityThreshold = 18;
+    int CodeRedLMR = 72; // 0.72 * 100
+    int BlackLMR = 92;    // 0.92 * 100
 
     TUNE(SetRange(-50, 50), WhiteOptimism, BlackLossPessimism, BlackEqualPessimism);
     TUNE(SetRange(5, 50), VolatilityThreshold);
