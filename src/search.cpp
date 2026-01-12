@@ -512,7 +512,7 @@ void Search::Worker::iterative_deepening() {
             uint64_t nodesEffort =
               rootMoves[0].effort * 100000 / std::max(size_t(1), size_t(nodes));
 
-            // Nextfish v59: Quasar - Dynamic Pulse Logic
+            // Nextfish v60: Neutron - Dynamic Pulse Logic
             int scoreDiff = 0;
             if (mainThread->bestPreviousScore != VALUE_INFINITE) {
                  scoreDiff = std::abs(bestValue - mainThread->bestPreviousScore);
