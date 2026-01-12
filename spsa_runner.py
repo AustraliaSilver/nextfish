@@ -46,19 +46,21 @@ def run_fastchess_match(params_A, params_B, games_per_iter=4):
         result = subprocess.run(cmd, capture_output=True, text=True)
         output = result.stdout + result.stderr
         
-        # Parse Fastchess Output
-        # Looking for: "Score of Nextfish_A vs Nextfish_B: 10 - 5 - 20"
-        # Or parsing PGN if needed, but stdout regex is faster.
+        # Manually count results from individual game lines
+        # Format: "Finished game 1 (Nextfish_A vs Nextfish_B): 1-0 {White mates}"
+        w = len(re.findall(r"Nextfish_A vs Nextfish_B\): 1-0", output)) + \
+            len(re.findall(r"Nextfish_B vs Nextfish_A\): 0-1", output))
+            
+        l = len(re.findall(r"Nextfish_A vs Nextfish_B\): 0-1", output)) + \
+            len(re.findall(r"Nextfish_B vs Nextfish_A\): 1-0", output))
+            
+        d = len(re.findall(r": 1/2-1/2", output))
         
-        # Regex to catch: Score of Nextfish_A vs Nextfish_B: [Wins] - [Losses] - [Draws]
-        match = re.search(r"Score of Nextfish_A vs Nextfish_B: (\d+) - (\d+) - (\d+)", output)
-        
-        if match:
-            w, l, d = map(int, match.groups())
+        if (w + l + d) > 0:
             return w, l, d
         else:
-            print("Warning: Could not parse fastchess score. Log snippet:")
-            print(output[-500:])
+            print("Warning: No game results found in output. Log snippet:")
+            print(output[-300:])
             return 0, 0, 0
             
     except Exception as e:
