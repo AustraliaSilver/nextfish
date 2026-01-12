@@ -23,6 +23,19 @@ jobs:
         mv fastchess-linux-x86-64/fastchess .
         chmod +x fastchess
 
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Tuning Tools
+      run: |
+        pip install requests
+        # Download fastchess v0.12.0 (Stable for SPSA)
+        wget https://github.com/Disservin/fastchess/releases/download/v0.12.0/fastchess-linux-x86-64.tar.gz
+        tar -xvf fastchess-linux-x86-64.tar.gz
+        chmod +x fastchess
+
     - name: Build Nextfish
       run: |
         cd src
@@ -31,17 +44,9 @@ jobs:
         cp *.nnue ../
         mv stockfish ../nextfish
 
-    - name: Cache SPSA State
-      uses: actions/cache@v3
-      with:
-        path: spsa.state
-        key: spsa-v1-${{ github.run_id }}
-        restore-keys: |
-          spsa-v1-
-
     - name: Run SPSA Tuning
       run: |
-        # SPSA sẽ tự động điều chỉnh các tham số dựa trên kết quả thắng thua
+        # Chạy SPSA bằng lệnh chuẩn của phiên bản Stable
         ./fastchess -engine name=Tuned cmd=./nextfish \
                     -engine name=Base cmd=./nextfish \
                     -each proto=uci tc=2+0.05 option.Hash=16 option.Threads=1 \
