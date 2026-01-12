@@ -16,9 +16,10 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y g++ make wget
         
-        # Download fastchess v0.12.0 (Stable)
-        wget https://github.com/Disservin/fastchess/releases/download/v0.12.0/fastchess-linux-x86-64.tar.gz
-        tar -zxvf fastchess-linux-x86-64.tar.gz
+        # Download fastchess v1.7.0-alpha
+        wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
+        tar -xvf fastchess-linux-x86-64.tar
+        if [ -f fastchess-linux-x86-64/fastchess ]; then mv fastchess-linux-x86-64/fastchess .; fi
         chmod +x fastchess
 
     - name: Build Nextfish (Challenger)
@@ -31,7 +32,7 @@ jobs:
 
     - name: Download Stockfish 16.1 (Baseline)
       run: |
-        # Download official Stockfish 16.1 binary for comparison
+        # Download official Stockfish 16.1 binary
         wget https://github.com/official-stockfish/Stockfish/releases/download/sf_16.1/stockfish-ubuntu-x86-64-avx2.tar
         tar -xvf stockfish-ubuntu-x86-64-avx2.tar
         mv stockfish/stockfish-ubuntu-x86-64-avx2 ./stockfish_16.1
@@ -39,7 +40,7 @@ jobs:
 
     - name: Run Elo Match (100 Games)
       run: |
-        # Nextfish vs Stockfish 16.1
+        # Chạy v1.7.0-alpha với cú pháp chuẩn
         ./fastchess -engine name=Nextfish cmd=./nextfish \
                     -engine name=Stockfish_16.1 cmd=./stockfish_16.1 \
                     -each proto=uci tc=1+0.01 option.Hash=16 option.Threads=1 \
