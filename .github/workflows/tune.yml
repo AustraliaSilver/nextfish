@@ -31,9 +31,9 @@ jobs:
     - name: Install Tuning Tools
       run: |
         pip install requests
-        # Download fastchess v0.12.0 (.tar only)
-        wget https://github.com/Disservin/fastchess/releases/download/v0.12.0/fastchess-linux-x86-64.tar
-        tar -xvf fastchess-linux-x86-64.tar
+        # Download fastchess v0.12.0 (The last version with built-in SPSA)
+        wget https://github.com/Disservin/fastchess/releases/download/v0.12.0/fastchess-v0.12.0-linux-x86-64.tar.gz
+        tar -zxvf fastchess-v0.12.0-linux-x86-64.tar.gz
         chmod +x fastchess
 
     - name: Build Nextfish
