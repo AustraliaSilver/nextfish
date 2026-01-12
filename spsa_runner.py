@@ -17,6 +17,10 @@ PARAMS = {
     # Thêm các tham số mới chưa được tune ở đây nếu muốn
     "WhiteAggression":     {"val": 25.0,  "min": 10.0,  "max": 50.0,  "step": 2.0}, 
     "PanicTimeFactor":     {"val": 2.0,   "min": 1.1,   "max": 4.0,   "step": 0.2},
+    # New v66 Parameters
+    "ComplexityScale":       {"val": 1.0,   "min": 0.8,   "max": 1.5,   "step": 0.05},
+    "SoftSingularityMargin": {"val": 0.0,   "min": -20.0, "max": 20.0,  "step": 2.0},
+    "TempoBonus":            {"val": 0.0,   "min": -10.0, "max": 30.0,  "step": 2.0},
 }
 
 # SPSA Constants
