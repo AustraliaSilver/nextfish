@@ -30,20 +30,20 @@ jobs:
         cp *.nnue ../
         mv stockfish ../nextfish
 
-    - name: Download Stockfish 17 (Baseline)
+    - name: Download Stockfish 17.1 (Baseline)
       run: |
-        # Download official Stockfish 17 binary
-        wget https://github.com/official-stockfish/Stockfish/releases/download/sf_17/stockfish-ubuntu-x86-64-avx2.tar
+        # Download official Stockfish 17.1 binary
+        wget https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-avx2.tar
         tar -xvf stockfish-ubuntu-x86-64-avx2.tar
-        # The structure might have changed in SF 17, adjusting paths
-        mv stockfish/stockfish-ubuntu-x86-64-avx2 ./stockfish_17
-        chmod +x stockfish_17
+        # The extraction folder name matches the tarball name usually
+        mv stockfish/stockfish-ubuntu-x86-64-avx2 ./stockfish_17_1
+        chmod +x stockfish_17_1
 
     - name: Run Elo Match (100 Games)
       run: |
-        # Chạy v1.7.0-alpha với đối thủ là SF 17
+        # Chạy v1.7.0-alpha với đối thủ là SF 17.1
         ./fastchess -engine name=Nextfish cmd=./nextfish \
-                    -engine name=Stockfish_17 cmd=./stockfish_17 \
+                    -engine name=Stockfish_17.1 cmd=./stockfish_17_1 \
                     -each proto=uci tc=1+0.01 option.Hash=16 option.Threads=1 \
                     -rounds 50 -games 2 \
                     -repeat -concurrency 2 \
