@@ -6,6 +6,8 @@ on:
 
 jobs:
   test:
+    # Skip this test if we are in the middle of a Tuning Loop
+    if: "!contains(github.event.head_commit.message, '[tune]')"
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
