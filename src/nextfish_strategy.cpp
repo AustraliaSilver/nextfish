@@ -5,77 +5,69 @@
 
 namespace Nextfish {
 
-    // Tunable parameters for v63 Singularity Reborn (Dynamic & Non-linear)
-    double WhiteAggression = 25.0;
-    double WhiteCaution = 5.0;
-    double BlackPessimism = -15.0;
-    
-    // Time Management Dynamic Factors
-    double PanicTimeFactor = 2.0;
-    double NormalTimeFactor = 0.9;
+    // Tunable parameters for v62 Plasma (High Precision)
+    // Kept as internal variables for now to avoid TUNE macro complexity in Nextfish namespace
+    double WhiteOptimism = 20.85;
+    double BlackLossPessimism = -16.77;
+    double BlackEqualPessimism = -5.0;
+    double VolatilityThreshold = 13.83;
+    double CodeRedLMR = 63.31; 
+    double BlackLMR = 87.90;   
 
-    // Pruning Factors
-    double DrawishLMR = 110.0; // 1.10x
-    double ComplexLMR = 60.0;  // 0.60x
-
-    Advice Strategy::consult(Color us, const Position& pos, const Search::Stack* ss, Depth depth, int moveCount) {
+    Advice Strategy::consult(Stockfish::Color us, const Stockfish::Position& pos, const Stockfish::Search::Stack* ss, Stockfish::Depth depth, int moveCount) {
         Advice advice;
         
-        Value score = ss->staticEval;
-        Value prevScore = (ss - 1)->staticEval;
+        // Game Phase Calculation
+        int totalMaterial = pos.non_pawn_material();
+        double gamePhase = std::clamp(1.0 - (double(totalMaterial) / 7800.0), 0.0, 1.0);
 
-        // 1. Conditional Optimism (King Safety Awareness)
-        // Only be aggressive if our King is safe.
-        Square ksq = pos.square<KING>(us);
-        Bitboard enemyPieces = pos.pieces(~us);
-        bool kingSafe = (pos.attackers_to(ksq) & enemyPieces) == 0;
+        Stockfish::Value score = ss->staticEval;
+        Stockfish::Value prevScore = (ss - 1)->staticEval;
 
-        double baseOptimism;
-        if (us == WHITE) {
-            baseOptimism = kingSafe ? WhiteAggression : WhiteCaution;
-        } else {
-            baseOptimism = BlackPessimism;
-        }
+        // 1. Pulsar Optimism (Dynamic & High Precision)
+        double baseOptimism = (us == Stockfish::WHITE) ? WhiteOptimism : (score < 0 ? BlackLossPessimism : BlackEqualPessimism);
         
-        advice.optimismAdjustment = int(baseOptimism);
+        // Round only at the very last step
+        advice.optimismAdjustment = int(baseOptimism * (1.0 - gamePhase * 0.3));
 
-        // 2. Selective Pruning (Anti-Engine Horizon)
-        bool evalDropped = (prevScore != VALUE_NONE) && (double(score) < double(prevScore) - 20.0);
-        bool isDrawish = std::abs(score) < 50 && pos.non_pawn_material(WHITE) == pos.non_pawn_material(BLACK);
+        // 2. Adaptive King Safety & Pawn Shield
+        Stockfish::Square ksq = pos.square<Stockfish::KING>(us);
+        Stockfish::Bitboard enemyHeavy = pos.pieces(~us, Stockfish::ROOK, Stockfish::QUEEN);
+        bool heavyPressure = (pos.attackers_to(ksq) & enemyHeavy) != 0;
 
-        if (ss->inCheck || evalDropped) {
-            // Panic / Complexity: Go extremely deep
-            advice.reductionMultiplier = ComplexLMR / 100.0;
-            advice.reductionAdjustment = -2;
+        // Smart Shield Detection
+        Stockfish::Bitboard shield = 0;
+        Stockfish::File kf = Stockfish::file_of(ksq);
+        if (kf >= Stockfish::FILE_F) // King side (f, g, h)
+            shield = (us == Stockfish::WHITE) ? 0xE000ULL : 0x00E0000000000000ULL;
+        else if (kf <= Stockfish::FILE_C) // Queen side (a, b, c)
+            shield = (us == Stockfish::WHITE) ? 0x0007ULL : 0x0007000000000000ULL;
+        
+        bool shieldBroken = (shield != 0) && (Stockfish::popcount(pos.pieces(us, Stockfish::PAWN) & shield) < 2);
+
+        // 3. Code Red Precision Search
+        // Use double for threshold comparison
+        bool evalDropped = (prevScore != Stockfish::VALUE_NONE) && (double(score) < double(prevScore) - VolatilityThreshold);
+
+        if (ss->inCheck || evalDropped || heavyPressure || (us == Stockfish::BLACK && shieldBroken)) {
+            advice.reductionMultiplier = CodeRedLMR / 100.0; 
+            advice.reductionAdjustment = -1;
         } 
-        else if (isDrawish && !kingSafe) {
-             // Drawish but unsafe: Normal search
-            advice.reductionMultiplier = 1.0;
+        else if (us == Stockfish::BLACK) {
+            advice.reductionMultiplier = BlackLMR / 100.0;
             advice.reductionAdjustment = 0;
         }
-        else if (isDrawish) {
-            // Drawish and safe: Prune more to save time for critical moments
-            advice.reductionMultiplier = DrawishLMR / 100.0;
-            advice.reductionAdjustment = 1;
-        }
         else {
-            advice.reductionMultiplier = 1.0;
+            advice.reductionMultiplier = 1.0; 
             advice.reductionAdjustment = 0;
         }
 
         return advice;
     }
 
-    double Strategy::getTimeFactor(Color us) {
-        // v63: Dynamic Time Factor is handled inside search.cpp logic usually, 
-        // but here we set a base baseline. 
-        // We will return a higher base for Black to allow "PanicTimeFactor" logic to scale up from a higher ground.
-        return (us == BLACK) ? 1.15 : 0.95;
-    }
-
-    double Strategy::getTimeFactor(Color us) {
-        // v58: Final push for Black's survival resource.
-        return (us == BLACK) ? 1.35 : 0.80;
+    double Strategy::getTimeFactor(Stockfish::Color us) {
+        // v62: Final push for Black's survival resource.
+        return (us == Stockfish::BLACK) ? 1.35 : 0.80;
     }
 
 }
