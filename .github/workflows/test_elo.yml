@@ -26,8 +26,9 @@ jobs:
       run: |
         cd src
         make -j2 build ARCH=x86-64-modern COMP=gcc werror=no
-        make net
-        cp *.nnue ../
+        # Manually download the BigNet required by v64
+        wget https://tests.stockfishchess.org/api/nn/nn-b1a57edbea57.nnue
+        cp nn-b1a57edbea57.nnue ../
         mv stockfish ../nextfish
 
     - name: Download Stockfish 17.1 (Baseline)
