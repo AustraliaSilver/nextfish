@@ -30,10 +30,10 @@ jobs:
         make -j2 build ARCH=x86-64-bmi2 COMP=gcc werror=no
         mv stockfish ../nextfish
 
-    - name: Run SPSA Tuning (1 Iteration - TEST)
+    - name: Run SPSA Tuning (15 Iterations)
       run: |
-        # Chạy thử 1 vòng duy nhất (20 ván) để kiểm tra pipeline
-        python3 spsa_runner.py 1
+        # Chạy 15 vòng (300 ván) để có kết quả thực tế
+        python3 spsa_runner.py 15
 
     - name: Apply New Parameters
       run: python3 apply_tuning.py
