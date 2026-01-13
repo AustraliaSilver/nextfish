@@ -6,21 +6,21 @@
 namespace Nextfish {
 
     // Tunable parameters for v67 Pulsar Evolution (SPSA Optimized)
-    double WhiteOptimism = 21.60;
-    double BlackLossPessimism = -17.20;
-    double BlackEqualPessimism = -5.02;
-    double VolatilityThreshold = 13.99;
-    double CodeRedLMR = 63.56; 
-    double BlackLMR = 87.68;   
+    double WhiteOptimism = 21.56;
+    double BlackLossPessimism = -17.14;
+    double BlackEqualPessimism = -5.20;
+    double VolatilityThreshold = 13.97;
+    double CodeRedLMR = 63.48; 
+    double BlackLMR = 87.85;   
     
     // New parameters for SPSA Discovery
-    double WhiteAggression = 24.93;
+    double WhiteAggression = 25.11;
     double PanicTimeFactor = 1.90;
 
     // v66 Evolution Parameters
     double ComplexityScale = 0.98;       
-    double SoftSingularityMargin = -1.58; 
-    double TempoBonus = -0.31;            
+    double SoftSingularityMargin = -1.60; 
+    double TempoBonus = -0.35;            
 
     Advice Strategy::consult(Stockfish::Color us, const Stockfish::Position& pos, const Stockfish::Search::Stack* ss, Stockfish::Depth [[maybe_unused]] depth, int [[maybe_unused]] moveCount) {
         Advice advice;
