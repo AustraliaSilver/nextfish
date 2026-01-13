@@ -58,18 +58,18 @@ def run_match(params_A, params_B, games=20):
     d = len(re.findall(r": 1/2-1/2", output))
     return w, l, d
 
-def spsa_optimize(iterations=15):
-    log("--- INITIALIZING SPSA AUTO-LEARN ---")
+def spsa_optimize(iterations=1, start_k=1):
+    log(f"--- INITIALIZING SPSA AUTO-LEARN (Step {start_k}) ---")
     current_values = get_current_params_from_cpp()
-    log(f"Starting from current values: {current_values}")
+    log(f"Starting values: {current_values}")
 
     c = 2.0
     A = 100
     alpha = 0.602
     gamma = 0.101
 
-    for k in range(1, iterations + 1):
-        log(f"Iteration {k}/{iterations} starting...")
+    for k in range(start_k, start_k + iterations):
+        log(f"Iteration {k} starting...")
         ck = c / (k + A)**gamma
         ak = 1.0 / (k + A)**alpha 
         delta, theta_plus, theta_minus = {}, {}, {}
@@ -97,4 +97,6 @@ def spsa_optimize(iterations=15):
     log("\n--- SPSA LOOP FINISHED ---")
 
 if __name__ == "__main__":
-    spsa_optimize(int(sys.argv[1]) if len(sys.argv) > 1 else 15)
+    iter_count = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    start_k = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    spsa_optimize(iter_count, start_k)
