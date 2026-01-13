@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <deque>
 #include <iosfwd>
 #include <memory>
@@ -146,9 +147,11 @@ Engine::Engine(std::optional<std::string> path) :
     // Nextfish Tunable Parameters
     auto add_nextfish_option = [&](const std::string& name, double& var) {
         options.add(name, Option(std::to_string(var).c_str(), [&var](const Option& o) {
-            try {
-                var = std::stod(std::string(o));
-            } catch (...) {}
+            char* end;
+            std::string s = std::string(o);
+            double val = std::strtod(s.c_str(), &end);
+            if (end != s.c_str())
+                var = val;
             return std::nullopt;
         }));
     };
