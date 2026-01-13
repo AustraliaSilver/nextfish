@@ -16,8 +16,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        # Sử dụng Token cá nhân để vượt qua rào cản bảo mật của GitHub
-        token: ${{ secrets.PAT_TOKEN }}
+        # Sử dụng PAT nếu có, nếu không thì dùng GITHUB_TOKEN mặc định
+        token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         fetch-depth: 0
 
     - name: Install Dependencies
