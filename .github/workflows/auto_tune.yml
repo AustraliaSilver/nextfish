@@ -35,15 +35,14 @@ jobs:
         make -j2 build ARCH=x86-64-bmi2 COMP=gcc werror=no
         mv stockfish ../nextfish
 
-    - name: Run SPSA Tuning (1 Iteration - CONTINUOUS)
+    - name: Run SPSA Tuning (25 Iterations - BATCH)
       run: |
-        # Tạo file log nếu chưa có để tránh lỗi lệnh wc
         touch evolution_log.txt
-        # Đếm số dòng để biết đã chạy bao nhiêu vòng
-        COUNT=$(wc -l < evolution_log.txt)
-        START_K=$((COUNT + 1))
-        echo "Starting SPSA Iteration: $START_K"
-        python3 spsa_runner.py 1 $START_K
+        # Tính toán START_K: Mỗi dòng trong log tương ứng với 25 vòng đã chạy
+        LINES=$(wc -l < evolution_log.txt)
+        START_K=$((LINES * 25 + 1))
+        echo "Starting SPSA from iteration: $START_K"
+        python3 spsa_runner.py 25 $START_K
 
     - name: Apply New Parameters
       run: |
