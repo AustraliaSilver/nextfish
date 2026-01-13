@@ -22,7 +22,7 @@ namespace Nextfish {
     double SoftSingularityMargin = -1.58; 
     double TempoBonus = -0.31;            
 
-    Advice Strategy::consult(Stockfish::Color us, const Stockfish::Position& pos, const Stockfish::Search::Stack* ss, Stockfish::Depth depth, int moveCount) {
+    Advice Strategy::consult(Stockfish::Color us, const Stockfish::Position& pos, const Stockfish::Search::Stack* ss, Stockfish::Depth [[maybe_unused]] depth, int [[maybe_unused]] moveCount) {
         Advice advice;
         
         // Game Phase & Complexity Calculation
@@ -68,7 +68,7 @@ namespace Nextfish {
         // 3. Code Red Search Logic with Singularity Margin
         bool evalDropped = (prevScore != Stockfish::VALUE_NONE) && (double(score) < double(prevScore) - VolatilityThreshold);
 
-        if (ss->inCheck || evalDropped || heavyPressure || (us == BLACK && shieldBroken)) {
+        if (ss->inCheck || evalDropped || heavyPressure || (us == Stockfish::BLACK && shieldBroken)) {
             advice.reductionMultiplier = CodeRedLMR / 100.0; 
             advice.reductionAdjustment = -1;
         } 

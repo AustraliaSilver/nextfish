@@ -9,7 +9,7 @@ namespace Nextfish {
 
 using namespace Stockfish;
 
-void TimeManager::init(const Search::LimitsType& limits, Color us, int ply) {
+void TimeManager::init(const Search::LimitsType& limits, Color us, int ply [[maybe_unused]]) {
     startTime = limits.startTime;
     pulseFactor = 1.0;
 
@@ -65,6 +65,6 @@ void TimeManager::clear() {
     pulseFactor = 1.0;
 }
 
-void TimeManager::advance_nodes_time(std::int64_t nodes) {}
+void TimeManager::advance_nodes_time(std::int64_t nodes [[maybe_unused]]) {}
 
 }
