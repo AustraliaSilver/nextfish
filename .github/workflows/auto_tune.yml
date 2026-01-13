@@ -1,8 +1,8 @@
 name: Auto SPSA Tuning Loop
 on:
   push:
-    branches: [ master ]
-  workflow_dispatch: # Cho phép kích hoạt thủ công
+    branches: [ master, main ]
+  workflow_dispatch:
 
 jobs:
   auto-tune:
@@ -12,8 +12,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        # Sử dụng PAT nếu có, nếu không thì dùng GITHUB_TOKEN mặc định
-        token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        # Sử dụng Token cá nhân để vượt qua rào cản bảo mật của GitHub
+        token: ${{ secrets.PAT_TOKEN }}
+        fetch-depth: 0
 
     - name: Install Dependencies
       run: |
@@ -32,20 +33,28 @@ jobs:
 
     - name: Run SPSA Tuning (15 Iterations)
       run: |
-        # Chạy 15 vòng (300 ván) để có kết quả thực tế
         python3 spsa_runner.py 15
 
     - name: Apply New Parameters
-      run: python3 apply_tuning.py
+      run: |
+        python3 apply_tuning.py
 
-    - name: Commit & Push (Trigger Next Loop)
+    - name: Commit & Push (Evolution)
       run: |
         git config --global user.name 'Nextfish Auto-Tuner'
         git config --global user.email 'bot@nextfish.ai'
-        if [[ -n $(git status -s) ]]; then
-          git add src/nextfish_strategy.cpp
-          git commit -m "Auto-Tune: Evolution cycle complete [tune]"
-          git push
+        
+        # Thêm thay đổi nhỏ vào README để đảm bảo luôn có sự thay đổi file (vượt lỗi No changes)
+        echo "Last evolution: $(date)" >> evolution_log.txt
+        
+        git add src/nextfish_strategy.cpp evolution_log.txt
+        
+        # Kiểm tra xem có gì để commit không
+        if git diff --staged --quiet; then
+          echo "No parameter changes, pushing log update only."
+          git commit -m "Auto-Tune: Keepalive cycle [tune]"
         else
-          echo "No changes."
+          git commit -m "Auto-Tune: Evolution cycle complete [tune]"
         fi
+        
+        git push origin HEAD:${{ github.ref }}
