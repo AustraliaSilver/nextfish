@@ -33,24 +33,19 @@ namespace Nextfish {
         Stockfish::Value score = ss->staticEval;
         Stockfish::Value prevScore = (ss - 1)->staticEval;
 
-        // 0. Complexity Scaling (New)
+        // 0. Complexity Scaling
         if (isComplex) {
-            // Virtual scaling of internal score perception (affects LMR decisions)
-            // We can't change the actual score here easily without affecting search flow, 
-            // so we use it to influence optimism.
             double scale = ComplexityScale; 
-            if (us == Stockfish::BLACK && score < 0) scale *= 1.1; // Defend harder in complex bad positions
+            if (us == Stockfish::BLACK && score < 0) scale *= 1.1;
         }
 
-        // 1. Adaptive Optimism with Tempo Bonus (New)
+        // 1. Adaptive Optimism with Tempo Bonus
         double baseOptimism = (us == Stockfish::WHITE) ? WhiteOptimism : (score < 0 ? BlackLossPessimism : BlackEqualPessimism);
         
-        // Boost White optimism slightly if King is safe (using WhiteAggression as a reference)
         if (us == Stockfish::WHITE && !pos.checkers()) {
              baseOptimism += (WhiteAggression - WhiteOptimism) * 0.2;
         }
         
-        // Add explicit Tempo Bonus
         baseOptimism += TempoBonus;
 
         advice.optimismAdjustment = int(baseOptimism * (1.0 - gamePhase * 0.3));
@@ -70,10 +65,10 @@ namespace Nextfish {
         
         bool shieldBroken = (shield != 0) && (Stockfish::popcount(pos.pieces(us, Stockfish::PAWN) & shield) < 2);
 
-        // 3. Code Red Search Logic with Singularity Margin (New)
+        // 3. Code Red Search Logic with Singularity Margin
         bool evalDropped = (prevScore != Stockfish::VALUE_NONE) && (double(score) < double(prevScore) - VolatilityThreshold);
 
-        if (ss->inCheck || evalDropped || heavyPressure || (us == Stockfish::BLACK && shieldBroken)) {
+        if (ss->inCheck || evalDropped || heavyPressure || (us == BLACK && shieldBroken)) {
             advice.reductionMultiplier = CodeRedLMR / 100.0; 
             advice.reductionAdjustment = -1;
         } 
@@ -82,7 +77,6 @@ namespace Nextfish {
             advice.reductionAdjustment = 0;
         }
         else {
-            // Apply Singularity Margin to White too in stable positions
             advice.reductionMultiplier = (100.0 + SoftSingularityMargin) / 100.0; 
             advice.reductionAdjustment = 0;
         }
@@ -91,9 +85,6 @@ namespace Nextfish {
     }
 
     double Strategy::getTimeFactor(Stockfish::Color us) {
-        // Use PanicTimeFactor if position is unstable (score dropping)
-        // For simplicity in getTimeFactor, we keep a base, 
-        // the dynamic part is usually handled in Search::time_management.
         return (us == Stockfish::BLACK) ? 1.35 : 0.80;
     }
 
