@@ -35,14 +35,14 @@ def log(msg):
     print(msg)
     sys.stdout.flush()
 
-def run_match(params_A, params_B, games=1):
+def run_match(params_A, params_B, games=20):
     opts_A = " ".join([f"option.{k}={v:.4f}" for k, v in params_A.items()])
     opts_B = " ".join([f"option.{k}={v:.4f}" for k, v in params_B.items()])
     cmd = [
         "./fastchess", "-engine", "name=Tuned", "cmd=./nextfish", opts_A,
         "-engine", "name=Base", "cmd=./nextfish", opts_B,
         "-each", "tc=10+0.1", "option.Hash=8", "option.Threads=1", "proto=uci",
-        "-rounds", "1", "-games", "1", "-repeat", "-concurrency", "1", "-recover",
+        "-rounds", str(games // 2), "-games", "2", "-repeat", "-concurrency", "2", "-recover",
         "-openings", "file=UHO_2022_8mvs_+110_+119.pgn", "format=pgn", "order=random"
     ]
     with open("match.log", "w") as f:
