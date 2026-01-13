@@ -17,6 +17,7 @@
 */
 
 #include "engine.h"
+#include "nextfish_strategy.h"
 
 #include <algorithm>
 #include <cassert>
@@ -25,6 +26,7 @@
 #include <memory>
 #include <ostream>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -140,6 +142,28 @@ Engine::Engine(std::optional<std::string> path) :
           load_small_network(o);
           return std::nullopt;
       }));
+
+    // Nextfish Tunable Parameters
+    auto add_nextfish_option = [&](const std::string& name, double& var) {
+        options.add(name, Option(std::to_string(var).c_str(), [&var](const Option& o) {
+            try {
+                var = std::stod(std::string(o));
+            } catch (...) {}
+            return std::nullopt;
+        }));
+    };
+
+    add_nextfish_option("WhiteOptimism", Nextfish::WhiteOptimism);
+    add_nextfish_option("BlackLossPessimism", Nextfish::BlackLossPessimism);
+    add_nextfish_option("BlackEqualPessimism", Nextfish::BlackEqualPessimism);
+    add_nextfish_option("VolatilityThreshold", Nextfish::VolatilityThreshold);
+    add_nextfish_option("CodeRedLMR", Nextfish::CodeRedLMR);
+    add_nextfish_option("BlackLMR", Nextfish::BlackLMR);
+    add_nextfish_option("WhiteAggression", Nextfish::WhiteAggression);
+    add_nextfish_option("PanicTimeFactor", Nextfish::PanicTimeFactor);
+    add_nextfish_option("ComplexityScale", Nextfish::ComplexityScale);
+    add_nextfish_option("SoftSingularityMargin", Nextfish::SoftSingularityMargin);
+    add_nextfish_option("TempoBonus", Nextfish::TempoBonus);
 
     load_networks();
     resize_threads();

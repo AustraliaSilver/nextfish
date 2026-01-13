@@ -4,6 +4,10 @@ on:
     branches: [ master, main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   auto-tune:
     if: contains(github.event.head_commit.message, '[tune]') || github.event_name == 'workflow_dispatch'
@@ -41,9 +45,16 @@ jobs:
         python3 apply_tuning.py
 
     - name: Commit & Push (Evolution)
+      id: push_step
+      env:
+        GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
       run: |
         git config --global user.name 'Nextfish Auto-Tuner'
         git config --global user.email 'bot@nextfish.ai'
+        
+        # Ensure we are on the latest remote state
+        git fetch origin ${{ github.ref_name }}
+        git reset --soft origin/${{ github.ref_name }}
         
         # Thêm thay đổi nhỏ vào README để đảm bảo luôn có sự thay đổi file (vượt lỗi No changes)
         echo "Last evolution: $(date)" >> evolution_log.txt
@@ -58,4 +69,17 @@ jobs:
           git commit -m "Auto-Tune: Evolution cycle complete [tune]"
         fi
         
-        git push origin HEAD:${{ github.ref }}
+        # Push using the token explicitly. 
+        # Note: If using GITHUB_TOKEN, this push will NOT trigger 'on: push' workflows.
+        git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+
+    - name: Trigger Next Iteration
+      if: always() && steps.push_step.outcome == 'success'
+      env:
+        GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+      run: |
+        echo "Waiting a bit before triggering next cycle..."
+        sleep 10
+        echo "Triggering next tuning cycle via workflow_dispatch..."
+        # We use workflow_dispatch to bypass the 'push trigger' restriction of GITHUB_TOKEN
+        gh workflow run auto_tune.yml --ref ${{ github.ref_name }} || echo "Failed to trigger next run, but push was successful."

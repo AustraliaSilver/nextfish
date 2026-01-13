@@ -7,6 +7,19 @@
 
 namespace Nextfish {
 
+    // Tunable parameters
+    extern double WhiteOptimism;
+    extern double BlackLossPessimism;
+    extern double BlackEqualPessimism;
+    extern double VolatilityThreshold;
+    extern double CodeRedLMR;
+    extern double BlackLMR;
+    extern double WhiteAggression;
+    extern double PanicTimeFactor;
+    extern double ComplexityScale;
+    extern double SoftSingularityMargin;
+    extern double TempoBonus;
+
     struct Advice {
         int reductionAdjustment;
         double reductionMultiplier; // Mới: Hệ số nhân để điều chỉnh LMR tinh tế hơn

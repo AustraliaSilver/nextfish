@@ -9,6 +9,7 @@ import os
 PARAMS_CONFIG = {
     "WhiteOptimism":       {"min": 0.0,   "max": 50.0,  "step": 1.0},
     "BlackLossPessimism":  {"min": -50.0, "max": 0.0,   "step": 1.0},
+    "BlackEqualPessimism": {"min": -20.0, "max": 10.0,  "step": 1.0},
     "VolatilityThreshold": {"min": 5.0,   "max": 30.0,  "step": 0.5},
     "CodeRedLMR":          {"min": 40.0,  "max": 95.0,  "step": 1.0},
     "BlackLMR":            {"min": 70.0,  "max": 100.0, "step": 1.0},
@@ -36,6 +37,9 @@ def log(msg):
     sys.stdout.flush()
 
 def run_match(params_A, params_B, games=20):
+    if not os.path.exists("./fastchess"):
+        log("ERROR: ./fastchess not found!")
+        return 0, 0, 0
     opts_A = " ".join([f"option.{k}={v:.4f}" for k, v in params_A.items()])
     opts_B = " ".join([f"option.{k}={v:.4f}" for k, v in params_B.items()])
     cmd = [
