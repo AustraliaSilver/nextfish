@@ -26,25 +26,25 @@ def update_source_code(params):
     with open(search_cpp, 'r') as f:
         content = f.read()
 
-    # Cập nhật Time Multipliers
+    # Cập nhật Time Multipliers (Làm tròn 2 chữ số)
     content = re.sub(r"whiteTimeMultiplier = \(us == WHITE\) \? [\d\.]+ : 1.0;", 
-                     f"whiteTimeMultiplier = (us == WHITE) ? {params['whiteTimeMultiplier']:.2f} : 1.0;", content)
+                     f"whiteTimeMultiplier = (us == WHITE) ? {round(params['whiteTimeMultiplier'], 2)} : 1.0;", content)
     content = re.sub(r"blackTimeMultiplier = \(us == BLACK && bestValue < -10 && bestValue > -100\) \? [\d\.]+ : 1.0;", 
-                     f"blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? {params['blackTimeMultiplier']:.2f} : 1.0;", content)
+                     f"blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? {round(params['blackTimeMultiplier'], 2)} : 1.0;", content)
     
-    # Cập nhật Singularity & LMR
+    # Cập nhật Singularity & LMR (Số nguyên)
     content = re.sub(r"singularityCore = \(us == WHITE\) \? \d+ : 628;", 
-                     f"singularityCore = (us == WHITE) ? {params['singularityCore']} : 628;", content)
+                     f"singularityCore = (us == WHITE) ? {int(params['singularityCore'])} : 628;", content)
     content = re.sub(r"baseOffset = \(us == WHITE\) \? \d+ : 1182;", 
-                     f"baseOffset = (us == WHITE) ? {params['baseOffset']} : 1182;", content)
+                     f"baseOffset = (us == WHITE) ? {int(params['baseOffset'])} : 1182;", content)
 
     # Cập nhật Optimism & Contempt
     content = re.sub(r"int optimismBase = \(us == WHITE\) \? \d+ : 142;", 
-                     f"int optimismBase = (us == WHITE) ? {params['optimismBase']} : 142;", content)
+                     f"int optimismBase = (us == WHITE) ? {int(params['optimismBase'])} : 142;", content)
     content = re.sub(r"if \(pos\.side_to_move\(\) == WHITE\) v \+= \d+;", 
-                     f"if (pos.side_to_move() == WHITE) v += {params['contempt']};", content)
+                     f"if (pos.side_to_move() == WHITE) v += {int(params['contempt'])};", content)
     content = re.sub(r"else if \(pos\.side_to_move\(\) == BLACK\) v -= \d+;", 
-                     f"else if (pos.side_to_move() == BLACK) v -= {params['contempt']};", content)
+                     f"else if (pos.side_to_move() == BLACK) v -= {int(params['contempt'])};", content)
 
     with open(search_cpp, 'w') as f:
         f.write(content)

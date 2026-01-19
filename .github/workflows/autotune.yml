@@ -56,28 +56,28 @@ jobs:
       id: tuning
       run: |
         python3 autotune.py
-        echo "exit_code=$?" >> $GITHUB_OUTPUT
+        echo "EXIT_STATUS=$?" >> $GITHUB_ENV
       continue-on-error: true
 
-    - name: Check for Final Push (Iteration 15)
-      if: steps.tuning.outputs.exit_code == '100'
+    - name: Commit and Push Results
       run: |
         git config --global user.name "Nextfish Auto-Tuner"
         git config --global user.email "tuner@nextfish.ai"
-        python3 -c "import json; f='src/ideas/tuning_state.json'; s=json.load(open(f)); s['iteration']=0; json.dump(s, open(f, 'w'), indent=4)"
+        
+        # Kiểm tra nếu đạt it 15 thì reset
+        if [ "$EXIT_STATUS" == "100" ]; then
+          echo "Reached 15 iterations. Resetting..."
+          python3 -c "import json; f='src/ideas/tuning_state.json'; s=json.load(open(f)); s['iteration']=0; json.dump(s, open(f, 'w'), indent=4)"
+          COMMIT_MSG="chore: Nextfish Auto-Tuning Cycle Complete"
+        else
+          COMMIT_MSG="chore: tuning iteration progress"
+        fi
+        
         git add .
-        git commit -m "chore: Nextfish Auto-Tuning Cycle Complete (Iteration 15)"
-        git push origin master
+        git commit -m "$COMMIT_MSG" || exit 0
+        
+        # Đẩy code bằng PAT_TOKEN để kích hoạt vòng lặp tiếp theo
+        git push "https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git" master --force
       env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-
-    - name: Regular Progress Commit
-      if: steps.tuning.outputs.exit_code != '100'
-      run: |
-        git config --global user.name "Nextfish Auto-Tuner"
-        git config --global user.email "tuner@nextfish.ai"
-        git add .
-        git commit -m "chore: tuning iteration progress" || echo "No changes to commit"
-        git push origin master
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        EXIT_STATUS: ${{ env.EXIT_STATUS }}
+        PAT: ${{ secrets.PAT_TOKEN }}
