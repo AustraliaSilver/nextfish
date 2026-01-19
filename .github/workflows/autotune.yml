@@ -77,7 +77,7 @@ jobs:
         git config --global user.name "Nextfish Auto-Tuner"
         git config --global user.email "tuner@nextfish.ai"
         git add .
-        git commit -m "docs: Tuning iteration progress [skip ci]" || echo "No changes to commit"
+        git commit -m "chore: tuning iteration progress" || echo "No changes to commit"
         git push origin master
       env:
         GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
