@@ -356,7 +356,7 @@ void Search::Worker::iterative_deepening() {
 
             // Adjust optimism based on root move's averageScore
             // Nextfish Phase 123: The Sovereign Time-Lord (White 176 / Black 142)
-            int optimismBase = (us == WHITE) ? 176 : 142;
+            int optimismBase = (us == WHITE) ? 178 : 142;
             optimism[us]  = optimismBase * avg / (std::abs(avg) + 91);
             optimism[~us] = -optimism[us];
 
@@ -506,10 +506,10 @@ void Search::Worker::iterative_deepening() {
             double highBestMoveEffort = nodesEffort >= 93340 ? 0.76 : 1.0;
 
             // Master Edition: Safe Chronos Dominance (White gets 40% more time)
-            double whiteTimeMultiplier = (us == WHITE) ? 1.4 : 1.0;
+            double whiteTimeMultiplier = (us == WHITE) ? 1.42 : 1.0;
 
             // Master Final: Targeted Defense (Black gets 40% more time when in danger zone -0.1 to -1.0)
-            double blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? 1.4 : 1.0;
+            double blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? 1.42 : 1.0;
 
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
                              * bestMoveInstability * highBestMoveEffort * whiteTimeMultiplier * blackTimeMultiplier;
@@ -1760,11 +1760,11 @@ Depth Search::Worker::reduction(bool i, Depth d, int mn, int delta, int eval, in
     int reductionScale = reductions[d] * reductions[mn];
     
     // Nextfish Master Final (Optimal White Aggression / Standard Black Defense)
-    int singularityCore = (us == WHITE) ? 638 : 628;
+    int singularityCore = (us == WHITE) ? 640 : 628;
     
     // Balanced Polarity: White looks deeper (1175), Black is 100% standard for reliability.
     int improvingWeight = 238;
-    int baseOffset = (us == WHITE) ? 1176 : 1182;
+    int baseOffset = (us == WHITE) ? 1175 : 1182;
     
     return reductionScale - delta * 608 / rootDelta + !i * reductionScale * improvingWeight / 512 + baseOffset;
 }
@@ -1789,8 +1789,8 @@ Value Search::Worker::evaluate(const Position& pos) {
     
     // Nextfish Phase 122: The Time Lord - Stable Bias
     // Apply conservative contempt (+10) for White to ensure winning attempts while maintaining 100% SF search precision.
-    if (pos.side_to_move() == WHITE) v += 10;
-    else if (pos.side_to_move() == BLACK) v -= 10;
+    if (pos.side_to_move() == WHITE) v += 9;
+    else if (pos.side_to_move() == BLACK) v -= 9;
 
     return v;
 }
