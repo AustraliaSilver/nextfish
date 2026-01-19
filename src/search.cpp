@@ -506,7 +506,7 @@ void Search::Worker::iterative_deepening() {
             double highBestMoveEffort = nodesEffort >= 93340 ? 0.76 : 1.0;
 
             // Master Edition: Safe Chronos Dominance (White gets 40% more time)
-            double whiteTimeMultiplier = (us == WHITE) ? 1.42 : 1.0;
+            double whiteTimeMultiplier = (us == WHITE) ? 1.38 : 1.0;
 
             // Master Final: Targeted Defense (Black gets 40% more time when in danger zone -0.1 to -1.0)
             double blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? 1.4 : 1.0;
