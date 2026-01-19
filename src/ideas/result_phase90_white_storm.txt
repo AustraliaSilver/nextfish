@@ -1,0 +1,28 @@
+Nextfish Phase 90: The White Storm - Results Tracking
+===================================================
+
+1. Trạng thái: Đã triển khai (Implemented)
+2. Mục tiêu:
+   - Đạt tỉ lệ thắng quân Trắng > 70% trước Stockfish chuẩn.
+   - Thử nghiệm giới hạn cực đoan của LMR Base Offset (1142).
+
+3. Thông số kỹ thuật:
+   - White:
+     + LMR Base Offset: 1142 (Cực nới lỏng).
+     + SEE Margin: 148 (Khuyến khích hy sinh quân).
+     + Improving Weight: 232 (Đào sâu tối đa khi ưu thế tăng).
+     + History Bonus: 75 (s > 7000).
+     + Optimism: 168 (Tham vọng chiến thắng).
+   - Black:
+     + LMR Base Offset: 1182 (Standard).
+     + SEE Margin: 165 (Ironclad).
+     + disadvantageBonus: 84 (Resilience).
+
+4. Dự kiến:
+   - Quân Trắng sẽ tạo ra những ván thắng áp đảo hoặc những trận thua do "quá liều".
+   - Tỉ lệ hòa sẽ giảm mạnh.
+
+5. Kết quả (Sẽ cập nhật sau khi chạy build_and_test.ps1):
+   - Winrate White: ?
+   - Winrate Black: ?
+   - Elo Diff: ?

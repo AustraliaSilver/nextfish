@@ -1,0 +1,20 @@
+Nextfish Phase 105: Imperial White & Iron Black - Công thủ toàn diện
+=====================================================================
+
+1. Mục tiêu:
+   - Đẩy Winrate của Nextfish cầm Trắng lên mức thực sự áp đảo (> 60%).
+   - Gia cố quân Đen bằng cách giảm `improvingWeight`, giúp engine ít bị cắt tỉa hơn khi đang ở thế yếu (Iron defense).
+   - Tăng ưu thế thời gian cho White lên mức 1.2x để tận dụng tối đa chiều sâu.
+
+2. Cải tiến kỹ thuật:
+   - Time Management: White multiplier = 1.2x. Tăng cường khả năng dứt điểm trung cuộc.
+   - Search Stabilization:
+     + White: LMR 1178 (Nới lỏng nhẹ).
+     + Black: LMR 1182 (Chuẩn), nhưng giảm `improvingWeight` xuống 210. Điều này giúp Đen "ngoan cường" hơn trong các vị thế khó.
+   - Contempt: +6 cp cho White.
+   - Optimism: 168 (White) / 142 (Black).
+
+3. Kỳ vọng:
+   - White duy trì chuỗi bất bại hoặc thắng áp đảo trước StockfishOrig cầm Đen.
+   - Black giảm tỉ lệ thua (loss rate) xuống dưới 50%.
+   - Tổng Elo phục hồi về mức -50 đến -80.

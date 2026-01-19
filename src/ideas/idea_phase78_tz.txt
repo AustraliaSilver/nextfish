@@ -1,0 +1,18 @@
+Nextfish Phase 78: The Zenith (TZ)
+=================================
+
+1. Mục tiêu:
+   - Vượt qua mốc -66 Elo của Phase 74 và hướng tới Elo dương.
+   - Cân bằng tuyệt đối giữa hai màu quân.
+
+2. Cải tiến kỹ thuật:
+   - SEE Margin: 161 * depth (Mức ổn định cao).
+   - Hàm Reduction mới:
+     + Base R: Giữ nguyên cấu trúc Phase 74.
+     + Extra Reduction: Tăng thêm 15% reduction cho các node có `!improving` ở độ sâu cao.
+     + History Buff: (s > 14000) ? 55 : (s > 0) ? 23 : 0.
+   - Singularity Margin: Điều chỉnh theo eval:
+     margin = (staticEval < -100) ? 45 * depth / 60 : 53 * depth / 60.
+
+3. Thay đổi trong search.cpp:
+   - Triển khai hàm reduction và singularity margin linh hoạt.

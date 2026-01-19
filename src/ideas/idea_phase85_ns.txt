@@ -1,0 +1,15 @@
+Nextfish Phase 85: The Neural Sharpness (NS)
+========================================
+
+1. Mục tiêu:
+   - Tăng cường độ sắc nét của đánh giá NNUE để vượt qua Stockfish.
+   - Buộc engine phải nhạy bén hơn với các ưu thế/bất lợi nhỏ.
+
+2. Cải tiến kỹ thuật:
+   - Divisor: 9800 (Tăng độ nhạy NNUE lên ~20%).
+   - Base Search: Khôi phục Specs Phase 74 (SEE 163, Core 614).
+   - Reduction: Giữ nguyên cấu trúc ổn định của Phase 84 nhưng điều chỉnh nhẹ hằng số cơ bản.
+
+3. Thay đổi trong search.cpp:
+   - Cập nhật Divisor 9800 trong ID loop.
+   - Thống nhất các hằng số search.

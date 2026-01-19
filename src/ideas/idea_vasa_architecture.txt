@@ -1,0 +1,19 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 12: Volatility-Aware Search Architecture (VASA)
+=====================================================================================
+Mục tiêu: Đạt tiêu chuẩn tính độc đáo của TCEC và tăng sức mạnh tính toán hệ thống.
+
+1. Thêm cấu trúc dữ liệu mới vào Search Stack:
+   - Thêm biến `volatility` vào struct `Stack` trong `search.h`.
+   - `volatility` được tính bằng sự chênh lệch giữa Static Eval và TT Value, hoặc giữa các đời Eval liên tiếp.
+
+2. Tích hợp Volatility vào LMR (Kiến trúc):
+   - Thay đổi hàm `reduction` để nhận tham số volatility. 
+   - Reduction mới = f(Depth, MoveCount, Volatility).
+   - Khi volatility cao (thế trận đang biến động mạnh), engine sẽ GIẢM reduction để nhìn xa hơn.
+
+3. Tích hợp Volatility vào Pruning (Kiến trúc):
+   - NMP và RFP sẽ kiểm tra độ biến động trước khi quyết định cắt tỉa. Nếu volatility > threshold, lệnh cắt tỉa sẽ bị hủy bỏ (Abort pruning).
+
+4. Phân tách logic White/Black thành các hướng đánh giá độc lập trong kiến trúc (Asymmetric Search).
+
+File cần sửa: search.h, search.cpp

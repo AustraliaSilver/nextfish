@@ -1,0 +1,17 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 49: The Singularity Zenith - Pure Defensive Flow (SZDF)
+=====================================================================================
+Mục tiêu: Đạt +30 Elo bằng cách khôi phục sự ổn định của V47 và tối ưu hóa Aspiration.
+
+1. REVERT Tactical Pulse:
+   - Xóa bỏ r = r * 970 / 1024 ở trung cuộc. 
+   - Quay lại Lõi 612 thuần túy cho cả hai bên để giữ NPS cao nhất.
+
+2. Aspiration Smoothing (The Defensive Flow):
+   - Thay vì delta += delta (gấp đôi) khi panic, chúng ta dùng:
+     delta += (us == BLACK) ? delta * 2 / 3 : delta / 3.
+   - Logic: Nới rộng vừa đủ (2/3 thay vì 1/2 hay 1/1) để Đen tìm đường thoát mà không làm loãng cây tìm kiếm quá nhanh.
+
+3. Keep Asymmetric us Parameter:
+   - Giữ tham số 'us' trong reduction để chuẩn bị cho các tinh chỉnh hướng đối tượng trong tương lai, nhưng hiện tại dùng chung Lõi 612.
+
+File cần sửa: search.cpp

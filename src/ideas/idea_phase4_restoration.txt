@@ -1,0 +1,16 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 4: Restoration & Intelligent Pruning
+========================================================================
+Mục tiêu: Khôi phục sự ổn định và tối ưu hóa việc loại bỏ nước đi yếu.
+
+1. Khôi phục Singular Extension & Correction History:
+   - Trở lại thông số gốc của Stockfish (53/75 cho Singular Beta và hằng số cũ cho Correction).
+   - Lý do: Phase 3 cho thấy các thay đổi này gây mất ổn định.
+
+2. Cải thiện Late Move Pruning (LMP) dựa trên History:
+   - Nếu một nước đi tĩnh (Quiet move) có điểm lịch sử (History score) quá thấp, chúng ta sẽ cắt tỉa nó sớm hơn bình thường.
+   - Giúp tập trung hoàn toàn vào các nước đi có chất lượng cao.
+
+3. Tinh chỉnh ProbCut:
+   - Tăng cường ProbCut ở các node có độ sâu lớn để phát hiện sớm các nhánh thắng/thua nhanh.
+
+File cần sửa: search.cpp

@@ -1,0 +1,16 @@
+Nextfish Phase 74: Time-Aware Fortress (TAF)
+========================================
+
+1. Mục tiêu:
+   - Khắc phục triệt để tình trạng thua giờ (time loss) ở Phase 73.
+   - Ổn định lại sức mạnh quân Trắng.
+   - Gia cố quân Đen bằng các nước đi chất lượng cao (High History).
+
+2. Cải tiến kỹ thuật:
+   - Unified SEE Margin: Đưa về 163 * depth cố định để giảm overhead tính toán.
+   - History Reduction Scaler: Thay vì nới lỏng toàn bộ, chỉ giảm reduction cho quân Đen nếu (us == BLACK && s > 15000).
+   - Time Management Buff: Tăng nhẹ tốc độ tìm kiếm bằng cách thắt chặt Futility Pruning ở độ sâu thấp (< 5).
+
+3. Thay đổi trong search.cpp:
+   - Loại bỏ logic margin bất đối xứng gây tốn thời gian.
+   - Tối ưu hàm reduction để ưu tiên hiệu suất.

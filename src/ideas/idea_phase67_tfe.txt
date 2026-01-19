@@ -1,0 +1,16 @@
+Nextfish Phase 67: The Final Equilibrium (TFE)
+==========================================
+
+1. Phân tích kết quả V66:
+   - Thắng lợi lịch sử: Quân Đen thắng 8 ván (Score 0.320), cao nhất trong chuỗi thử nghiệm. Tỉ lệ 40% (delta/2.5) là chìa khóa.
+   - Thất bại: Quân Trắng sụp đổ do nới rộng cửa sổ quá nhanh (delta/2.8). Trắng cần sự ổn định của Master.
+
+2. Cải tiến V67 (The Final Equilibrium):
+   - Asymmetric Oracle:
+     + Black failing low: delta += delta / 2.5 (40% - Giữ nguyên công thức chiến thắng).
+     + White failing low: delta += delta / 3 (33% - Khôi phục Master Stability).
+   - Unified Solid Core (615): Áp dụng hằng số 615 cho cả hai bên để tăng độ sâu tìm kiếm một cách an toàn.
+   - Counter-Strike Aegis: Giữ disadvantageBonus = 50 và tinh chỉnh nhẹ tacticalLeverage cho Đen.
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Tinh chỉnh Aspiration Smoothing bất đối xứng và cập nhật Core 615.

@@ -1,0 +1,27 @@
+Nextfish Phase 88: Imperial Correction (IC) - Results Tracking
+======================================================
+
+1. Trạng thái: Đã triển khai (Implemented)
+2. Mục tiêu:
+   - Sửa lỗi mất ổn định của Phase 87 (Solar Flare).
+   - Khôi phục khả năng phòng ngự của quân Đen về mức Phase 74.
+   - Tối ưu hóa quân Trắng để đạt tỉ lệ thắng > 60% trước Stockfish chuẩn.
+
+3. Các thay đổi chính:
+   - Aspiration Window: Khôi phục mẫu số về 9000 (từ 13200) và loại bỏ logic thu hẹp cửa sổ cho Trắng.
+   - SEE Margin: 
+     + Trắng: 155 (Nới lỏng để tấn công).
+     + Đen: 163 (Phase 74 standard).
+   - LMR Hyper-params:
+     + Trắng: baseOffset = 1155, improvingWeight = 248, historyBonus = 68 (s > 8000).
+     + Đen: baseOffset = 1165, improvingWeight = 252, historyBonus = 55 (s > 15000).
+   - Divisor: Đồng nhất về 11800 cho tất cả các thành phần Correction Value.
+   - Optimism: Đưa về mức chuẩn 142.
+
+4. Dự kiến:
+   - Tỉ lệ thắng quân Trắng sẽ tăng đáng kể nhờ việc nới lỏng LMR và SEE.
+   - Quân Đen sẽ ổn định hơn, tránh các trận thua "ngớ ngẩn" do cửa sổ tìm kiếm quá hẹp.
+   - Elo tổng thể kỳ vọng đạt mức -50 đến -40 so với StockfishOrig.
+
+5. Tiếp theo:
+   - Chạy build_and_test.ps1 để thu thập dữ liệu ván đấu.

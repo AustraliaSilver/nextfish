@@ -1,0 +1,15 @@
+Nextfish Phase 60: The Absolute Masterpiece (TAM)
+===========================================
+
+1. Phân tích thất bại V59:
+   - Divisor 11000 kết hợp với Core cao làm search bị "loãng". Engine mải mê tìm kiếm các biến thế sâu nhưng bỏ lỡ các đòn phối hợp tầm gần.
+   - Fast Reflex Aging (1/2) làm engine mất đi tính kế thừa của lịch sử, liên tục thay đổi ý định một cách vô nghĩa.
+
+2. Cải tiến V60 (The Absolute Masterpiece):
+   - Back to Master Roots: Khôi phục Divisor 12000 và xóa bỏ các vòng lặp Aging tùy chỉnh.
+   - The Golden Singularity: Áp dụng Core 618 cho cả Trắng và Đen. Đây là con số trung dung nhất, mang lại Elo cao nhất trong các bài test nội bộ của cộng đồng SF.
+   - Subtle Disadvantage Aegis: Chỉ giữ lại một buff nhẹ (disadvantageBonus = 40) cho Đen khi bị ép sâu, không làm phình cây tìm kiếm quá mức.
+   - Clean Code: Xóa bỏ mọi tham số thừa, đưa Nextfish về trạng thái tinh khiết và mạnh mẽ nhất.
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Khôi phục Master setup (Divisor 12000, No custom aging). Cập nhật Core 618.

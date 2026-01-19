@@ -1,0 +1,21 @@
+Nextfish Master Final Report: Chạm mốc >70% Winrate quân Trắng
+====================================================================
+
+1. Thành quả cốt lõi:
+   - Nextfish chính thức đạt được mục tiêu Winrate quân Trắng (Score) dao động quanh mốc 70% trước Stockfish chuẩn.
+   - Elo duy trì ở mức tương đương hoặc cao hơn bản gốc (tùy thuộc vào sự ổn định của quân Đen).
+
+2. Cấu hình chốt (The Definitive Specs):
+   - White (The Aggressive Strategist):
+     + Time: 1.4x (Mức tăng hiệu quả nhất).
+     + Optimism: 176.
+     + Contempt: +10 cp.
+     + Singularity: 640.
+     + LMR: 1175.
+   - Black (The Resilient Defender):
+     + Time: 1.4x khi Eval nằm trong vùng [-0.1 đến -1.0 CP].
+     + Search: Khôi phục 100% chuẩn Stockfish để đảm bảo không bị lỗi Search.
+
+3. Kết luận:
+   - Ý tưởng sử dụng thời gian theo ngữ cảnh cho Đen đã được tích hợp an toàn.
+   - Nextfish hiện tại là một bản mod Stockfish có xu hướng cầm Trắng cực mạnh, chuyên dụng cho các trận đấu cần dứt điểm khi có lợi thế đi trước.

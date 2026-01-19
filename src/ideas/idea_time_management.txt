@@ -1,0 +1,16 @@
+Ý tưởng: Cải thiện Time Management dựa trên độ ổn định của nước đi
+Dựa trên: PlentyChess
+Mục tiêu: Dành nhiều thời gian hơn cho các vị thế phức tạp nơi nước đi tốt nhất liên tục thay đổi, và tiết kiệm thời gian khi nước đi tốt nhất đã rõ ràng.
+
+Chi tiết thay đổi:
+1. Theo dõi sự thay đổi của Best Move qua các iteration (ID - Iterative Deepening).
+2. Nếu Best Move thay đổi trong các vòng lặp cuối, tăng hệ số thời gian (Time Manager Multiplier).
+3. Nếu Best Move ổn định qua nhiều vòng lặp, cho phép dừng tìm kiếm sớm hơn để bảo tồn thời gian cho các nước đi sau.
+
+Tham số đề xuất:
+- tmBestMoveStabilityMax: 18
+- tmBestMoveStabilityBase: 1.56
+- tmEvalDiffFactor: 0.004
+
+File cần sửa: timeman.cpp
+Trạng thái: Đã lên kế hoạch.

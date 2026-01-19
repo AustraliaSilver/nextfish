@@ -1,0 +1,26 @@
+Nextfish Phase 98: The Grand Alignment - Results Tracking
+========================================================
+
+1. Trạng thái: Đã triển khai (Implemented)
+2. Mục tiêu:
+   - Khôi phục sự cân bằng chiến lược giữa tấn công và phòng ngự.
+   - Chinh phục mốc > 70% Winrate White trên nền tảng Aspiration ổn định (9000).
+   - Tối ưu hóa khả năng thoát hiểm của Đen bằng Fortress Divisor (2750).
+
+3. Các thay đổi chính:
+   - Aspiration Window: Revert to 9000 (Standard Stability).
+   - LMR Base Offset: 1182 (Standardized).
+   - Singularity Core: 622 (Stable Breakthrough).
+   - Optimism: White 168 / Black 142.
+   - SEE Margin: White 158 / Black 163.
+   - disadvantageBonus: 84 (Khi eval < -110).
+   - Selective History Divisor (Black): 2750 (Extreme Search for High History).
+
+4. Dự kiến:
+   - Elo sẽ bứt phá mạnh mẽ khỏi vùng -100 nhờ sự phối hợp giữa LMR chuẩn và Selective History sắc bén.
+   - Quân Trắng sẽ duy trì sức ép liên tục, trong khi Đen có khả năng cầm hòa cao hơn nhờ cơ chế thoát hiểm mới.
+
+5. Kết quả:
+   - Winrate White: ?
+   - Winrate Black: ?
+   - Elo Diff: ?

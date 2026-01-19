@@ -1,0 +1,21 @@
+Nextfish Phase 103: The Balanced Aggressor - Lấy lại vị thế
+==========================================================
+
+1. Mục tiêu:
+   - Khôi phục sự ổn định (Elo) sau thất bại của Phase 102.
+   - Tìm kiếm sự cân bằng giữa sức tấn công của White và khả năng chịu đựng của Black.
+   - Kiểm chứng xem 10% bonus thời gian có đủ để tạo ra sự khác biệt mà không gây mất ổn định hay không.
+
+2. Cải tiến kỹ thuật:
+   - Time Management: White được cộng 10% thời gian suy nghĩ (1.1x). Đây là mức can thiệp an toàn.
+   - LMR Stabilization: 
+     + White: 1172 (Vùng hiệu quả cao cho tấn công).
+     + Black: 1200 (Giúp Đen linh hoạt hơn, tránh bị thụ động như mức 1230).
+   - Optimism: 164 (White) / 132 (Black). Đưa về các thông số đã từng thành công ở Phase 92-96.
+   - Contempt: +8 cp. Mức nhẹ nhàng để khuyến khích White tìm kiếm cơ hội thắng trong các thế cân bằng mà không quá mạo hiểm.
+   - Aspiration Window: Khôi phục về mức chuẩn để tăng độ bao phủ của Search.
+
+3. Kỳ vọng:
+   - Elo quay trở lại vùng -50 đến -100 (so với StockfishOrig).
+   - Winrate White hồi phục lên mức > 50-60%.
+   - Draw rate tăng lên đáng kể (giảm thiểu các ván thua ngớ ngẩn của cả hai bên).

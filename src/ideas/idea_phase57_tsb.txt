@@ -1,0 +1,15 @@
+Nextfish Phase 57: The Sovereign Balance (TSB)
+=========================================
+
+1. Phân tích thất bại V56:
+   - Hard-suppression LMR (s > 10000) làm cây tìm kiếm bị phình to bất thường, dẫn đến mất chiều sâu ở các biến thế quan trọng khác.
+   - Aspiration 11000 quá "hung hãn", làm tăng tỷ lệ thua giờ (Time Loss) và re-search không cần thiết.
+
+2. Cải tiến V57 (The Sovereign Balance):
+   - Smooth LMR reduction: escapeReduction = (s / 500). Điều này giúp các nước thoát hiểm được ưu tiên một cách tỉ lệ thuận với độ nguy hiểm, thay vì bật/tắt thô bạo.
+   - Standard Aspiration: Quay lại Divisor 12000 để đảm bảo tính ổn định cao nhất (Master standard).
+   - Tactical Maturity: Bonus thoát hiểm trong MovePicker sẽ tăng dần theo số nước đi để bảo vệ tàn cuộc tốt hơn.
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Thay thế logic hard-suppression bằng Smooth Weighting. Cập nhật Divisor 12000.
+   - movepick.cpp: Áp dụng bonus thoát hiểm linh hoạt.

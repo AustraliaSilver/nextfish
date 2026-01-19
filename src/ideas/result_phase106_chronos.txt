@@ -1,0 +1,21 @@
+Nextfish Phase 106: Brute Force Chronos - Thí nghiệm thời gian thuần túy
+=====================================================================
+
+1. Bối cảnh:
+   - Các thay đổi phức tạp về Search (LMR, Optimism, Contempt) ở các Phase trước đã gây mất ổn định và làm sụt giảm Elo nghiêm trọng.
+   - Phase 106 quay lại với giá trị cốt lõi: Stockfish chuẩn là tốt nhất. Chúng ta chỉ cần cho nó thêm thời gian để "nhìn" xa hơn đối thủ.
+
+2. Cải tiến kỹ thuật:
+   - Search: Khôi phục hoàn toàn về chuẩn Stockfish (LMR 1182, Optimism 142, Contempt 0).
+   - Time Management: 
+     + Can thiệp trực tiếp vào `timeman.cpp`.
+     + White Time Multiplier: 1.5x (Áp dụng cho cả `optimumTime` và `maximumTime`).
+     + Loại bỏ các logic thời gian cũ của Phase 68 (Black bonus).
+
+3. Kỳ vọng:
+   - Nextfish cầm Trắng sẽ có lợi thế Depth trung bình từ 1-3 ply so với đối thủ ở trung cuộc và tàn cuộc.
+   - Elo tổng thể phải đạt mức tương đương Stockfish chuẩn (do Search là chuẩn).
+   - Winrate White sẽ tăng trưởng bền vững nhờ sức mạnh tính toán vượt trội.
+
+4. Mục tiêu kiểm chứng:
+   - Nếu Winrate White vẫn không tăng, điều đó có nghĩa là 1.5x thời gian không đủ để bẻ gãy hàng phòng ngự của Stockfish chuẩn, hoặc Search của Stockfish đã đạt đến giới hạn bão hòa (diminishing returns).

@@ -1,0 +1,19 @@
+Kết quả Thử nghiệm Phase 73: Asymmetric Defense
+==========================================
+
+Ngày: 18/01/2026
+Đối thủ: StockfishOrig (100 ván, TC 10+0.1)
+Kết quả: Elo -115.2 +/- 62.3 (Tụt dốc so với Phase 72)
+Thắng: 22, Hòa: 24, Thua: 54
+
+Phân tích chi tiết:
+1. Hiệu suất theo màu quân:
+   - Trắng (White): 48.0% (Thắng 16, Thua 18, Hòa 16) -> Sức mạnh tấn công bị giảm (từ 60% xuống 48%).
+   - Đen (Black): 20.0% (Thắng 6, Thua 36, Hòa 8) -> Cải thiện nhẹ về số ván thắng (6 ván so với 3), nhưng tỷ lệ thua vẫn rất cao.
+
+2. Nguyên nhân kết quả:
+   - "Loses on time": Một lượng lớn ván đấu bị thua do hết thời gian (Nextfish: 21 ván, Stockfish: 8 ván). Điều này chứng tỏ việc nới lỏng SEE margin và Futility cho quân Đen đã làm tăng khối lượng tính toán quá mức, khiến engine bị "treo" hoặc tốn quá nhiều thời gian ở các node không hiệu quả.
+   - Sức mạnh Trắng bị ảnh hưởng: Việc thay đổi cấu trúc LMR/Reduction chung để phục vụ quân Đen đã vô tình làm yếu đi khả năng dứt điểm sắc bén của quân Trắng.
+   - Draw Ratio thấp (24%): Engine thi đấu mạo hiểm hơn nhưng không đủ chính xác, dẫn đến việc ván đấu kết thúc nhanh chóng với kết quả thua.
+
+Bài học: Nới lỏng cắt tỉa (pruning) mà không đi kèm với tối ưu hóa tốc độ (speed/time management) là con dao hai lưỡi. Quân Đen cần sự linh hoạt nhưng không được phép làm chậm toàn bộ hệ thống.

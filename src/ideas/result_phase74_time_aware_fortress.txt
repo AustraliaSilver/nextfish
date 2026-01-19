@@ -1,0 +1,19 @@
+Kết quả Thử nghiệm Phase 74: Time-Aware Fortress
+===========================================
+
+Ngày: 18/01/2026
+Đối thủ: StockfishOrig (100 ván, TC 10+0.1)
+Kết quả: Elo -66.8 +/- 56.7 (Cải thiện mạnh mẽ)
+Thắng: 24, Hòa: 33, Thua: 43
+
+Phân tích chi tiết:
+1. Hiệu suất theo màu quân:
+   - Trắng (White): 55.0% (Thắng 17, Thua 12, Hòa 21) -> Duy trì sức mạnh tấn công ổn định.
+   - Đen (Black): 26.0% (Thắng 7, Thua 31, Hòa 12) -> Bước tiến lớn cho quân Đen (từ 18-20% lên 26%).
+
+2. Nguyên nhân thành công:
+   - Giải quyết Time Loss: Việc thống nhất SEE margin (163) và loại bỏ các logic bất đối xứng phức tạp đã giúp engine chạy mượt mà trở lại.
+   - Selective History (Black): Việc chỉ giảm reduction cho các nước đi "siêu history" (> 15000) của quân Đen đã mang lại hiệu quả cao, giúp quân Đen tìm được các nước đi cứu vãn tình thế mà không làm chậm hệ thống.
+   - Singularity Core (614): Mức cân bằng tốt giúp engine phát hiện các nước đi đột phá.
+
+Bài học: Sự đơn giản và hiệu quả trong quản lý thời gian là nền tảng để các ý tưởng chiến thuật phát huy tác dụng. Quân Đen đã bắt đầu "biết thắng" nhiều hơn (7 ván).

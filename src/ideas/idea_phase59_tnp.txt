@@ -1,0 +1,15 @@
+Nextfish Phase 59: The Neural Predator (TNP)
+=========================================
+
+1. Phân tích thất bại V58:
+   - Black Divisor 13000 làm Đen phản ứng quá chậm với các thay đổi đột ngột của NNUE.
+   - Core 630/650 gây ra hiện tượng "Depth Bloat" (phình độ sâu nhưng node kém chất lượng).
+
+2. Cải tiến V59 (The Neural Predator):
+   - Uniform Aspiration: Áp dụng Divisor 11000 cho cả Trắng và Đen. Đen cần sự sắc bén để tồn tại.
+   - Fast Reflex History: Thay đổi decay từ 3/4 (standard) và 15/16 (stubborn) sang đồng nhất 1/2. Engine sẽ ưu tiên các mẫu hình vừa mới phát hiện.
+   - Singularity Core Reset: Quay lại mức 612 chuẩn để lấy lại NPS và độ chính xác của Master.
+   - Aspiration Smoothing: Giữ mức nới rộng 3/4 cho Đen nhưng bắt đầu từ cửa sổ rộng hơn (Divisor 11000).
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Đồng nhất Divisor 11000, cập nhật logic Aging 1/2, khôi phục Core 612.

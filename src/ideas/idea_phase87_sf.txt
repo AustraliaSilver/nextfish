@@ -1,0 +1,19 @@
+Nextfish Phase 87: The Solar Flare (SF)
+=====================================
+
+1. Mục tiêu:
+   - Tỉ lệ thắng của quân Trắng > 70%.
+   - Chuyển hóa ưu thế khai cuộc thành chiến thắng áp đảo.
+
+2. Cải tiến kỹ thuật (Focus on White):
+   - sideToMove == WHITE:
+     + Base Offset: 1185 (Tăng độ sâu tìm kiếm cho các nước đi tấn công).
+     + Improving Weight: 272 (Cực kỳ quyết đoán khi có ưu thế).
+     + History Bonus: (s > 10000) ? 65 (Ưu tiên các đòn đánh quen thuộc).
+     + Aspiration Window: Delta giảm thêm 20% so với Phase 86.
+   - sideToMove == BLACK:
+     + Giữ specs của Phase 74 (ổn định nhất).
+
+3. Thay đổi trong search.cpp:
+   - Triển khai Aspiration Delta cực hẹp cho Trắng.
+   - Tối ưu hóa hàm reduction để quân Trắng "không ngừng tấn công".

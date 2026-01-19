@@ -1,0 +1,21 @@
+Nextfish Phase 107: Safe Chronos & Search Refinement - Cân bằng sức mạnh
+========================================================================
+
+1. Triết lý thiết kế:
+   - Khắc phục lỗi Time Loss của Phase 106. Không "lừa dối" hệ thống quản lý thời gian, mà chỉ khuyến khích engine sử dụng nhiều hơn quỹ thời gian *hiện có* cho các nước đi quan trọng.
+   - Giữ Search ở mức chuẩn Stockfish để đảm bảo Elo cao nhất, chỉ thêm một chút "gia vị" Optimism cho White.
+
+2. Cải tiến kỹ thuật:
+   - Time Management:
+     + White Time Multiplier: 1.2x (Chỉ áp dụng cho `totalTime` trong `search.cpp`).
+     + Điều này giúp Trắng đánh sâu hơn Đen khoảng 1-2 ply mà không vi phạm giới hạn thời gian thực tế của GUI.
+   - Optimism: 160 (White) / 142 (Black). Một sự chênh lệch nhẹ để White chủ động tấn công hơn.
+   - Search: Khôi phục công thức Reduction nguyên bản (LMR 1182). Đây là vùng an toàn tuyệt đối.
+
+3. Kỳ vọng:
+   - Không còn tình trạng thua vì hết giờ (Time Loss).
+   - Winrate quân Trắng đạt mốc 55-60% bền vững.
+   - Elo tổng thể ổn định ở mức gần bằng Stockfish chuẩn.
+
+4. Bước tiếp theo:
+   - Nếu Phase 107 ổn định, chúng ta sẽ bắt đầu tinh chỉnh lại LMR theo từng bước cực nhỏ (1-2 đơn vị) thay vì thay đổi lớn như các Phase trước.

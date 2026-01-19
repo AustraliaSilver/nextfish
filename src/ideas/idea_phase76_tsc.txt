@@ -1,0 +1,18 @@
+Nextfish Phase 76: The Singularity Convergence (TSC)
+==============================================
+
+1. Mục tiêu:
+   - Đánh bại StockfishOrig (Elo > 0).
+   - Tối ưu hóa tuyệt đối tốc độ và độ sâu tìm kiếm.
+
+2. Cải tiến kỹ thuật:
+   - Unified SEE Margin: Tăng lên 168 * depth + captHist / 35. Ngưỡng này cực kỳ khắt khe, buộc engine phải tính toán biến thể thắng quân một cách chuẩn xác nhất.
+   - Reduction Logic:
+     + Singularity Core: 614.
+     + Disadvantage Bonus: (eval < -120) ? 82 : 0 (Gia cố cực mạnh cho quân Đen).
+     + History Scaling: (s > 18000) ? 65 : (s > 12000) ? 50 : (s > 0) ? 25 : 0.
+   - Divisor Optimization: Quay lại Divisor 11800 trong công thức tính delta để tăng độ nhạy NNUE.
+
+3. Thay đổi trong search.cpp:
+   - Cập nhật delta multiplier.
+   - Cập nhật margin SEE và hàm reduction.

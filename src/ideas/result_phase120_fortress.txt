@@ -1,0 +1,18 @@
+Nextfish Phase 120: Master Stability & Micro-Fortress - Gia cố tàn cuộc
+========================================================================
+
+1. Phân tích:
+   - Thử nghiệm 1.5x thời gian cho Đen ở Phase 119 gây mất ổn định nặng vì Search bị hỏng bởi disadvantageBonus.
+   - Tuy nhiên, ý tưởng dùng thêm thời gian để cứu vãn thế cờ vẫn rất tiềm năng nếu được áp dụng một cách cẩn thận (Conservative approach).
+
+2. Cải tiến kỹ thuật:
+   - Black Time Multiplier: 1.1x (Cố định). Cộng thêm 10% thời gian cho Đen để tăng Depth phòng ngự mà không gây rủi ro Time Loss hay hỏng Search heuristics.
+   - Restore Master Search:
+     + White: 1.4x Time, Singularity 640, LMR 1175.
+     + Black: LMR 1182 (Chuẩn SF).
+   - Reduction: Đưa về công thức chuẩn SF (không còn disadvantageBonus).
+
+3. Kỳ vọng:
+   - Khôi phục Elo về mức cao của Master Edition.
+   - Giảm nhẹ tỉ lệ thua của quân Đen nhờ 10% Depth cộng thêm.
+   - Duy trì sức áp đảo của quân Trắng.

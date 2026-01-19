@@ -1,0 +1,17 @@
+Nextfish Phase 79: The Obsidian Singularity (OS)
+==============================================
+
+1. Mục tiêu:
+   - Thay đổi cốt lõi LMR để bứt phá Elo.
+   - Ưu tiên cực cao cho History Score.
+
+2. Cải tiến kỹ thuật:
+   - History Divisor: Giảm từ 3208 xuống 2120 (Tăng ảnh hưởng của History lên ~50%).
+   - Base Offset: Giảm từ 714 xuống 695 (Giảm mức reduction mặc định).
+   - Singularity Core: 614.
+   - Disadvantage Bonus: 80.
+   - History Bonus: 52 (s > 15000).
+
+3. Thay đổi trong search.cpp:
+   - Cập nhật các hằng số LMR cốt lõi.
+   - Cập nhật hàm reduction.

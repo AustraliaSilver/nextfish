@@ -1,0 +1,30 @@
+Nextfish Strategic Plan: Objective White Domination (>70%)
+=========================================================
+
+1. Phân tích yêu cầu:
+   - Hiện trạng: Các phiên bản cân bằng (Phase 89) thất bại vì đánh mất bản sắc "tìm kiếm sâu" của Nextfish.
+   - Mục tiêu: Ép StockfishOrig vào các biến thế phức tạp mà nó thường cắt tỉa (prune) sớm. Quân Trắng phải chấp nhận rủi ro cao hơn để đổi lấy chiều sâu tìm kiếm (Depth).
+
+2. Kế hoạch chi tiết (Step-by-step):
+
+   Bước 1: Triển khai Phase 90 (The White Storm) - Tấn công cực đoan
+   - SEE Margin (White): Giảm xuống 148. Cho phép các đòn hy sinh quân mà Stockfish chuẩn coi là "lỗ" nhưng thực tế mang lại ưu thế vị thế cực lớn.
+   - LMR Base Offset (White): Giảm xuống 1142. Đây là "vũ khí bí mật" để Nextfish nhìn sâu hơn đối thủ từ 2-4 tầng (ply) ở tàn cuộc và trung cuộc phức tạp.
+   - Improving Weight (White): Giảm xuống 232. Khi đang có ưu thế tăng tiến, engine sẽ không được phép dừng lại mà phải đào sâu hơn nữa.
+   - Optimism (White): Tăng lên 168. Buộc engine phải đánh thắng thay vì cầu hòa trong các thế trận ưu thế nhẹ.
+
+   Bước 2: Bảo tồn sức mạnh quân Đen (Fortress Mode)
+   - Sử dụng bộ khung ổn định nhất của Phase 74.
+   - LMR Base Offset (Black): 1182 (Standard).
+   - disadvantageBonus: 84 (Khi eval < -120).
+
+   Bước 3: Tối ưu hóa hệ số Hiệu chỉnh (Correction History)
+   - Đồng nhất Divisor về 11800 để tăng độ nhạy cảm của NNUE với các thay đổi nhỏ trong cấu trúc quân.
+
+   Bước 4: Chu kỳ Kiểm thử & Tinh chỉnh (Iterative Optimization)
+   - Chạy match 100 ván.
+   - Nếu tỉ lệ thắng quân Trắng < 60%: Tiếp tục hạ SEE Margin xuống 140 và LMR xuống 1135.
+   - Nếu tỉ lệ thắng quân Trắng > 60% nhưng Elo tổng vẫn âm nặng: Tăng cường disadvantageBonus cho quân Đen lên 96.
+
+3. Định hướng dài hạn:
+   - Sau khi quân Trắng chạm mốc 70%, sẽ bắt đầu "Phase Resilience" cho quân Đen bằng cách áp dụng logic tìm kiếm chọn lọc (Selective Search) dựa trên History cao.

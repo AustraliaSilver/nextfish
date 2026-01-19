@@ -1,0 +1,19 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 7: White Initiative & Aggressive Lead
+========================================================================
+Mục tiêu: Biến Nextfish thành một "sát thủ" thực sự khi cầm quân Trắng.
+
+1. Tinh chỉnh Optimism cho quân Trắng:
+   - Tăng mức độ lạc quan (Optimism) của quân Trắng khi điểm Eval dương.
+   - Giúp engine ưu tiên giữ quân, giữ thế trận phức tạp để ép thắng thay vì chấp nhận hòa.
+
+2. Giảm LMR cho quân Trắng khi có ưu thế:
+   - Nếu (us == WHITE && eval > 50), giảm mức độ reduction (giảm độ sâu) cho các nước đi tấn công.
+   - Điều này cho phép quân Trắng nhìn xa hơn trong các đòn phối hợp tấn công.
+
+3. Tăng cường Singular Extension cho Trắng:
+   - Làm cho Trắng "quyết liệt" hơn trong việc kiểm tra các nước đi duy nhất khi đang ở thế thượng phong.
+
+4. Tinh chỉnh Quản lý thời gian cho Trắng:
+   - Dành thêm 5-10% thời gian cho Trắng ở trung cuộc nếu vị thế đang có xu hướng tăng điểm.
+
+File cần sửa: search.cpp

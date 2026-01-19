@@ -1,0 +1,19 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 2: Safety-Aware Aggression
+===========================================================
+Dựa trên thất bại 1-2 trước Stockfish Orig, Nextfish cần cân bằng giữa việc tìm sâu và việc giữ an toàn.
+
+1. Tinh chỉnh RFP (Reverse Futility Pruning) với Check-Awareness:
+   - RFP quá hung hăng có thể bỏ qua các nước chiếu hiểm hóc. 
+   - Giải pháp: Tăng ngưỡng Margin khi đối phương có các nước đi đe dọa trực tiếp (Threats).
+
+2. Cải thiện LMR với History Gravity:
+   - Các nước đi có History Score cực thấp (đã từng thua trong các nhánh khác) cần bị giảm độ sâu (Reduction) mạnh hơn nữa.
+   - Ngược lại, các nước đi có History Score cao cần được bảo vệ (giảm mức độ Reduction).
+
+3. Điều chỉnh Quản lý thời gian (Time Management):
+   - Engine thua 2 ván ở giai đoạn phức tạp. Cần tăng thêm thời gian khi điểm số Eval biến động mạnh (instability) giữa các node.
+
+4. Cải thiện SEE (Static Exchange Evaluation) Pruning:
+   - Cắt tỉa các nước ăn quân có SEE âm nặng hơn để tránh các bẫy đổi quân lỗ.
+
+File cần sửa: search.cpp, timeman.cpp

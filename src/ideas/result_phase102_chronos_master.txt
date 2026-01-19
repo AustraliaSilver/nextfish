@@ -1,0 +1,30 @@
+Nextfish Phase 102: The Chronos Overlord - Lý thuyết và Kỳ vọng
+============================================================
+
+1. Bối cảnh:
+   - Phase 101 (Absolute Domination) thất bại do đẩy các thông số Optimism và Contempt lên quá cao, khiến White bị "ảo tưởng" (delusional) về thế trận, dẫn đến việc bỏ lỡ các cơ hội thực tế hoặc lao vào biến thua.
+   - Stockfish chuẩn có khả năng phòng ngự và tìm biến hòa cực tốt, đòi hỏi Nextfish phải có Depth sâu hơn để bẻ gãy các cấu trúc phòng ngự này.
+
+2. Cải tiến trong Phase 102 (Chronos Master):
+
+   A. Chronos Dominance (Áp đảo thời gian):
+      - White Time Multiplier: 1.3x.
+      - Lý do: Đây là thay đổi quan trọng nhất. Bằng cách cho phép quân Trắng suy nghĩ lâu hơn 30%, chúng ta tăng xác suất tìm thấy "Critical Move" ở trung cuộc. Trong cờ vua engine, 1-2 ply cộng thêm ở các node quan trọng có thể thay đổi hoàn toàn cục diện từ hòa sang thắng.
+
+   B. Tinh chỉnh Aspiration Window:
+      - Khi White có ưu thế (avg > 50), thu hẹp cửa sổ tìm kiếm (delta * 0.8).
+      - Lý do: Giúp tập trung tài nguyên tính toán vào các biến thắng rõ rệt nhất, tránh lãng phí thời gian vào các biến phụ không cần thiết.
+
+   C. Hiệu chỉnh Optimism & Contempt (The Golden Balance):
+      - White Optimism: 180 (Giảm từ 212). Trắng vẫn tham vọng nhưng tỉnh táo hơn.
+      - White Contempt: +20 (Giảm từ 32). Tránh hòa nhưng không cố chấp ép thắng trong những thế trận hoàn toàn bằng phân.
+      - Black Optimism: 110. Ép quân Đen tin vào thế hòa để phòng ngự lì lợm hơn.
+
+   D. LMR Asymmetry:
+      - White Base: 1150 (Deep). Nới lỏng cắt tỉa để White nhìn sâu hơn.
+      - Black Base: 1230 (Strict). Siết chặt cắt tỉa để Đen không mạo hiểm vô ích.
+
+3. Kỳ vọng:
+   - Winrate quân Trắng đạt mốc 65-70%.
+   - Draw rate giảm xuống do White có đủ Depth để dứt điểm tàn cuộc.
+   - Độ ổn định cao hơn Phase 101 (Elo không bị sụt giảm âm nặng).

@@ -1,0 +1,83 @@
+name: Nextfish Auto-Tuning Loop
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y g++ make wget
+        
+        # Tải mạng thần kinh (NNUE) cần thiết để biên dịch
+        cd src
+        wget https://tests.stockfishchess.org/api/nn/nn-c288c895ea92.nnue
+        wget https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue
+        cd ..
+
+        # Tải fastchess v1.7.0-alpha mã nguồn
+        wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
+        tar -xvf fastchess-linux-x86-64.tar
+        
+        # Biên dịch fastchess từ mã nguồn
+        cd fastchess-linux-x86-64
+        make -j$(nproc)
+        mv fastchess ../
+        cd ..
+        chmod +x fastchess
+        
+        # Tải Stockfish chuẩn sf_17.1 làm đối thủ (Baseline)
+        wget https://github.com/official-stockfish/Stockfish/releases/download/sf_17.1/stockfish-ubuntu-x86-64-avx2.tar
+        tar -xvf stockfish-ubuntu-x86-64-avx2.tar
+        # Tìm và di chuyển engine (Stockfish 17.1 binary thường nằm trực tiếp hoặc trong folder)
+        mv stockfish/stockfish-ubuntu-x86-64-avx2 ./stockfish_baseline || mv stockfish-ubuntu-x86-64-avx2 ./stockfish_baseline
+        chmod +x stockfish_baseline
+
+    - name: Run Autotune Script
+      id: tuning
+      run: |
+        python3 autotune.py
+        echo "exit_code=$?" >> $GITHUB_OUTPUT
+      continue-on-error: true
+
+    - name: Check for Final Push (Iteration 15)
+      if: steps.tuning.outputs.exit_code == '100'
+      run: |
+        git config --global user.name "Nextfish Auto-Tuner"
+        git config --global user.email "tuner@nextfish.ai"
+        python3 -c "import json; f='src/ideas/tuning_state.json'; s=json.load(open(f)); s['iteration']=0; json.dump(s, open(f, 'w'), indent=4)"
+        git add .
+        git commit -m "chore: Nextfish Auto-Tuning Cycle Complete (Iteration 15)"
+        git push origin master
+      env:
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+    - name: Regular Progress Commit
+      if: steps.tuning.outputs.exit_code != '100'
+      run: |
+        git config --global user.name "Nextfish Auto-Tuner"
+        git config --global user.email "tuner@nextfish.ai"
+        git add .
+        git commit -m "docs: Tuning iteration progress [skip ci]" || echo "No changes to commit"
+        git push origin master
+      env:
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}

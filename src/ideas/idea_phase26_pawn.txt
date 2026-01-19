@@ -1,0 +1,16 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 26: The Pawn Uprising
+========================================================================
+Mục tiêu: Đạt Elo dương bằng cách thay đổi giá trị đánh giá tàn cuộc.
+
+1. Tăng cường giá trị quân Tốt (types.h hoặc evaluate.cpp):
+   - Tăng nhẹ giá trị Pawn trong tàn cuộc (Endgame weight).
+   - Điều này buộc Search phải ưu tiên giữ Tốt và đẩy Tốt phong cấp.
+
+2. Khôi phục Search V24 (Bản mạnh nhất):
+   - rootDelta = 610.
+   - History Bonus = 20.
+   - Time Management: Unified (1.0).
+
+3. Mục tiêu: Tạo ra sự khác biệt về mặt chiến lược để đánh lừa Search của Stockfish Orig.
+
+File cần sửa: types.h, search.cpp, timeman.cpp

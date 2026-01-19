@@ -1,0 +1,16 @@
+Nextfish Phase 64: The Sovereign Oracle (TSO)
+=========================================
+
+1. Phân tích kết quả V63:
+   - Equilibrium Core 640 vẫn làm search bị "trễ" nhịp so với Master.
+   - Việc dùng hằng số Core cố định không linh hoạt trước các đòn phối hợp đa dạng.
+
+2. Cải tiến V64 (The Sovereign Oracle):
+   - Restore Singularity Core 612: Quay lại hằng số nguyên thủy để khôi phục NPS và độ chính xác tuyệt đối.
+   - Dynamic Oracle Windows: 
+     + Nếu eval trend xấu (us == BLACK && bestValue < alpha): delta += delta * 1/2 (Nới rộng cực nhanh).
+     + Nếu eval trend tốt (us == WHITE && bestValue > beta): delta += delta * 1/4 (Bó hẹp để dứt điểm).
+   - Clean Restoration: Loại bỏ mọi logic buff rườm rà trong hàm reduction. Nextfish sẽ trở lại hình dáng của một Oracle - nhìn thấu tương lai bằng cách điều chỉnh nhãn quan (Windows).
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Khôi phục Core 612, triển khai Dynamic Aspiration Smoothing.

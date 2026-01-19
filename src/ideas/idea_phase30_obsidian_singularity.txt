@@ -1,0 +1,16 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 30: The Obsidian Singularity
+=============================================================================
+Mục tiêu: Đạt hiệu suất cao nhất bằng cách dùng Search V24 và Eval Obsidian.
+
+1. Giữ nguyên Phase-based Eval Scaling (evaluate.cpp):
+   - `score = score * (230 + phase) / 330`.
+   - Đây là lõi đánh giá độc bản của Obsidian.
+
+2. Khôi phục hoàn toàn Search V24 (search.cpp):
+   - Stat Bonus: Quay lại 116 (Stockfish default).
+   - rootDelta: 610.
+   - historyBonus: 20.
+
+3. Mục tiêu: Kết hợp sự ổn định của V24 và sự thông minh của Obsidian Eval.
+
+File cần sửa: search.cpp

@@ -1,0 +1,18 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 20: Zenith - Pure Efficiency
+===================================================================
+Mục tiêu: Đạt kết quả hòa hoặc thắng Stockfish Orig trong 40 ván bằng hiệu suất thuần túy.
+
+1. Loại bỏ kiến trúc VASA (search.h & search.cpp):
+   - Xóa biến volatility. Trả Search Stack về trạng thái nhẹ nhàng nhất.
+   - Lý do: Volatility gây loãng search và làm chậm engine trong các ván đấu tính giờ.
+
+2. Tối ưu hóa LMR "Golden Ratio":
+   - Sử dụng hệ số rootDelta 605 (ổn định nhất).
+   - Tăng cường Disadvantage Protection cho cả hai bên (delta < -80).
+
+3. Tinh chỉnh NMP & RFP bền bỉ:
+   - Sử dụng các hằng số từ bản V8 nhưng tinh chỉnh nhẹ để tăng tốc độ xử lý node.
+
+4. Mục tiêu: Quay lại Elo dương bằng cách chạy nhanh hơn và cắt tỉa chính xác hơn.
+
+File cần sửa: search.h, search.cpp

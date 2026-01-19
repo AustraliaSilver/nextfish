@@ -1,0 +1,17 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 39: NRA - The Great Simplification
+=====================================================================================
+Mục tiêu: Khôi phục lại trạng thái Elo dương bằng cách tối giản hóa logic.
+
+1. REVERT ALL COMPLEX LOGIC:
+   - Khôi phục hàm reduction về trạng thái Phase 32: if (criticality > 75) r = r * 870 / 1024.
+   - Xóa bỏ phân cấp 100, xóa bỏ scale 780, 820.
+   - Xóa bỏ toàn bộ "The Iron Curtain" (permanentBlackBuffer).
+
+2. Keep Phase 35 Criticality Core:
+   - Giữ nguyên việc dùng 'eval' để tính Criticality vì nó chính xác hơn 'staticEval'.
+
+3. Single Minimal Defensive Tweak:
+   - Chỉ giữ lại duy nhất: delta += (us == BLACK) ? delta / 2 : delta / 3 trong aspiration. 
+   - Đây là logic ổn định nhất giúp Đen thoát hiểm sớm.
+
+File cần sửa: search.cpp

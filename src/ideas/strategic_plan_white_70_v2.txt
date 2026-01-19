@@ -1,0 +1,33 @@
+Nextfish Strategic Plan: Chinh phục mốc >70% Winrate White
+===========================================================
+
+1. Mục tiêu tối thượng:
+   - Đạt tỉ lệ thắng quân Trắng > 70% trước Stockfish chuẩn.
+   - Đây là tiền đề để xây dựng một engine "siêu tấn công".
+
+2. Phân tích chiến thuật:
+   - White Storm (Phase 90-101) đã chứng minh Nextfish có thể ép sân, nhưng Stockfish chuẩn quá giỏi trong việc tìm biến hòa.
+   - Phase 102 sẽ chuyển trọng tâm sang "Chronos Dominance" (Áp đảo thời gian). Trắng sẽ được cấp thêm 30% quỹ thời gian để tìm ra các kẽ hở mà đối thủ bỏ qua do cắt tỉa quá sớm.
+
+3. Chi tiết kỹ thuật Phase 102 (The Chronos Overlord):
+
+   A. Time Management (Quản lý thời gian):
+      - Implement bonus multiplier cho White trong hàm tính toán thời gian.
+      - White Time = Base Time * 1.3.
+
+   B. Search Parameters (Thông số tìm kiếm):
+      - White LMR Base: 1150 (Deep Search).
+      - White Singularity: 628.
+      - White Optimism: 180.
+      - White Contempt: +20 cp (Evaluator level).
+      - Black LMR Base: 1230 (Fortress).
+      - Black disadvantageBonus: 150.
+
+   C. Aspiration Window:
+      - Sử dụng cửa sổ hẹp (delta * 4/5) cho White khi avg > 50 để dứt điểm.
+
+4. Lộ trình thực hiện:
+   - Bước 1: Cập nhật logic Time Bonus cho Trắng trong search.cpp.
+   - Bước 2: Triển khai bộ tham số LMR/Optimism bất đối xứng.
+   - Bước 3: Build và chạy match kiểm chứng.
+   - Bước 4: Phân tích PGN để xem White có dứt điểm được các thế hòa hay không.

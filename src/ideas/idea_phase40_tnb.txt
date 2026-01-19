@@ -1,0 +1,18 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 40: The Neural Bypass
+=====================================================================================
+Mục tiêu: Đưa Elo về mức dương bằng cách can thiệp vào quá trình ghi TT.
+
+1. TT Value Reinforcement (Step 4):
+   - Khi ghi vào TT (Transposition Table), nếu (us == BLACK) và (bestValue > eval), hãy tăng trọng số của bestValue lên một chút trước khi lưu.
+   - Giúp quân Đen "nhớ" các cơ hội phản công tốt hơn trong các lần lặp sau (iterative deepening).
+
+2. Evaluation Smoothing:
+   - Thay vì 'eval' nhảy vọt, sử dụng: eval = (eval + unadjustedStaticEval) / 2.
+   - Điều này làm giảm độ nhiễu của Correction History, giúp Search ổn định hơn.
+
+3. Minimal Reduction Core (Simplified):
+   - Xóa bỏ tham số us khỏi reduction. Quay lại logic V32 thuần túy:
+     if (criticality > 75) r = r * 870 / 1024.
+   - Giữ nguyên việc tính criticality dựa trên 'eval'.
+
+File cần sửa: search.cpp, search.h

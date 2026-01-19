@@ -1,0 +1,18 @@
+Nextfish Phase 104: Restoration & Precision Bias - Chiến thuật "Vết dầu loang"
+========================================================================
+
+1. Triết lý thiết kế:
+   - Thay vì cố gắng thay đổi toàn bộ kiến trúc Search (gây mất Elo nặng ở Phase 102-103), Phase 104 tập trung vào việc khôi phục lại 100% "linh hồn" của Stockfish và chỉ thêm vào các tác động cực nhỏ.
+   - Mục tiêu: White thắng bằng Depth và thời gian, không thắng bằng cách "ép điểm" giả tạo.
+
+2. Cải tiến kỹ thuật trọng yếu:
+   - Search Restoration: Khôi phục công thức Reduction nguyên bản, bao gồm cả biến `delta` và `rootDelta`. Đây là chìa khóa để lấy lại mức Elo 3600+.
+   - LMR Symmetry: Đưa baseOffset về 1182 (Chuẩn SF) cho cả hai bên. Nextfish sẽ không còn bị thụ động khi cầm Đen.
+   - Chronos Boost (1.1x): Giữ mức tăng thời gian 10% cho Trắng. Trong tàn cuộc, 10% này tương đương với việc White có thêm 1-2 ply chiều sâu so với đối thủ.
+   - Micro-Contempt (+4): Giảm Contempt xuống mức tối thiểu. Chỉ đủ để engine ưu tiên các biến có tiềm năng thắng hơn là đổi quân hòa ngay lập tức.
+   - Optimism Tuning (158/142): Mức bias nhẹ giúp White tự tin hơn một chút nhưng vẫn giữ đôi chân trên mặt đất.
+
+3. Kỳ vọng:
+   - Elo phục hồi mạnh mẽ (về mức -20 đến -50 so với bản gốc).
+   - Draw rate tăng lại (điều này tốt, vì nó cho thấy engine đã chơi chính xác hơn).
+   - Winrate White sẽ nhích dần lên qua việc tích lũy lợi thế nhỏ nhờ chiều sâu (Depth).

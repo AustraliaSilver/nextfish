@@ -1,0 +1,18 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 29: The Obsidian Zenith
+========================================================================
+Mục tiêu: Đạt Elo dương bằng cách cân bằng tinh hoa Obsidian và Stockfish.
+
+1. Giữ nguyên Phase-based Eval Scaling (evaluate.cpp):
+   - Đây là vũ khí giúp quân Đen thắng 3 ván. Tuyệt đối giữ lại.
+
+2. Tinh chỉnh Stat Bonus (search.cpp):
+   - Giảm từ 175 xuống 145 (Mức trung gian giữa Stockfish 116 và Obsidian 175).
+   - Giúp Search ổn định hơn, không bị "quá khích" bởi lịch sử nước đi.
+
+3. Tối ưu hóa LMR (search.cpp):
+   - historyBonus = 25 (Thay vì 30).
+   - rootDelta = 612 (Tăng nhẹ để tăng độ sâu).
+
+4. Mục tiêu: Tổng Elo dương hoặc hòa Stockfish Orig.
+
+File cần sửa: search.cpp

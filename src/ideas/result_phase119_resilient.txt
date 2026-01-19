@@ -1,0 +1,16 @@
+Nextfish Phase 119: The Resilient Defender - Cứu vãn "Vùng nguy hiểm"
+=====================================================================
+
+1. Ý tưởng cốt lõi:
+   - Khi quân Đen rơi vào khoảng điểm [-0.1 đến -1.5 CP], đây là lúc trận đấu dễ bị tuột khỏi tầm tay.
+   - Bằng cách cấp thêm 50% thời gian (1.5x) và nới lỏng LMR (disadvantageBonus), quân Đen sẽ có đủ Depth để tìm thấy những nước đi "không tưởng" (Hidden resources) để cầm hòa hoặc lật ngược thế cờ.
+
+2. Cải tiến kỹ thuật:
+   - Dynamic Black Time: Multiplier 1.5x khi `avg < -10` và `avg > -150`.
+   - Black Reduction Nudge: `disadvantageBonus = 120` khi `eval < -10`.
+   - White Master Core: Giữ nguyên bộ khung 1.4x Time, Singularity 640, LMR 1175 từ Master Edition.
+
+3. Kỳ vọng:
+   - Giảm tỉ lệ thua của quân Đen một cách rõ rệt.
+   - Chuyển hóa các ván Đen thua thành ván hòa.
+   - Duy trì Elo dương ổn định và Winrate quân Trắng 70%.

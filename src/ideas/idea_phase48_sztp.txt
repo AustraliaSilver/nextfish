@@ -1,0 +1,17 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 48: The Singularity Zenith - Tactical Pulse (SZTP)
+=====================================================================================
+Mục tiêu: Đạt +30 Elo bằng cách gia cố trung cuộc cho quân Đen.
+
+1. Tactical Pulse for Black (Step 14):
+   - Nếu (us == BLACK) và (depth > 6) và (depth < 14) và (nước đi là Capture):
+     Giảm reduction đi thêm 5% (r = r * 970 / 1024).
+   - Tại sao? Đây là dải depth "tử huyệt" nơi Đen hay bị sót các đòn phối hợp bắt quân. Việc giữ thêm một chút depth cho các nước bắt quân giúp Đen phản đòn hoặc giải tỏa áp lực tốt hơn.
+
+2. Aspiration Window Refinement:
+   - Giữ nguyên delta += delta / 2 cho quân ĐEN.
+   - Thêm logic: Nếu (us == BLACK) và (bestValue < alpha - 100), tăng delta mạnh hơn nữa (delta += delta) để tìm đường sống trong các thế trận gần như thua.
+
+3. Keep Singularity Core 612:
+   - Hệ số này đang làm rất tốt cho quân Trắng, không thay đổi.
+
+File cần sửa: search.cpp, search.h

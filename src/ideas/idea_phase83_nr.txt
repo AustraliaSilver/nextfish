@@ -1,0 +1,16 @@
+Nextfish Phase 83: The Neural Resonance (NR)
+========================================
+
+1. Mục tiêu:
+   - Vượt qua Stockfish bằng cách tối ưu hóa sự tương tác giữa Search và NNUE.
+   - Gia cố quân Đen bằng cơ chế Resilience Factor.
+
+2. Cải tiến kỹ thuật:
+   - Divisor: 11800 (Mức cân bằng tuyệt đối).
+   - Base Specs: Khôi phục bộ khung Phase 74 (SEE 163, Core 614).
+   - Neural Scaling: Điều chỉnh optimism dựa trên màu quân một cách bất đối xứng để khuyến khích quân Đen tìm đường hòa và quân Trắng tìm đường thắng.
+   - LMR: Quay lại mức Standard của Phase 74.
+
+3. Thay đổi trong search.cpp:
+   - Cập nhật Divisor 11800.
+   - Tinh chỉnh optimism scaling.

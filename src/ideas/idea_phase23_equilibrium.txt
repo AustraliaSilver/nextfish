@@ -1,0 +1,16 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 23: Nextfish Equilibrium
+========================================================================
+Mục tiêu: Đạt Elo dương bằng cách tối ưu hóa tốc độ thay vì độ sâu đơn thuần.
+
+1. Asymmetric Search Speed (search.cpp):
+   - Loại bỏ Iron Guard Bypass (vì làm chậm engine).
+   - Thiết lập rootDelta = 615 cho Trắng (Tấn công) và rootDelta = 590 cho Đen (Phòng thủ siêu nhanh).
+   - Đen sẽ cắt tỉa cực mạnh để tăng tốc độ duyệt node, ưu tiên các biến thể hòa.
+
+2. Tối ưu hóa Aspiration Window (search.cpp):
+   - Thu hẹp Aspiration Window của quân Đen để tập trung vào các nước đi ổn định nhất.
+
+3. Refined Time Management (timeman.cpp):
+   - Dành thêm 20% thời gian cho Đen ở giai đoạn Trung cuộc để tránh bị ép chết.
+
+File cần sửa: search.cpp, timeman.cpp

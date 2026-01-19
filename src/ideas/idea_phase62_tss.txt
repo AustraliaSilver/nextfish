@@ -1,0 +1,15 @@
+Nextfish Phase 62: The Sovereign Singularity (TSS)
+============================================
+
+1. Phân tích kết quả V61:
+   - Tính ổn định (Draw) rất tốt nhưng thiếu sức mạnh dứt điểm và khả năng chống đỡ đòn phối hợp sâu.
+   - Singularity Core 612/618 vẫn còn quá "hiền", chưa đủ để tạo ra sự khác biệt về độ sâu tìm kiếm.
+
+2. Cải tiến V62 (The Sovereign Singularity):
+   - The Titan Core (750): Tăng vọt Singularity Core lên 750 cho cả Trắng và Đen.
+     + Hệ quả: Giảm mạnh chỉ số Reduction tổng thể. Engine sẽ tìm kiếm sâu hơn đáng kể ở các biến thế có history tốt.
+   - Master Aspiration: Đồng nhất Divisor 12000 cho cả hai bên để triệt tiêu lỗi Windows.
+   - Disadvantage Sentinel: Giữ buff 40 cho Đen để gia cố thêm lớp giáp cuối cùng.
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Cập nhật Divisor 12000 và Titan Core 750.

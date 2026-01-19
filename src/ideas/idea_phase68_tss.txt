@@ -1,0 +1,18 @@
+Nextfish Phase 68: The Sovereign Spear (TSS)
+=========================================
+
+1. Phân tích kết quả V67:
+   - Thành công: Quân Đen thủ cực tốt (Score 0.310), thắng 7 ván.
+   - Thất bại: Quân Trắng quá "hiền" (Score 0.530). Core 615 làm Trắng thiếu chiều sâu để dứt điểm các ván thắng.
+
+2. Cải tiến V68 (The Sovereign Spear):
+   - White Spear Core (600): Hạ Core của Trắng xuống 600 để giảm mạnh Reduction, ép engine nhìn sâu hơn vào các biến thế tấn công.
+   - Black Aegis Core (618): Giữ Core Đen ở mức 618 để duy trì khả năng phòng thủ đã chứng minh hiệu quả.
+   - Predator Windows: 
+     + White Divisor = 11000 (Tấn công hung hãn).
+     + Black Divisor = 12000 (Phòng thủ ổn định).
+   - Emergency Time: Buff thời gian cho Đen khi bị chiếu (In Check).
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Triển khai Core và Divisor bất đối xứng.
+   - timeman.cpp: Thêm logic Emergency Time cho Đen.

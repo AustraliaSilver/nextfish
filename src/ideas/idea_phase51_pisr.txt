@@ -1,0 +1,21 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 51: Plenty-Inspired Search Refinement (PISR)
+=====================================================================================
+Mục tiêu: Áp dụng các kỹ thuật thành công từ PlentyChess để tăng Elo tổng thể.
+
+1. High-Value Threat-Aware Move Ordering (Inspired by Plenty):
+   - Trong MovePicker::score cho nước tĩnh (QUIETS):
+     + Hiện tại SF dùng: multiplier 20 cho "escape bonus" (thoát khỏi đe dọa).
+     + PlentyChess dùng các hằng số cực lớn cho Queen/Rook thoát khỏi đòn tấn công của quân nhẹ.
+   - Cải tiến: Nếu quân đang đi là Queen/Rook và nó đang bị Pawn/Knight/Bishop tấn công, tăng bonus lên gấp đôi (multiplier 40 thay vì 20).
+   - Hiệu quả: Giúp quân Đen (thường bị tấn công) tìm ra các nước rút lui an toàn sớm hơn trong cây tìm kiếm.
+
+2. Aspiration Delta Divisor Tuning:
+   - PlentyChess dùng công thức Quadratic cho Delta với số chia 13052.
+   - Nextfish hiện dùng 12000. Tôi sẽ thử nghiệm hạ xuống 11000 để nới rộng cửa sổ nhanh hơn một chút, tránh việc re-search quá nhiều ở depth cao.
+
+3. Refined Disadvantage LMR (Singularity):
+   - PlentyChess giảm LMR dựa trên "Early History Factor".
+   - Áp dụng vào lõi Singularity: Nếu (delta < -150) - Đen đang cực kỳ bất lợi:
+     Giảm Singularity Core xuống 590 (mạnh hơn cả mức 600 hiện tại).
+
+File cần sửa: movepick.cpp, search.cpp

@@ -1,0 +1,16 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 25: Eternal Black
+===================================================================
+Mục tiêu: Xóa bỏ 13 ván thua của quân Đen bằng cách tối ưu hóa tàn cuộc.
+
+1. Tăng cường Time Management cho quân Đen (timeman.cpp):
+   - sideBonus cho Đen: 1.15 (Tăng 15% thời gian để suy nghĩ kỹ hơn).
+   - Đặc biệt tăng maxConstant lên 3.0 khi cầm Đen để cho phép engine suy nghĩ cực sâu ở các nước đi quyết định tàn cuộc.
+
+2. Giữ nguyên Search của V24:
+   - rootDelta = 610.
+   - History Bonus = 20.
+   - Disadvantage Bonus = 50.
+
+3. Mục tiêu: San bằng tỉ số với Stockfish Orig (Elo >= 0).
+
+File cần sửa: timeman.cpp

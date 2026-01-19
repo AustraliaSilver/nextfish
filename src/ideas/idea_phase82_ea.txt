@@ -1,0 +1,16 @@
+Nextfish Phase 82: The Equilibrium Absolute (EA)
+===========================================
+
+1. Mục tiêu:
+   - Đưa quân Đen lên tầm cao mới bằng cách sử dụng bộ khung hiệu suất cao của quân Trắng.
+   - Giữ nguyên sức mạnh dứt điểm của quân Trắng.
+
+2. Cải tiến kỹ thuật:
+   - Unified LMR: Sử dụng thông số quân Trắng của Phase 81 cho cả hai bên để đồng nhất sức mạnh tính toán.
+   - Elite History (Black): Nếu (us == BLACK && s > 18000), historyBonus = 75 (Tăng cực mạnh ưu tiên nước đi tinh hoa).
+   - Divisor: 11200 (Tối ưu hóa độ sâu).
+   - SEE Margin: 162 cố định.
+
+3. Thay đổi trong search.cpp:
+   - Thống nhất hàm reduction.
+   - Triển khai bộ lọc Elite History cho quân Đen.

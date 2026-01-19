@@ -1,0 +1,18 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 11: Plenty-Inspired Intelligence
+========================================================================
+Dựa trên kiến trúc của PlentyChess, Nextfish sẽ áp dụng các cải tiến sau:
+
+1. NMP Sophistication:
+   - Cập nhật công thức R của Null Move Pruning.
+   - Sử dụng: R = base + depth/div + min(eval_diff/divisor, max_limit).
+   - Giúp engine "nhảy vọt" độ sâu khi ưu thế đã quá rõ ràng.
+
+2. Quadratic Aspiration Windows:
+   - Thay đổi cách tính delta khởi đầu của cửa sổ Aspiration.
+   - Sử dụng bình phương điểm số trung bình (avg * avg) để tự động nới rộng cửa sổ khi vị thế biến động mạnh.
+
+3. Refined Correction Weights:
+   - Tinh chỉnh lại các hằng số trong hàm correction_value dựa trên các "Correction Factors" của PlentyChess.
+   - Tăng trọng số cho các lỗi hiệu chỉnh (pcv, micv) để đánh giá vị thế "sạch" hơn.
+
+File cần sửa: search.cpp

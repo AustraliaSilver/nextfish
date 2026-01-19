@@ -1,0 +1,16 @@
+Nextfish Phase 66: The Sovereign Zenith (TSZ)
+=========================================
+
+1. Phân tích kết quả V65:
+   - Thành công: Quân Đen đã biết thắng (7 ván), chứng tỏ Tactical Leverage và Oracle Windows đang đi đúng hướng.
+   - Điểm yếu: Black Score 0.300 vẫn thấp. Việc nới rộng cửa sổ 50% (delta/2) gây ra một số node rác ở tàn cuộc phức tạp.
+
+2. Cải tiến V66 (The Sovereign Zenith):
+   - The Golden Smoothing (2.5): 
+     + Black failing low: delta += delta / 2.5 (Nới rộng 40% thay vì 50% để tăng tính tập trung).
+     + White failing low: delta += delta / 2.8 (Giữ nguyên - Đã rất tốt cho tấn công).
+   - Fine-Tuned Leverage: tacticalLeverage = historyBonus / 12 (Tinh chỉnh lại để tránh over-extension).
+   - Solidified Aegis: disadvantageBonus = 50 (Tăng từ 40 để bảo vệ thế trận bị ép tốt hơn).
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Cập nhật logic Smoothing 2.5, tinh chỉnh Leverage và Aegis.

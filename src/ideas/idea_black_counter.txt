@@ -1,0 +1,19 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 9: Black Counter-Puncher
+====================================================================
+Mục tiêu: Tăng tỉ lệ hòa và thắng khi cầm quân Đen, giảm tỉ lệ thua (hiện đang là 10/20 ván).
+
+1. Giảm LMR cho quân Đen trong các thế trận cân bằng:
+   - Nếu (us == BLACK && abs(eval) < 30), giảm mức độ reduction.
+   - Giúp Đen tìm ra các nước đi tinh tế để hóa giải áp lực từ Trắng sớm hơn.
+
+2. Tăng cường Singular Extension cho Đen:
+   - Khi Đen chỉ có một nước đi hợp lệ duy nhất để không bị thua (singular move), engine sẽ tự động đào sâu hơn (extension) mạnh mẽ hơn quân Trắng.
+
+3. Điều chỉnh NMP (Null Move Pruning) an toàn cho Đen:
+   - Quân Đen sẽ hạn chế "bỏ lượt" (Null move) nếu vị thế chưa thực sự ổn định.
+   - Tránh việc bị Trắng tạo ra các đòn phối hợp bất ngờ sau nước Null move.
+
+4. Tinh chỉnh SEE (Static Exchange Evaluation) cho Đen:
+   - Ưu tiên các nước đổi quân giúp đơn giản hóa thế trận về hướng hòa nếu đang bị ép.
+
+File cần sửa: search.cpp

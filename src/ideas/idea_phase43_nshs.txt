@@ -1,0 +1,18 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 43: Neural Symmetry & History Shield (NSHS)
+=====================================================================================
+Mục tiêu: Xóa bỏ nốt khoảng cách -29 Elo bằng cách tối ưu chiều sâu phòng thủ của quân Đen.
+
+1. Asymmetric Singularity Core:
+   - Trong hàm reduction, thay vì dùng hằng số 610 cho cả hai bên, chúng ta sẽ phân tách:
+     + White Core: 610 (Giữ nguyên để bảo toàn score 0.650 tuyệt vời).
+     + Black Core: 585 (Giảm nhẹ hệ số này giúp quân Đen giảm độ sâu ít hơn, nhìn xa hơn trong phòng thủ).
+
+2. History Shield cho quân Đen:
+   - Nếu (us == BLACK) và nước đi có điểm history (s) cực cao (> 10000):
+     Giảm thêm một lượng nhỏ reduction (r = r * 920 / 1024).
+   - Điều này tạo ra một "tấm khiên" bảo vệ các nước đi phòng thủ mà Search đã tin tưởng từ trước.
+
+3. Khôi phục tham số Color (us):
+   - Truyền lại 'us' vào hàm reduction (đây là biến register, không gây sụt giảm NPS như các phép tính abs phức tạp).
+
+File cần sửa: search.cpp, search.h

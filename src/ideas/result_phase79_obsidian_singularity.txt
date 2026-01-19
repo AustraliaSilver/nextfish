@@ -1,0 +1,19 @@
+Kết quả Thử nghiệm Phase 79: The Obsidian Singularity
+======================================================
+
+Ngày: 18/01/2026
+Đối thủ: StockfishOrig (100 ván, TC 10+0.1)
+Kết quả: Elo -190.8 +/- 63.4 (Thất bại tồi tệ nhất)
+Thắng: 11, Hòa: 28, Thua: 61
+
+Phân tích chi tiết:
+1. Hiệu suất theo màu quân:
+   - Trắng (White): 43.0% (Thắng 10, Thua 17, Hòa 23) -> Lần đầu tiên quân Trắng có hiệu suất < 50%.
+   - Đen (Black): 7.0% (Thắng 1, Thua 44, Hòa 5) -> Quân Đen hoàn toàn mất khả năng phòng thủ.
+
+2. Nguyên nhân thất bại:
+   - History Divisor (2120): Việc quá ưu tiên History làm engine bỏ qua các biến thể chiến thuật quan trọng nhưng chưa có lịch sử tốt.
+   - Base Offset (695): Giảm mức reduction mặc định quá thấp khiến engine không thể đạt tới độ sâu cần thiết để chống lại StockfishOrig.
+   - Mất cân bằng hệ thống: Các hằng số LMR mới không còn tương thích với bất kỳ cơ chế nào khác trong search.cpp.
+
+Bài học: Tuyệt đối không được thay đổi các hằng số LMR cốt lõi (Divisor, Offset) một cách cực đoan. Mọi thay đổi Elo cao của Stockfish luôn mang tính tiến hóa (evolutionary) chứ không phải cách mạng (revolutionary) ở cấp độ hằng số cơ bản.

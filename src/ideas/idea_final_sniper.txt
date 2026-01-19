@@ -1,0 +1,17 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 17: VASA Sniper & Fortress
+====================================================================
+Mục tiêu: Đạt Elo dương bằng cách tối ưu hóa cực đoan cho từng màu quân.
+
+1. Kiến trúc Sniper cho quân Trắng:
+   - Giữ nguyên VASA Refined (v/8 bonus).
+   - Tận dụng tối đa khả năng đào sâu khi biến động để dứt điểm.
+
+2. Kiến trúc Fortress cho quân Đen:
+   - Loại bỏ hoàn toàn vasaFactor khi cầm Đen (set về 0).
+   - Khôi phục Singular Extension và RFP về thông số gốc của Stockfish khi cầm Đen.
+   - Mục tiêu: Chỉ cần Đen không thua, quân Trắng sẽ gánh toàn bộ Elo thắng.
+
+3. Tinh chỉnh Time Management:
+   - Dành thêm 15% thời gian cho các ván đấu mà Nextfish cầm quân Đen ở giai đoạn khai cuộc để đảm bảo không bị lép vế sớm.
+
+File cần sửa: search.cpp, timeman.cpp

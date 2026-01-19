@@ -1,0 +1,18 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 42: The Clean Slate - Speed & Simplicity
+=====================================================================================
+Mục tiêu: Khôi phục NPS tối đa và chỉ giữ lại những gì thực sự mang lại Elo.
+
+1. PURGE CRITICALITY:
+   - Xóa bỏ hoàn toàn tham số criticality khỏi hàm reduction.
+   - Xóa bỏ mọi phép tính abs() trong search loop. NPS là ưu tiên hàng đầu.
+
+2. PlentyChess Quadratic Aspiration:
+   - Giữ lại logic delta từ Phase 11 vì nó đã được chứng minh hiệu quả.
+
+3. Obsidian-Inspired History Core:
+   - Khôi phục hàm reduction về chuẩn Stockfish nhưng dùng hệ số 610/rootDelta (Singularity) đã ổn định.
+
+4. Time Management Fix:
+   - Khôi phục timeman.cpp về nguyên bản Stockfish để chấm dứt tình trạng thua giờ (Time Loss).
+
+File cần sửa: search.cpp, search.h, timeman.cpp

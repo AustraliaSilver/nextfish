@@ -1,0 +1,16 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 13: VASA Refinement
+===================================================================
+Mục tiêu: Tối ưu hóa kiến trúc VASA để lấy lại sức mạnh tính toán.
+
+1. Giảm vasaBonus trong LMR:
+   - Từ `v / 4` giảm xuống `v / 8`. 
+   - Lý do: v / 4 đang nới lỏng độ sâu quá đà, làm loãng sự tập trung của Search.
+
+2. Tinh chỉnh Volatility-Sensitive RFP:
+   - Thay đổi `std::max(0, 100 - ss->volatility)` thành `std::max(0, 50 - ss->volatility / 2)`.
+   - Giúp engine cắt tỉa linh hoạt hơn ở các nhánh có độ biến động trung bình.
+
+3. Điều chỉnh rootDelta factor:
+   - Tăng lại lên 615 để cân bằng giữa độ sâu và độ rộng.
+
+File cần sửa: search.cpp

@@ -1,0 +1,17 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 47: The Singularity Zenith
+=====================================================================================
+Mục tiêu: Đạt Elo dương bền vững bằng cách tối ưu hóa Lõi Singularity duy nhất.
+
+1. CLEAN EVERYTHING (Revert to V42 Style):
+   - Xóa bỏ tính bất đối xứng White/Black Core. Dùng chung 1 Core.
+   - Xóa bỏ tham số us, xóa bỏ tham số criticality trong reduction.
+   - Xóa bỏ mọi buff Eval thủ công.
+
+2. Optimized Singularity Core:
+   - Sử dụng hằng số 612 (nằm giữa 610 của V42 và 615 của V45). 
+   - Hằng số này đã được cân nhắc kỹ để giữ cho quân Trắng cực mạnh (0.650+) mà không làm quân Đen bị mất chiều sâu quá nhanh.
+
+3. Pure NPS Restoration:
+   - Rút gọn hàm reduction tối đa để đẩy NPS lên mức cao nhất có thể.
+
+File cần sửa: search.cpp, search.h

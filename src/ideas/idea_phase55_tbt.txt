@@ -1,0 +1,18 @@
+Nextfish Phase 55: The Black Titan (TBT)
+========================================
+
+1. Reality Check (100 ván):
+   - White Performance: 0.630 (Rất tốt, nhờ Aspiration Divisor 11000).
+   - Black Performance: 0.290 (Thảm họa, thua 27/50 ván).
+   - Nguyên nhân: Lỗi logic ngược tại Singularity Core. Core thấp làm tăng Reduction -> Đen tìm kiếm nông hơn khi bị ép.
+
+2. Kế hoạch sửa lỗi (The Correction):
+   - Singularity Core (Black): Tăng lên 630 (mặc định) và 650 (khi bị ép sâu eval < -150).
+   - Công thức mới: r = scale - (bonus) * core / rootDelta. Core lớn hơn -> r nhỏ hơn -> Depth được giữ lại nhiều hơn.
+   - Aspiration Smoothing: Giữ nguyên mức nới rộng 2/3 cho Đen để tránh bẫy.
+   - Aspiration Divisor: Điều chỉnh nhẹ lên 11500 để tăng tính ổn định (vừa công vừa thủ).
+
+3. Mục tiêu:
+   - Đưa Black Score lên mức 0.350 - 0.400.
+   - Giữ White Score > 0.600.
+   - Tổng Elo kỳ vọng: +10 đến +20 Elo so với Master.

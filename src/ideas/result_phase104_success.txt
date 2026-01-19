@@ -1,0 +1,22 @@
+Nextfish Phase 104: Phục hồi sức mạnh Search
+=============================================
+
+1. Kết quả Match (30 ván, 10+0.1):
+   - Nextfish Latest: 5 Wins, 15 Losses, 10 Draws.
+   - Elo: -120.4 (Tăng +41 điểm so với Phase 103).
+   - White Performance (Nextfish): 4 Wins, 3 Losses, 8 Draws (Score 53.3%).
+   - Black Performance (Nextfish): 1 Win, 12 Losses, 2 Draws (Score 13.3%).
+
+2. Phân tích:
+   - Việc khôi phục công thức Reduction với biến `delta` đã lấy lại tính ổn định cho Search.
+   - Nextfish cầm Trắng đã bắt đầu có ưu thế trước Stockfish chuẩn.
+   - Tuy nhiên, quân Đen của Nextfish quá yếu, để thủng lưới liên tục (12 ván thua), làm hỏng tổng tỉ số.
+
+3. Kết luận:
+   - Chiến thuật "Restoration" đã thành công trong việc tạo nền tảng vững chắc.
+   - Phase 105 cần tập trung vào việc gia cố quân Đen và đẩy mạnh hơn nữa ưu thế thời gian cho quân Trắng.
+
+4. Hướng đi cho Phase 105 (Imperial White & Iron Black):
+   - White: 1.2x Time, LMR 1178, Optimism 168, Contempt +6.
+   - Black: Giảm ImprovingWeight xuống 210 để phòng ngự lì lợm hơn. LMR 1182.
+   - Mục tiêu: White Winrate > 60% và giảm tỉ lệ thua của Black xuống < 50%.

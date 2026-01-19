@@ -1,0 +1,16 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 24: Singularity
+===================================================================
+Mục tiêu: Đạt Elo dương bằng cách tối ưu hóa hệ thống History (Quiet Moves).
+
+1. Khôi phục Search thống nhất (search.cpp):
+   - rootDelta = 610 cho cả hai bên (Mức cân bằng nhất).
+   - Loại bỏ mọi logic side-to-move trong Reduction và Time Management.
+
+2. Tăng cường History Reliability:
+   - Trong movepick.cpp (hoặc search.cpp), tăng trọng số cho các nước đi có History tốt.
+   - Giảm nhẹ mức độ Reduction đối với các nước đi có History Score cao (> 5000).
+
+3. Đơn giản hóa Time Management:
+   - Quay lại bản V18 ổn định.
+
+File cần sửa: search.cpp, timeman.cpp

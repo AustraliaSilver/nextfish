@@ -1,0 +1,21 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 35: Iron Curtain Defense (ICD)
+=====================================================================================
+Mục tiêu: Khắc phục thảm họa cầm Đen (-49 Elo tổng, 0.270 score Đen).
+
+1. Đổi Criticality sang Search-Based:
+   - Thay vì std::abs(ss->staticEval - ttData.value), sử dụng:
+     Criticality = std::abs(eval - ttData.value). 
+   - 'eval' đã bao gồm các điều chỉnh trong search, chính xác hơn 'staticEval' của NNUE.
+
+2. Anti-Pruning cho quân Đen (The Iron Curtain):
+   - Trong logic Futility Pruning (Step 8): Nếu (us == BLACK) và (depth < 8), tăng margin lên thêm 50 đơn vị.
+   - Quân Đen sẽ ít bị cắt bỏ các biến thế phòng thủ hơn ở độ sâu thấp.
+
+3. Revert Optimism cho quân Đen:
+   - Việc giảm Optimism ở V34 có thể đã làm quân Đen quá thụ động. Khôi phục lại 142 cho cả hai bên để giữ tính chủ động tìm kiếm giải pháp cứu vãn (resources).
+
+4. Tinh chỉnh LMR cho quân Đen:
+   - Nếu (us == BLACK) và (criticality > 50), giảm mức reduction (r) mạnh hơn nữa:
+     r = r * 800 / 1024 (thay vì 870).
+
+File cần sửa: search.cpp

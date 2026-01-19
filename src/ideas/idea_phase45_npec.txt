@@ -1,0 +1,19 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 45: Neural Precision - Endgame Compression (NPEC)
+=====================================================================================
+Mục tiêu: Chuyển hóa Draw Ratio 50% thành Elo dương bằng cách tối ưu tàn cuộc.
+
+1. Selective Singular Extension for Black (High Depth):
+   - Trong logic Singular Extension, nếu (us == BLACK) và (depth > 12) và (staticEval < -100):
+     Giảm margin singularBeta thêm 5%.
+   - Điều này giúp quân Đen cực kỳ cẩn trọng ở tàn cuộc, không bỏ lỡ các nước đi "duy nhất" để giữ hòa hoặc thắng ngược.
+
+2. Refined Neural Shield:
+   - Giữ nguyên buff 15 cho quân Đen khi inCheck. 
+   - Thêm buff 10 cho quân Đen nếu (popcount(pos.pieces()) < 10) - tức là giai đoạn tàn cuộc sâu. 
+   - Giúp Đen tự tin hơn trong việc giữ các thế trận ít quân.
+
+3. Singularity Core Tuning (Global):
+   - Tăng nhẹ hệ số Singularity từ 610 lên 615 cho cả hai bên.
+   - Khi Search đã ổn định, việc tăng nhẹ tính Singularity giúp engine quyết đoán hơn trong việc chọn nước đi đột phá.
+
+File cần sửa: search.cpp

@@ -1,0 +1,19 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 38: Neural Resilience - Surgical Precision (NRSP)
+=====================================================================================
+Mục tiêu: Giữ vững phòng ngự quân Đen (Score 0.375) và khôi phục sức mạnh quân Trắng (Score 0.600+).
+
+1. Revert Aspiration for White:
+   - Chỉ áp dụng delta += delta / 2 cho quân ĐEN.
+   - Quân TRẮNG quay lại delta += delta / 3 để đảm bảo tính thận trọng và chính xác khi áp đảo.
+
+2. Refined Criticality Preservation:
+   - Trong hàm reduction, nếu (criticality > 100) - tức là vị trí cực kỳ biến động:
+     Giảm reduction thêm một bậc nữa ( scale 780).
+   - Áp dụng cho cả hai bên để tránh bỏ lỡ các đòn tactical quyết định.
+
+3. Black-Specific Futility Tuning:
+   - Giữ nguyên "The Iron Curtain" nhưng tinh chỉnh nhẹ: 
+     permanentBlackBuffer = (us == BLACK) ? (d < 10 ? 70 : 25) : 0.
+   - Giảm nhẹ ở depth trung bình để tránh việc search quá rộng không cần thiết.
+
+File cần sửa: search.cpp

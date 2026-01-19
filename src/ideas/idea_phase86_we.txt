@@ -1,0 +1,20 @@
+Nextfish Phase 86: The White Emperor (WE)
+=======================================
+
+1. Mục tiêu:
+   - Trở thành engine cầm quân Trắng mạnh nhất thế giới.
+   - Giảm tỷ lệ thắng của Stockfish (Black) xuống mức tối thiểu (< 5%).
+   - Tận dụng triệt để lợi thế di trước.
+
+2. Cải tiến kỹ thuật (Chuyên biệt cho Trắng):
+   - sideToMove == WHITE:
+     + Base Offset: 1175 (Tăng độ sâu tìm kiếm cho các nước đi tĩnh).
+     + Improving Weight: 264 (Cực kỳ tự tin khi vị thế đang tốt lên).
+     + History Bonus: (s > 12000) ? 60 (Ưu tiên tuyệt đối các đòn đánh sở trường).
+     + SEE Margin: 165 (Đảm bảo đổi quân cực kỳ chính xác để giữ ưu thế).
+   - sideToMove == BLACK:
+     + Giữ specs ổn định của Phase 74 để làm nền tảng phòng ngự.
+
+3. Thay đổi trong search.cpp:
+   - Triển khai logic bất đối xứng cực đoan phục vụ quân Trắng.
+   - Tối ưu hóa Aspiration Window riêng cho Trắng.

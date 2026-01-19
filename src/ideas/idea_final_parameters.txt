@@ -1,0 +1,21 @@
+Bảng thông số tối ưu - Nextfish V2 (+70 Elo vs SF Orig)
+======================================================
+
+1. RFP (Reverse Futility Pruning) - search.cpp:
+   - futilityMult: 72 - 22 * !ss->ttHit
+   - improving factor: 2550
+   - opponentWorsening factor: 400
+   => Công thức: (2550 * improving + 400 * opponentWorsening) * futilityMult / 1024
+
+2. LMR (Late Move Reduction) - search.cpp:
+   - rootDelta factor: 630
+   - non-improving constant: 256 / 512
+   - base reduction: 1160
+   => Công thức: reductionScale - delta * 630 / rootDelta + !i * reductionScale * 256 / 512 + 1160
+
+3. Time Management - timeman.cpp:
+   - log10 factor: 0.3200
+   - base adjustment: -0.4400
+   => Công thức: 0.3200 * std::log10(timeLeft) - 0.4400
+
+Kết luận: Việc tăng opponentWorsening trong RFP từ 350 lên 400 là yếu tố then chốt giúp engine trụ vững trước các đòn tấn công của Stockfish gốc và phản công thành công.

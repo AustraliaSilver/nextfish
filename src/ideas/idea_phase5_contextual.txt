@@ -1,0 +1,20 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 5: Deep Contextual Search
+===================================================================
+Mục tiêu: Vượt qua ngưỡng cân bằng bằng cách tối ưu hóa sự thông minh của Search.
+
+1. Tinh chỉnh LMR dựa trên loại nước đi (Move Type):
+   - Không chỉ giảm độ sâu dựa trên số thứ tự nước đi, mà còn dựa trên việc nước đi đó có phải là nước đe dọa (Threat) hay không.
+   - Giảm mức độ reduction cho các nước ăn quân (Captures) có lịch sử tốt ngay cả khi chúng nằm ở cuối danh sách.
+
+2. Cải thiện Null Move Pruning (NMP):
+   - NMP hiện tại đang dùng công thức cố định: R = 7 + depth / 3.
+   - Cải tiến: Làm cho R linh hoạt hơn dựa trên điểm số Eval. Nếu Eval đang rất cao, có thể giảm sâu hơn (R lớn hơn) để tiết kiệm thời gian.
+
+3. Tối ưu hóa "Optimism" (Sự lạc quan):
+   - Stockfish có tham số Optimism để engine cố gắng thắng thay vì chấp nhận hòa quá sớm.
+   - Điều chỉnh Optimism dựa trên thời gian còn lại: Càng ít thời gian, càng nên thực tế hơn.
+
+4. Tinh chỉnh Double Extensions:
+   - Chỉ mở rộng độ sâu cho những nước đi thực sự "hiểm" thay vì mở rộng đại trà.
+
+File cần sửa: search.cpp

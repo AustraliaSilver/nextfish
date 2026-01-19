@@ -1,0 +1,17 @@
+Nextfish Phase 68: The Sovereign Chronos (TSC)
+===========================================
+
+1. Phân tích kết quả V67:
+   - Search đã đạt điểm Equilibrium (Cân bằng). Black có thể thắng (5 ván), White công tốt (Score 0.600).
+   - Điểm nghẽn: Quản lý thời gian. Đen bị áp lực re-search từ Oracle Windows nhưng không có đủ quỹ thời gian để xử lý, dẫn đến các nước đi vội vàng ở tàn cuộc.
+
+2. Cải tiến V68 (The Sovereign Chronos):
+   - Asymmetric Time Management (NASA):
+     + Black Time Factor: 1.15 (Tăng 15% thời gian suy nghĩ cho Đen).
+     + White Time Factor: 1.00 (Giữ nguyên).
+   - The Sovereign Core (620): Áp dụng Core 620 đồng nhất cho cả hai bên. Tăng nhẹ chiều sâu để dứt điểm ván đấu.
+   - Pure History Reduction: Khôi phục logic reduction nguyên thủy của Nextfish, loại bỏ các đòn bẩy nhân tạo (leverage) để đạt NPS cao nhất.
+
+3. Thay đổi kỹ thuật:
+   - timeman.cpp: Tích hợp Asymmetric Time Factor cho Đen.
+   - search.cpp: Cập nhật Core 620 và làm sạch hàm reduction.

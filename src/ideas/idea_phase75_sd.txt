@@ -1,0 +1,16 @@
+Nextfish Phase 75: Strategic Depth (SD)
+=====================================
+
+1. Mục tiêu:
+   - Tiếp tục cải thiện hiệu suất quân Đen và duy trì sức mạnh quân Trắng.
+   - Tối ưu hóa Late Move Reduction (LMR) bằng cơ chế mượt mà hơn.
+
+2. Cải tiến kỹ thuật:
+   - Dynamic History Scaling: Điều chỉnh historyBonus trong hàm reduction theo công thức bậc thang mịn hơn:
+     (s > 16000) ? 62 : (s > 10000) ? 48 : (s > 0) ? 24 : 0.
+   - Improving Multiplier: Tăng hệ số `improving` trong hàm reduction để giảm cắt tỉa khi engine đang tìm thấy hướng đi tốt.
+   - Singularity Core: Thử nghiệm mức 612 (trở về Master Reset của các Phase trước nhưng kết hợp với bộ lọc history mới).
+
+3. Thay đổi trong search.cpp:
+   - Cập nhật hàm reduction với các ngưỡng history mới.
+   - Điều chỉnh trọng số của `improving` và `opponentWorsening`.

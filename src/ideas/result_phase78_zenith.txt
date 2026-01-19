@@ -1,0 +1,19 @@
+Kết quả Thử nghiệm Phase 78: The Zenith
+=====================================
+
+Ngày: 18/01/2026
+Đối thủ: StockfishOrig (100 ván, TC 10+0.1)
+Kết quả: Elo -111.4 +/- 53.4
+Thắng: 14, Hòa: 41, Thua: 45
+
+Phân tích chi tiết:
+1. Hiệu suất theo màu quân:
+   - Trắng (White): 53.0% (Thắng 11, Thua 8, Hòa 31) -> Tương đương Phase 76, giảm so với Phase 74.
+   - Đen (Black): 16.0% (Thắng 3, Thua 37, Hòa 10) -> Rất thấp.
+
+2. Nguyên nhân sụt giảm:
+   - Singularity Margin linh hoạt: Việc giảm margin cho quân Đen khi gặp bất lợi (45 thay vì 53) có vẻ làm engine thực hiện Singular Extension quá thường xuyên vào các nước đi không thực sự tốt, dẫn đến loãng độ sâu tìm kiếm.
+   - History Scaling (14000): Ngưỡng history này có vẻ chưa tối ưu cho cấu trúc LMR hiện tại.
+   - Thua giờ: Vẫn xuất hiện 5 ván thua giờ, cho thấy overhead của các logic linh hoạt vẫn còn cao.
+
+Bài học: Trong các engine cờ vua, "Simple is better". Các cơ chế linh hoạt (dynamic) chỉ hiệu quả khi chúng thực sự nhắm trúng điểm yếu, nếu không chúng chỉ làm tăng sự phức tạp và lãng phí tài nguyên.

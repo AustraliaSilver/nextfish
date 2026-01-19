@@ -1,0 +1,18 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 33: NRA - Deep Defense (NRA-DD)
+=====================================================================================
+Mục tiêu: Tăng cường chiều sâu phòng ngự cho quân Đen trong các thế trận bị ép.
+
+1. Dynamic Criticality for Black:
+   - Nếu (us == BLACK) và (staticEval < 0), cộng thêm 20 vào điểm Criticality.
+   - Điều này làm quân Đen "cảnh giác" sớm hơn ở các vị trí hơi bất lợi.
+
+2. Criticality-based LMR (Refined):
+   - Thay vì r = r * 870 / 1024 (cố định), sử dụng:
+     r = r * (1024 - std::min(150, criticality / 2)) / 1024.
+   - Criticality càng cao, mức độ reduction càng giảm sâu.
+
+3. Singular Extension Buffer for Black:
+   - Trong logic Singular Extension, nếu quân Đen đang ở thế yếu (staticEval < -50), giảm margin singularBeta đi 10%. 
+   - Giúp quân Đen dễ dàng tìm thấy "nước đi duy nhất" để sống sót.
+
+File cần sửa: search.cpp

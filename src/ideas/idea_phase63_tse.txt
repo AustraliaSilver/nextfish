@@ -1,0 +1,15 @@
+Nextfish Phase 63: The Sovereign Equilibrium (TSE)
+===========================================
+
+1. Phân tích kết quả V62:
+   - Titan Core 750 mang lại sức mạnh chiến thuật kinh ngạc cho Đen (7 ván thắng), nhưng làm hỏng cấu trúc search tổng thể.
+   - Hệ quả: Quá nhiều node rác, NPS bị lãng phí vào các biến thế không tưởng.
+
+2. Cải tiến V63 (The Sovereign Equilibrium):
+   - The Equilibrium Core (640): Áp dụng hằng số 640 cho cả hai bên. Đây là sự nâng cấp bền vững so với 612.
+   - History-Enhanced Singularity: Core sẽ được buff thêm dựa trên chất lượng nước đi: core = 640 + (history / 16384) * 20.
+   - Master Reset: Khôi phục Divisor 12000 chuẩn để lấy lại phong độ tấn công cho quân Trắng.
+   - Defensive Aegis: Giữ buff 40 cho Đen khi bị lép vế.
+
+3. Thay đổi kỹ thuật:
+   - search.cpp: Triển khai Equilibrium Core và khôi phục Master Windows.

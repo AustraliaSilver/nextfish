@@ -1,0 +1,29 @@
+Nextfish Phase 94: Tactical Precision - Results Tracking
+======================================================
+
+1. Trạng thái: Đã triển khai (Implemented)
+2. Mục tiêu:
+   - Khôi phục sự ổn định sau thất bại của Phase 93.
+   - Quay lại các thông số "vàng" của Phase 92: Singularity Core 628, baseOffset White 1152.
+   - Tối ưu hóa độ chính xác dứt điểm của quân Trắng.
+
+3. Thông số kỹ thuật:
+   - White:
+     + LMR Base Offset: 1152.
+     + Singularity Core: 628.
+     + Optimism: 172.
+     + SEE Margin: 152 (Siết lại để tăng độ chính xác).
+   - Black:
+     + LMR Base Offset: 1185.
+     + Optimism: 132.
+     + disadvantageBonus: 92 (Cân bằng).
+     + Selective History Divisor: 2900.
+
+4. Dự kiến:
+   - Winrate White sẽ bứt phá trở lại mốc > 60%.
+   - Quân Đen sẽ ổn định hơn, giảm thiểu các trận thua "blindside".
+
+5. Kết quả:
+   - Winrate White: ?
+   - Winrate Black: ?
+   - Elo Diff: ?

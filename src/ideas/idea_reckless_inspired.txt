@@ -1,0 +1,20 @@
+Ý tưởng cải thiện Nextfish - Giai đoạn 6: Reckless-Inspired Optimization
+========================================================================
+Dựa trên phân tích từ engine Reckless, Nextfish sẽ áp dụng các thay đổi sau:
+
+1. Quadratic Reverse Futility Pruning (RFP):
+   - Thay vì dùng margin tuyến tính (linear), chúng ta sẽ thêm yếu tố bậc hai (depth * depth).
+   - Công thức mới: margin = (futilityMult * d) + (8 * d * d) - ...
+   - Giúp engine cắt tỉa cực mạnh ở độ sâu trung bình mà vẫn giữ an toàn ở độ sâu thấp.
+
+2. Quadratic Late Move Pruning (LMP):
+   - Điều chỉnh ngưỡng số lượng nước đi được tìm kiếm dựa trên bình phương độ sâu.
+   - Giúp loại bỏ hàng loạt nước đi tĩnh không triển vọng ở các node sâu.
+
+3. Tinh chỉnh Aspiration Windows:
+   - Sử dụng cách giãn cách window dựa trên độ ổn định của eval (tương tự logic trong search.rs của Reckless).
+
+4. Compiler Optimization (PGO):
+   - Cập nhật quy trình build để tận dụng tối đa kiến trúc CPU hiện tại (march=native).
+
+File cần sửa: search.cpp

@@ -1,0 +1,25 @@
+Nextfish Phase 102: Thất bại của sự cực đoan
+=========================================
+
+1. Kết quả Match (30 ván, 10+0.1):
+   - Nextfish Latest: 3 Wins, 17 Losses, 10 Draws.
+   - Elo: -175.7.
+   - White Winrate (Nextfish): 13.3%.
+   - Black Lossrate (Nextfish): 80.0%.
+
+2. Nguyên nhân thất bại:
+   - "Chronos Dominance" (1.3x time) không hiệu quả khi bộ lọc LMR bị hỏng.
+   - LMR 1150 cho White gây ra sai lầm chiến thuật nghiêm trọng (Blunders).
+   - LMR 1230 cho Black khiến engine quá thụ động, không có khả năng phản kháng.
+   - Việc thắt chặt Aspiration Window làm engine mất khả năng hồi phục sau các biến động điểm số lớn.
+
+3. Bài học rút ra:
+   - Không thể ép Winrate quân Trắng bằng cách nới lỏng LMR quá mức.
+   - Sức mạnh của Stockfish nằm ở sự chính xác của Search, việc can thiệp thô bạo vào Time Management mà không có Search tương ứng chỉ làm lãng phí tài nguyên.
+   - Quân Đen cần một mức LMR hợp lý (~1200) để giữ vững cấu trúc phòng ngự.
+
+4. Hướng đi cho Phase 103 (The Balanced Aggressor):
+   - Quay lại triết lý "Cân bằng động".
+   - White: 1.1x Time, LMR 1172, Optimism 164, Contempt +8.
+   - Black: 1.0x Time, LMR 1200, Optimism 132, Contempt -8.
+   - Khôi phục Aspiration Window chuẩn (không thắt chặt).

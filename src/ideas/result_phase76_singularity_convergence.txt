@@ -1,0 +1,19 @@
+Kết quả Thử nghiệm Phase 76: The Singularity Convergence
+======================================================
+
+Ngày: 18/01/2026
+Đối thủ: StockfishOrig (100 ván, TC 10+0.1)
+Kết quả: Elo -139.0 +/- 56.7 (Thất bại thảm hại nhất)
+Thắng: 13, Hòa: 36, Thua: 51
+
+Phân tích chi tiết:
+1. Hiệu suất theo màu quân:
+   - Trắng (White): 53.0% (Thắng 12, Thua 9, Hòa 29) -> Vẫn giữ được phong độ trung bình.
+   - Đen (Black): 9.0% (Thắng 1, Thua 42, Hòa 7) -> Thất bại hoàn toàn, quân Đen bị bóp nghẹt.
+
+2. Nguyên nhân thất bại:
+   - SEE Margin quá cao (168): Việc quá khắt khe trong đổi quân khiến engine bỏ qua rất nhiều cơ hội phòng thủ bằng cách hy sinh/đổi quân tích cực của quân Đen. Quân Đen trở nên quá "nhát", dẫn đến bị ép cho đến chết.
+   - History Scaling không tương thích: Các ngưỡng history mới không phối hợp tốt với Singularity Core 614 trong thế trận phòng ngự.
+   - Overhead tính toán: Mặc dù số ván thua giờ ít (4 ván), nhưng độ sâu tìm kiếm bị ảnh hưởng nặng nề do phải kiểm tra quá nhiều nước đi khi bị ép.
+
+Bài học: Càng cố gắng "siết" bằng các con số khắt khe, engine càng dễ bị tổn thương. Cần một cách tiếp cận linh hoạt (flexible) và mềm mại hơn.

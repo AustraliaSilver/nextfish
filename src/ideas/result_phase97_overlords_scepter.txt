@@ -1,0 +1,25 @@
+Nextfish Phase 97: The Overlord's Scepter - Results Tracking
+===========================================================
+
+1. Trạng thái: Đã triển khai (Implemented)
+2. Mục tiêu:
+   - Chạm mốc > 70% Winrate White bằng cách siết chặt tối đa Aspiration Overdrive (delta * 3 / 4).
+   - Tối ưu hóa chiều sâu quân Trắng (LMR 1172) mà không làm loãng tìm kiếm.
+   - Gia cố quân Đen bằng bộ thông số Ironclad (SEE 165, LMR 1188).
+
+3. Các thay đổi chính:
+   - Aspiration Overdrive (White): delta * 3 / 4 (Khi avg > 50).
+   - LMR Base Offset: 1172 (White) / 1188 (Black).
+   - Optimism: 164 (White) / 142 (Black).
+   - SEE Margin: 155 (White) / 165 (Black).
+   - disadvantageBonus: 96 (eval < -110).
+   - Selective History Divisor (Black): 2900.
+
+4. Dự kiến:
+   - Quân Trắng sẽ chơi với độ chính xác kinh ngạc ở các ván đấu ưu thế, giảm thiểu tỉ lệ hòa không đáng có.
+   - Quân Đen sẽ ổn định hơn trước các đòn phối hợp của Stockfish chuẩn.
+
+5. Kết quả:
+   - Winrate White: ?
+   - Winrate Black: ?
+   - Elo Diff: ?
