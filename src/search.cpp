@@ -357,11 +357,9 @@ void Search::Worker::iterative_deepening() {
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
-                    // Nextfish Ultimatum: Buff White optimism for sharper play
-                    int tcecOptimism = (us == WHITE) ? 159 : 142; // 142 * 1.12 approx 159
-                    optimism[us]  = tcecOptimism * avg / (std::abs(avg) + 91);
-                    optimism[~us] = -optimism[us];
-            // Start with a small aspiration window and, in the case of a fail
+                            // Nextfish Apex: Reverted to 142 for objective evaluation
+                            optimism[us]  = 142 * avg / (std::abs(avg) + 91);
+                            optimism[~us] = -optimism[us];            // Start with a small aspiration window and, in the case of a fail
             // high/low, re-search with a bigger window until we don't fail
             // high/low anymore.
             int failedHighCnt = 0;
@@ -1735,6 +1733,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
 Depth Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     int reductionScale = reductions[d] * reductions[mn];
+    
+    // Nextfish Apex: 1% less reduction for deeper search
+    reductionScale = (reductionScale * 99) / 100;
+
     return reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182;
 }
 
