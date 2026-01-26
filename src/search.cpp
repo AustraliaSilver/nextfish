@@ -90,7 +90,7 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                   : 8;
 
-    return 11800 * (pcv + micv + wnpcv + bnpcv + cntcv);
+    return 10347 * pcv + 8821 * micv + 11665 * (wnpcv + bnpcv) + 7841 * cntcv;
 }
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
@@ -313,6 +313,11 @@ void Search::Worker::iterative_deepening() {
 
     lowPlyHistory.fill(97);
 
+    for (Color c : {WHITE, BLACK})
+        for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)
+            mainHistory[c][i] =
+              (mainHistory[c][i] - mainHistoryDefault) * 3 / 4 + mainHistoryDefault;
+
     // Iterative deepening loop until requested to stop or the target depth is reached
     while (++rootDepth < MAX_PLY && !threads.stop
            && !(limits.depth && mainThread && rootDepth > limits.depth))
@@ -347,19 +352,15 @@ void Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            // Nextfish Phase 99: The Imperial Storm - Stable Window (9000)
             delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
             Value avg = rootMoves[pvIdx].averageScore;
-
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
-            // Adjust optimism based on root move's averageScore
-            // Nextfish Phase 123: The Sovereign Time-Lord (White 176 / Black 142)
-            int optimismBase = (us == WHITE) ? 176 : 142;
-            optimism[us]  = optimismBase * avg / (std::abs(avg) + 91);
-            optimism[~us] = -optimism[us];
-
+                    // Nextfish Ultimatum: Buff White optimism for sharper play
+                    int tcecOptimism = (us == WHITE) ? 159 : 142; // 142 * 1.12 approx 159
+                    optimism[us]  = tcecOptimism * avg / (std::abs(avg) + 91);
+                    optimism[~us] = -optimism[us];
             // Start with a small aspiration window and, in the case of a fail
             // high/low, re-search with a bigger window until we don't fail
             // high/low anymore.
@@ -399,7 +400,6 @@ void Search::Worker::iterative_deepening() {
                 if (bestValue <= alpha)
                 {
                     beta  = alpha;
-                    delta += (us == WHITE) ? delta * 4 / 5 : delta / 3;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
                     failedHighCnt = 0;
@@ -415,8 +415,7 @@ void Search::Worker::iterative_deepening() {
                 else
                     break;
 
-                // Nextfish Phase 101: Domination Dynamic Expansion
-                delta += (us == WHITE || delta > 500) ? delta / 2 : delta / 3;
+                delta += delta / 3;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
@@ -505,20 +504,8 @@ void Search::Worker::iterative_deepening() {
 
             double highBestMoveEffort = nodesEffort >= 93340 ? 0.76 : 1.0;
 
-            // Master Edition: Safe Chronos Dominance (White gets 40% more time)
-            double whiteTimeMultiplier = (us == WHITE) ? 1.40 : 1.0;
-
-            // Master Final: Targeted Defense (Black gets 40% more time when in danger zone -0.1 to -1.0)
-            double blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? 1.40 : 1.0;
-
-            // Phase 124: Strategic Overlord - Complexity Boost
-            // If the best move changed in the last 2 depths, or score is volatile, add 20% more time.
-            double complexityMultiplier = (mainThread->completedDepth >= 10 && 
-                                          (mainThread->rootMoves[0].pv[0] != prevBestMove || std::abs(avg - prevScore) > 20)) 
-                                          ? 1.20 : 1.0;
-
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
-                             * bestMoveInstability * highBestMoveEffort * whiteTimeMultiplier * blackTimeMultiplier * complexityMultiplier;
+                             * bestMoveInstability * highBestMoveEffort;
 
             // Cap used time in case of a single legal move for a better viewer experience
             if (rootMoves.size() == 1)
@@ -890,15 +877,10 @@ Value Search::Worker::search(
     // The depth condition is important for mate finding.
     {
         auto futility_margin = [&](Depth d) {
-            Value futilityMult = 72 - 22 * !ss->ttHit;
+            Value futilityMult = 76 - 23 * !ss->ttHit;
 
-            // Nextfish Phase 21: The Grandmaster Wall
-            int permanentBlackBuffer = (us == BLACK) ? 30 : 0;
-
-            // Nextfish Phase 20: Zenith - Optimized stable margin
-            return futilityMult * d + 8 * d * d 
-                 - (2550 * improving + 400 * opponentWorsening) * futilityMult / 1024
-                 + (!improving * 50) + permanentBlackBuffer
+            return futilityMult * d
+                 - (2474 * improving + 331 * opponentWorsening) * futilityMult / 1024  //
                  + std::abs(correctionValue) / 174665;
         };
 
@@ -913,9 +895,8 @@ Value Search::Worker::search(
     {
         assert((ss - 1)->currentMove != Move::null());
 
-        // Null move dynamic reduction based on depth and evaluation
-        // Nextfish Phase 78: Standard Stable NMP
-        int R = 7 + depth / 3 + std::min(3, (eval - beta) / 512);
+        // Null move dynamic reduction based on depth
+        Depth R = 7 + depth / 3;
         do_null_move(pos, st, ss);
 
         Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
@@ -1058,7 +1039,7 @@ moves_loop:  // When in check, search starts here
 
         int delta = beta - alpha;
 
-        Depth r = reduction(improving, depth, moveCount, delta, eval, ss->statScore, us);
+        Depth r = reduction(improving, depth, moveCount, delta);
 
         // Increase reduction for ttPv nodes (*Scaler)
         // Larger values scale well
@@ -1093,9 +1074,7 @@ moves_loop:  // When in check, search starts here
 
                 // SEE based pruning for captures and checks
                 // Avoid pruning sacrifices of our last piece for stalemate
-                // Nextfish Phase 100: The Singularity God
-                int seeBase = (us == WHITE) ? 142 : 175;
-                int margin = std::max(seeBase * depth + captHist / 32, 0);
+                int margin = std::max(166 * depth + captHist / 29, 0);
                 if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
                     && !pos.see_ge(move, -margin))
                     continue;
@@ -1112,9 +1091,8 @@ moves_loop:  // When in check, search starts here
 
                 history += 69 * mainHistory[us][move.raw()] / 32;
 
-                // (*Scaler): Nextfish Phase 100: God Selective History
-                int historyDiv = (us == BLACK && history > 15000) ? 2500 : 3208;
-                lmrDepth += history / historyDiv;
+                // (*Scaler): Generally, lower divisors scales well
+                lmrDepth += history / 3208;
 
                 Value futilityValue = ss->staticEval + 42 + 161 * !bestMove + 127 * lmrDepth
                                     + 85 * (ss->staticEval > alpha);
@@ -1651,13 +1629,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         moveCount++;
 
-        // Nextfish Phase 31: History-Infused QSearch
-        // Prune moves with exceptionally bad history scores in QSearch
-        if (   !capture 
-            && !givesCheck 
-            && mainHistory[pos.side_to_move()][move.from_sq() * 64 + move.to_sq()] < -10000)
-            continue;
-
         // Step 6. Pruning
         if (!is_loss(bestValue))
         {
@@ -1762,17 +1733,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     return bestValue;
 }
 
-Depth Search::Worker::reduction(bool i, Depth d, int mn, int delta, int eval, int s, Color us) const {
+Depth Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     int reductionScale = reductions[d] * reductions[mn];
-    
-    // Nextfish Master Final (Optimal White Aggression / Standard Black Defense)
-    int singularityCore = (us == WHITE) ? 638 : 628;
-    
-    // Balanced Polarity: White looks deeper (1175), Black is 100% standard for reliability.
-    int improvingWeight = 238;
-    int baseOffset = (us == WHITE) ? 1176 : 1182;
-    
-    return reductionScale - delta * 608 / rootDelta + !i * reductionScale * improvingWeight / 512 + baseOffset;
+    return reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182;
 }
 
 // elapsed() returns the time elapsed since the search started. If the
@@ -1790,15 +1753,8 @@ TimePoint Search::Worker::elapsed() const {
 TimePoint Search::Worker::elapsed_time() const { return main_manager()->tm.elapsed_time(); }
 
 Value Search::Worker::evaluate(const Position& pos) {
-    Value v = Eval::evaluate(networks[numaAccessToken], pos, accumulatorStack, refreshTable,
+    return Eval::evaluate(networks[numaAccessToken], pos, accumulatorStack, refreshTable,
                           optimism[pos.side_to_move()]);
-    
-    // Nextfish Phase 122: The Time Lord - Stable Bias
-    // Apply conservative contempt (+10) for White to ensure winning attempts while maintaining 100% SF search precision.
-    if (pos.side_to_move() == WHITE) v += 10;
-    else if (pos.side_to_move() == BLACK) v -= 10;
-
-    return v;
 }
 
 namespace {

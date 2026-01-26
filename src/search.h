@@ -262,18 +262,6 @@ class NullSearchManager: public ISearchManager {
     void check_time(Search::Worker&) override {}
 };
 
-// Nextfish Phase 52: Sovereign Identity
-// Encapsulates the core search philosophy into a distinct profile
-struct TacticsProfile {
-    inline int singularityCore(Color us, Depth d, int eval) const {
-        return (us == BLACK && d > 14) ? (eval < -150 ? 590 : 600) : 612;
-    }
-
-    inline int disadvantageBonus(int eval) const {
-        return (eval < -100) ? 50 : 0;
-    }
-};
-
 // Search::Worker is the class that does the actual search.
 // It is instantiated once per thread, and it is responsible for keeping track
 // of the search history, and storing data required for the search.
@@ -327,7 +315,7 @@ class Worker {
     template<NodeType nodeType>
     Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
 
-    Depth reduction(bool i, Depth d, int mn, int delta, int eval, int s, Color us) const;
+    Depth reduction(bool i, Depth d, int mn, int delta) const;
 
     // Pointer to the search manager, only allowed to be called by the main thread
     SearchManager* main_manager() const {

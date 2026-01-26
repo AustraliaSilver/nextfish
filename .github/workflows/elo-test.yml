@@ -1,0 +1,42 @@
+name: Nextfish Elo CI
+
+on: [push, pull_request]
+
+jobs:
+  test-elo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ make cutechess-cli
+
+      - name: Build Nextfish (Current)
+        run: |
+          cd src
+          make -j2 build ARCH=x86-64-modern
+          mv stockfish ../nextfish
+
+      - name: Build Stockfish (Baseline)
+        run: |
+          git clone --depth 1 https://github.com/official-stockfish/Stockfish.git sf_base
+          cd sf_base/src
+          make -j2 build ARCH=x86-64-modern
+          mv stockfish ../../stockfish_base
+
+      - name: Run 100 Games Match
+        run: |
+          # Create a simple opening book (Starting position)
+          echo "polyglot" > book.txt 
+          
+          cutechess-cli -engine name=Nextfish cmd=./nextfish -engine name=Stockfish_Base cmd=./stockfish_base \
+          -each proto=uci tc=10+0.1 -rounds 50 -games 2 -repeat -concurrency 2 \
+          -pgnout results.pgn -recover
+
+      - name: Calculate Elo
+        run: |
+          # Dùng grep để lấy kết quả cuối cùng từ output
+          tail -n 20 results.pgn | grep "Score" || true

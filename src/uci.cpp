@@ -117,6 +117,9 @@ void UCIEngine::loop() {
             sync_cout << "id name " << engine_info(true) << "\n"
                       << engine.get_options() << sync_endl;
 
+            // Nextfish: Print TCEC relevant info
+            print_info_string(has_large_pages() ? "Large Pages: ON" : "Large Pages: OFF");
+
             sync_cout << "uciok" << sync_endl;
         }
 

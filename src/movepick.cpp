@@ -171,9 +171,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             // penalty for moving to a square threatened by a lesser piece
             // or bonus for escaping an attack by a lesser piece.
-            // Nextfish Phase 57: Dynamic Tactical Maturity
-            int escapeMult = (ply > 20 && pt >= ROOK) ? 60 : 20;
-            int v = threatByLesser[pt] & to ? -19 : escapeMult * bool(threatByLesser[pt] & from);
+            int v = threatByLesser[pt] & to ? -19 : 20 * bool(threatByLesser[pt] & from);
             m.value += PieceValue[pt] * v;
 
 
