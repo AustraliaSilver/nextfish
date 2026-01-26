@@ -12,7 +12,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ make cutechess-cli
+          sudo apt-get install -y g++ make wget
+          wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
+          tar -xvf fastchess-linux-x86-64.tar
+          chmod +x fastchess
 
       - name: Build Nextfish (Current)
         run: |
@@ -29,12 +32,9 @@ jobs:
 
       - name: Run 100 Games Match
         run: |
-          # Create a simple opening book (Starting position)
-          echo "polyglot" > book.txt 
-          
-          cutechess-cli -engine name=Nextfish cmd=./nextfish -engine name=Stockfish_Base cmd=./stockfish_base \
+          ./fastchess -engine name=Nextfish cmd=./nextfish -engine name=Stockfish_Base cmd=./stockfish_base \
           -each proto=uci tc=10+0.1 -rounds 50 -games 2 -repeat -concurrency 2 \
-          -pgnout results.pgn -recover
+          -pgnout results.pgn
 
       - name: Calculate Elo
         run: |
