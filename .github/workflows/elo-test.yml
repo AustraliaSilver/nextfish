@@ -12,7 +12,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ make wget
+          sudo apt-get install -y g++ make wget unzip
           wget https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
           tar -xvf fastchess-linux-x86-64.tar
           cd fastchess-linux-x86-64
@@ -36,13 +36,14 @@ jobs:
 
       - name: Download Opening Book
         run: |
-          wget https://github.com/official-stockfish/books/raw/master/UHO_LMR_6_4_8_25.epd -O openings.epd
+          wget https://github.com/official-stockfish/books/raw/master/UHO_4060_v4.epd.zip
+          unzip UHO_4060_v4.epd.zip
 
       - name: Run 100 Games Match
         run: |
           ./fastchess -engine name=Nextfish cmd=./nextfish -engine name=Stockfish_Base cmd=./stockfish_base \
           -each proto=uci tc=10+0.1 -rounds 50 -games 2 -repeat -concurrency 2 \
-          -openings file=openings.epd format=epd order=random \
+          -openings file=UHO_4060_v4.epd format=epd order=random \
           -pgnout file=results.pgn
 
       - name: Upload PGN Results
