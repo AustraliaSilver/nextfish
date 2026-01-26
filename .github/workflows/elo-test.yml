@@ -34,10 +34,22 @@ jobs:
           make -j2 build ARCH=x86-64-modern
           mv stockfish ../../stockfish_base
 
+      - name: Download Opening Book
+        run: |
+          wget https://github.com/official-stockfish/books/raw/master/UHO_LMR_6_4_8_25.epd -O openings.epd
+
       - name: Run 100 Games Match
         run: |
           ./fastchess -engine name=Nextfish cmd=./nextfish -engine name=Stockfish_Base cmd=./stockfish_base \
-          -each proto=uci tc=10+0.1 -rounds 50 -games 2 -repeat -concurrency 2
+          -each proto=uci tc=10+0.1 -rounds 50 -games 2 -repeat -concurrency 2 \
+          -openings file=openings.epd format=epd order=random \
+          -pgnout file=results.pgn
+
+      - name: Upload PGN Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: match-pgn
+          path: results.pgn
 
       - name: Calculate Elo
         run: |
