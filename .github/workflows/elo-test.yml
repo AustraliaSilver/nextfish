@@ -37,10 +37,8 @@ jobs:
       - name: Run 100 Games Match
         run: |
           ./fastchess -engine name=Nextfish cmd=./nextfish -engine name=Stockfish_Base cmd=./stockfish_base \
-          -each proto=uci tc=10+0.1 -rounds 50 -games 2 -repeat -concurrency 2 \
-          -pgnout results.pgn
+          -each proto=uci tc=10+0.1 -rounds 50 -games 2 -repeat -concurrency 2
 
       - name: Calculate Elo
         run: |
-          # Dùng grep để lấy kết quả cuối cùng từ output
-          tail -n 20 results.pgn | grep "Score" || true
+          echo "Match completed. Please check the 'Run 100 Games Match' step output for final Elo results."
