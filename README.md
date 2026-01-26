@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" width="300" alt="Nextfish Logo">
+</p>
+
 # 👑 Nextfish Overlord v1.0
 
 Nextfish is a high-performance chess engine forked from Stockfish 17.1, specifically optimized for **AMD Ryzen 7 5700U (AVX2)** and similar architectures.
