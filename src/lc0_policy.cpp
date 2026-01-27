@@ -155,21 +155,40 @@ void Lc0Policy::encode_position(const Position& pos, float* input) {
             int plane_idx = (pt - PAWN) + (c == us ? 0 : 6);
             while (bb) {
                 Square s = pop_lsb(bb);
+                // Lc0 internal representation: white is always at the bottom
+                // If black to move, we flip the board
                 int row = (us == WHITE) ? rank_of(s) : 7 - rank_of(s);
-                int col = (us == WHITE) ? file_of(s) : 7 - file_of(s); // Sửa: Flip cả file cho đối xứng
+                int col = (us == WHITE) ? file_of(s) : 7 - file_of(s);
                 input[plane_idx * 64 + row * 8 + col] = 1.0f;
             }
         }
     }
 
-    // Planes 106-109: Castling Rights (đơn giản hóa cho us/them)
+    // Planes 12-103: History (currently zeroed, as we don't have easy access to history BBs here)
+    // Most Lc0 nets work okay with zeroed history, but some might prefer them.
+    // For now, we keep them at 0.0f (already done by std::fill).
+
+    // Plane 104: Side to move (1.0 for White, 0.0 for Black - but Lc0 usually expects 1.0 for "us")
+    // Actually, Lc0 input format v1 (112 planes) uses:
+    // 104: repetition count (0, 1, 2)
+    // 105: 50-move rule
+    // 106-109: castling us-OO, us-OOO, them-OO, them-OOO
+    // 110: move count?
+    // 111: all ones (bias)
+
+    // Sửa lại theo chuẩn Lc0 112 planes:
+    // 106-109: Castling Rights
     if (pos.can_castle(us & WHITE_OO))   std::fill(input + 106 * 64, input + 107 * 64, 1.0f);
     if (pos.can_castle(us & WHITE_OOO))  std::fill(input + 107 * 64, input + 108 * 64, 1.0f);
     if (pos.can_castle(~us & BLACK_OO))  std::fill(input + 108 * 64, input + 109 * 64, 1.0f);
     if (pos.can_castle(~us & BLACK_OOO)) std::fill(input + 109 * 64, input + 110 * 64, 1.0f);
 
+    // 110: 50-move rule
     float rule50 = (float)pos.rule50_count() / 100.0f;
     std::fill(input + 110 * 64, input + 111 * 64, rule50);
+
+    // 111: All ones
+    std::fill(input + 111 * 64, input + 112 * 64, 1.0f);
 }
 
 Move Lc0Policy::index_to_move(int index, const Position& pos) {
@@ -177,48 +196,74 @@ Move Lc0Policy::index_to_move(int index, const Position& pos) {
     int move_type = index % 73;
 
     Color us = pos.side_to_move();
-    // Decode from_sq (áp dụng flip nếu là Black)
-    int sf_from_idx = (us == WHITE) ? from_sq_idx : (from_sq_idx ^ 63); // Sửa: Flip cả rank/file
-    Square from_sq = Square(sf_from_idx);
-    int from_rank = rank_of(from_sq);
-    int from_file = file_of(from_sq);
+    
+    // Lc0 model is trained on white-normalized perspective.
+    // If Black to move, the input is flipped, so the model's output is also flipped.
+    // A model's 'from_sq_idx' of 0 (A1) means A1 if White to move, but A8 if Black to move.
+    
+    int model_from_rank = from_sq_idx / 8;
+    int model_from_file = from_sq_idx % 8;
+    
+    int actual_from_rank = (us == WHITE) ? model_from_rank : (7 - model_from_rank);
+    int actual_from_file = (us == WHITE) ? model_from_file : (7 - model_from_file);
+    
+    Square from_sq = make_square(File(actual_from_file), Rank(actual_from_rank));
 
     Square to_sq = SQ_NONE;
     PieceType prom = NO_PIECE_TYPE;
 
+    // Lc0 directions (from side-to-move perspective): 
+    // 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW
     static const int dr[] = {1, 1, 0, -1, -1, -1, 0, 1};
     static const int df[] = {0, 1, 1, 1, 0, -1, -1, -1};
 
-    if (move_type < 56) {
+    if (move_type < 56) { // Queen-like moves
         int direction = move_type / 7;
         int distance = (move_type % 7) + 1;
-        int to_rank = from_rank + (us == WHITE ? dr[direction] : -dr[direction]) * distance;
-        int to_file = from_file + (us == WHITE ? df[direction] : -df[direction]) * distance;
+        
+        int model_to_rank = model_from_rank + dr[direction] * distance;
+        int model_to_file = model_from_file + df[direction] * distance;
 
-        if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file <= 7) {
-            to_sq = make_square(File(to_file), Rank(to_rank));
-            if (pos.piece_on(from_sq) == make_piece(us, PAWN) && rank_of(to_sq) == (us == WHITE ? RANK_8 : RANK_1))
-                prom = QUEEN;
+        if (model_to_rank >= 0 && model_to_rank <= 7 && model_to_file >= 0 && model_to_file <= 7) {
+            int actual_to_rank = (us == WHITE) ? model_to_rank : (7 - model_to_rank);
+            int actual_to_file = (us == WHITE) ? model_to_file : (7 - model_to_file);
+            to_sq = make_square(File(actual_to_file), Rank(actual_to_rank));
         }
-    } else if (move_type < 64) {
+    } else if (move_type < 64) { // Knight moves
         static const int knr[] = {2, 1, -1, -2, -2, -1, 1, 2};
         static const int knf[] = {1, 2, 2, 1, -1, -2, -2, -1};
-        int to_rank = from_rank + (us == WHITE ? knr[move_type-56] : -knr[move_type-56]);
-        int to_file = from_file + (us == WHITE ? knf[move_type-56] : -knf[move_type-56]);
-        if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file <= 7)
-            to_sq = make_square(File(to_file), Rank(to_rank));
-    } else {
-        int p_type = (move_type - 64) / 3;
-        int p_dir = (move_type - 64) % 3;
-        int to_rank = (us == WHITE) ? RANK_8 : RANK_1;
-        int to_file = from_file + (us == WHITE ? (p_dir - 1) : -(p_dir - 1));
-        if (to_file >= 0 && to_file <= 7) {
-            to_sq = make_square(File(to_file), Rank(to_rank));
+        
+        int model_to_rank = model_from_rank + knr[move_type-56];
+        int model_to_file = model_from_file + knf[move_type-56];
+        
+        if (model_to_rank >= 0 && model_to_rank <= 7 && model_to_file >= 0 && model_to_file <= 7) {
+            int actual_to_rank = (us == WHITE) ? model_to_rank : (7 - model_to_rank);
+            int actual_to_file = (us == WHITE) ? model_to_file : (7 - model_to_file);
+            to_sq = make_square(File(actual_to_file), Rank(actual_to_rank));
+        }
+    } else { // Underpromotions
+        int p_type = (move_type - 64) / 3; // 0=Knight, 1=Bishop, 2=Rook
+        int p_dir = (move_type - 64) % 3;  // 0=Left diagonal, 1=Forward, 2=Right diagonal
+        
+        int model_to_rank = model_from_rank + 1; // Promotions are always 1 step forward in model space
+        int model_to_file = model_from_file + (p_dir - 1);
+        
+        if (model_to_rank == 7 && model_to_file >= 0 && model_to_file <= 7) {
+            int actual_to_rank = (us == WHITE) ? 7 : 0;
+            int actual_to_file = (us == WHITE) ? model_to_file : (7 - model_to_file);
+            to_sq = make_square(File(actual_to_file), Rank(actual_to_rank));
             prom = (p_type == 0) ? KNIGHT : (p_type == 1) ? BISHOP : ROOK;
         }
     }
 
     if (to_sq == SQ_NONE) return Move::none();
+
+    // Queen promotion
+    if (prom == NO_PIECE_TYPE && pos.piece_on(from_sq) == make_piece(us, PAWN)) {
+        if (rank_of(to_sq) == (us == WHITE ? RANK_8 : RANK_1))
+            prom = QUEEN;
+    }
+
     for (const auto& m : MoveList<LEGAL>(pos)) {
         if (m.from_sq() == from_sq && m.to_sq() == to_sq && m.promotion_type() == prom)
             return m;
