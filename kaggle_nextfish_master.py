@@ -36,53 +36,22 @@ def main():
     src_dir = os.path.join(repo_dir, "src")
     os.chdir(src_dir)
     
-    # Vá Makefile trực tiếp để link ONNX Runtime (Tối giản để tránh lỗi thiếu thư viện CUDA lúc link)
-    print("[🛠️] Đang vá Makefile để hỗ trợ ONNX...")
-    # Chèn thêm vào cuối Makefile để tránh bị ghi đè
-    # Không cần link trực tiếp -lcuda hay -lcudart vì ONNX Runtime nạp chúng động (dynamic loading)
+    # Vá Makefile trực tiếp để link ONNX Runtime
+    print("[🛠️] Đang vá Makefile...")
     patch_cmd = f"""
     echo "LDFLAGS += -L{onnx_lib} -lonnxruntime -lpthread -ldl" >> Makefile
     echo "LDFLAGS += -Wl,-rpath,{onnx_lib}" >> Makefile
     """
-    run_cmd(patch_cmd, "Vá Makefile (Append LDFLAGS)")
+    run_cmd(patch_cmd, "Vá Makefile")
 
     # 3. Xử lý Model
     os.chdir(repo_dir)
     run_cmd(f"wget {MODEL_URL} -O model_raw.pb.gz && gunzip -f model_raw.pb.gz", "Chuẩn bị Model")
     pb_file = next((f for f in os.listdir(".") if f.endswith(".pb")), None)
     if pb_file:
-        run_cmd("pip install tf2onnx onnxruntime-gpu", "Cài converter & GPU Runtime")
-        
-        # Script dò tìm node names
-        inspect_script = f"""
-import tensorflow as tf
-def inspect_pb(pb_path):
-    with tf.io.gfile.GFile(pb_path, 'rb') as f:
-        graph_def = tf.compat.v1.GraphDef()
-        graph_def.ParseFromString(f.read())
-    nodes = [node.name for node in graph_def.node]
-    inputs = [n for n in nodes if 'input' in n.lower()]
-    policies = [n for n in nodes if 'policy' in n.lower() and 'softmax' in n.lower()]
-    if not policies: policies = [n for n in nodes if 'policy' in n.lower()]
-    values = [n for n in nodes if 'value' in n.lower() and ('tanh' in n.lower() or 'float' in n.lower())]
-    if not values: values = [n for n in nodes if 'value' in n.lower()]
-    print(f"DETECTED_INPUT: {{inputs[0] if inputs else 'input'}}:0")
-    print(f"DETECTED_POLICY: {{policies[-1] if policies else 'policy'}}:0")
-    print(f"DETECTED_VALUE: {{values[-1] if values else 'value'}}:0")
-
-inspect_pb('{pb_file}')
-"""
-        with open("inspect_model.py", "w") as f: f.write(inspect_script)
-        
-        print("[🔍] Đang phân tích cấu trúc Model...")
-        result = subprocess.check_output("python inspect_model.py", shell=True, text=True)
-        print(result)
-        
-        inp = next(line.split(": ")[1] for line in result.split("\n") if "DETECTED_INPUT" in line)
-        pol = next(line.split(": ")[1] for line in result.split("\n") if "DETECTED_POLICY" in line)
-        val = next(line.split(": ")[1] for line in result.split("\n") if "DETECTED_VALUE" in line)
-
-        run_cmd(f"CUDA_VISIBLE_DEVICES='' python -m tf2onnx.convert --input {pb_file} --output model.onnx --inputs {inp} --outputs {pol},{val} --fold_const", "Convert Model")
+        run_cmd("pip install tf2onnx onnxruntime-gpu", "Cài AI tools")
+        # Chuyển đổi Model sang định dạng chuẩn 112 planes
+        run_cmd(f"CUDA_VISIBLE_DEVICES='' python -m tf2onnx.convert --input {pb_file} --output model.onnx --inputs input:0 --outputs policy_output/Softmax:0,value_output/Tanh:0 --fold_const", "Convert Model")
     model_path = os.path.abspath("model.onnx")
 
     # 4. Biên dịch
