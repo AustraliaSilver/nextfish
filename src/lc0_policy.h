@@ -9,6 +9,8 @@
 
 namespace Nextfish {
 
+using namespace Stockfish;
+
 class Lc0Policy {
 public:
     static bool initialize(const std::string& modelPath);

@@ -8,6 +8,8 @@
 // Trong thực tế, bạn sẽ include <onnxruntime_cxx_api.h>
 namespace Nextfish {
 
+using namespace Stockfish;
+
 bool Lc0Policy::initialized = false;
 bool Lc0Policy::isActive = true;
 
@@ -57,7 +59,7 @@ Move Lc0Policy::index_to_move(int index, const Position& pos) {
         static const int df[] = {0, 1, 1, 1, 0, -1, -1, -1};
         int to_rank = from_rank + dr[direction] * distance;
         int to_file = from_file + df[direction] * distance;
-        if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file > 7)
+        if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file <= 7)
             to_sq = make_square(File(to_file), Rank(to_rank));
     } else if (move_type < 64) { // Knight moves
         static const int knr[] = {2, 1, -1, -2, -2, -1, 1, 2};
