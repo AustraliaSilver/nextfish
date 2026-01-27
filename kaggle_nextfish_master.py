@@ -36,17 +36,13 @@ def main():
     src_dir = os.path.join(repo_dir, "src")
     os.chdir(src_dir)
     
-    # Vá Makefile trực tiếp để link ONNX Runtime (Thêm CUDA support)
-    print("[🛠️] Đang vá Makefile để hỗ trợ ONNX GPU...")
-    # Tự động dò tìm đường dẫn CUDA trên Kaggle
-    cuda_path = "/usr/local/cuda/lib64"
-    if not os.path.exists(cuda_path):
-        cuda_path = "/usr/local/cuda/targets/x86_64-linux/lib"
-    
+    # Vá Makefile trực tiếp để link ONNX Runtime (Tối giản để tránh lỗi thiếu thư viện CUDA lúc link)
+    print("[🛠️] Đang vá Makefile để hỗ trợ ONNX...")
     # Chèn thêm vào cuối Makefile để tránh bị ghi đè
+    # Không cần link trực tiếp -lcuda hay -lcudart vì ONNX Runtime nạp chúng động (dynamic loading)
     patch_cmd = f"""
-    echo "LDFLAGS += -L{onnx_lib} -L{cuda_path} -L/usr/lib/x86_64-linux-gnu -lonnxruntime -lpthread -ldl -lcudart -lcuda" >> Makefile
-    echo "LDFLAGS += -Wl,-rpath,{onnx_lib} -Wl,-rpath,{cuda_path} -Wl,-rpath,/usr/lib/x86_64-linux-gnu" >> Makefile
+    echo "LDFLAGS += -L{onnx_lib} -lonnxruntime -lpthread -ldl" >> Makefile
+    echo "LDFLAGS += -Wl,-rpath,{onnx_lib}" >> Makefile
     """
     run_cmd(patch_cmd, "Vá Makefile (Append LDFLAGS)")
 
