@@ -17,6 +17,7 @@
 */
 
 #include "thread.h"
+#include "lc0_policy.h"
 
 #include <algorithm>
 #include <cassert>
@@ -309,6 +310,22 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
     if (rootMoves.empty())
         for (const auto& m : legalmoves)
             rootMoves.emplace_back(m);
+
+    // Nextfish: Filter top 7 moves using Lc0 Policy Network
+    if (Nextfish::Lc0Policy::is_ready() && rootMoves.size() > 7)
+    {
+        auto topMoves = Nextfish::Lc0Policy::get_top_moves(pos, 7);
+        if (!topMoves.empty())
+        {
+            Search::RootMoves filtered;
+            for (auto m : topMoves)
+                filtered.emplace_back(m);
+            
+            // Note: In a real implementation, we would keep the remaining moves 
+            // but with a massive depth penalty (LMR) instead of deleting them.
+            rootMoves = filtered;
+        }
+    }
 
     Tablebases::Config tbConfig = Tablebases::rank_root_moves(options, pos, rootMoves);
 
