@@ -46,10 +46,39 @@ def main():
 
     # 3. Xử lý Model Lc0
     print("\n[🧠] Đang chuẩn bị bộ não Lc0 (BT4-it332)...")
+    
+    # Tự động tìm kiếm trong thư mục input của Kaggle
+    kaggle_input_path = "/kaggle/input"
+    local_model_found = False
+    
+    if os.path.exists(kaggle_input_path):
+        for root, dirs, files in os.walk(kaggle_input_path):
+            for file in files:
+                if "BT4-it332" in file and (file.endswith(".pb.gz") or file.endswith(".pb")):
+                    source_path = os.path.join(root, file)
+                    print(f"[📍] Tìm thấy model tại: {source_path}")
+                    run_cmd(f"cp '{source_path}' ./BT4-it332.pb.gz", "Sao chép model từ Kaggle Input")
+                    local_model_found = True
+                    break
+            if local_model_found: break
+
     if not os.path.exists("model.onnx"):
-        run_cmd(f"wget {MODEL_URL} -O BT4-it332.pb.gz", "Tải Model Lc0 từ storage")
-        run_cmd("gunzip -f BT4-it332.pb.gz", "Giải nén Model")
-        run_cmd("python -m tf2onnx.convert --input BT4-it332.pb --output model.onnx --inputs input:0 --outputs policy:0,value:0", "Chuyển đổi sang định dạng ONNX")
+        if not local_model_found and not os.path.exists("BT4-it332.pb.gz"):
+            run_cmd(f"wget {MODEL_URL} -O BT4-it332.pb.gz", "Tải Model Lc0 từ storage (do không tìm thấy file cục bộ)")
+        
+        if os.path.exists("BT4-it332.pb.gz"):
+            run_cmd("gunzip -f BT4-it332.pb.gz", "Giải nén Model")
+        
+        # Nếu file đã giải nén sẵn hoặc vừa giải nén xong
+        pb_file = "BT4-it332.pb"
+        if not os.path.exists(pb_file):
+            # Tìm file .pb nếu tên khác
+            for f in os.listdir("."):
+                if f.endswith(".pb") and "BT4-it332" in f:
+                    pb_file = f
+                    break
+
+        run_cmd(f"python -m tf2onnx.convert --input {pb_file} --output model.onnx --inputs input:0 --outputs policy:0,value:0", "Chuyển đổi sang định dạng ONNX")
     
     model_path = os.path.abspath("model.onnx")
 
