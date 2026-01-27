@@ -45,6 +45,7 @@ void Lc0Policy::encode_position(const Position& pos, float* input) {
     std::fill(input, input + 112 * 64, 0.0f);
     Color us = pos.side_to_move();
 
+    // Lc0 Input Encoding (Simplified to 12 piece planes + basic features)
     for (PieceType pt : {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING}) {
         for (Color c : {WHITE, BLACK}) {
             Bitboard bb = pos.pieces(c, pt);
@@ -57,27 +58,63 @@ void Lc0Policy::encode_position(const Position& pos, float* input) {
             }
         }
     }
+    // Các planes bổ sung (Castling, Rule50...) có thể thêm ở đây để đạt 112 planes
 }
 
 Move Lc0Policy::index_to_move(int index, const Position& pos) {
-    // Lc0 Policy Mapping: 1858 moves
-    // 0-1857: [64 squares] * [73 move types]
     int from_sq_idx = index / 73;
     int move_type = index % 73;
 
     Color us = pos.side_to_move();
-    // Lc0 square index: White's perspective
     int sf_from_idx = (us == WHITE) ? from_sq_idx : (from_sq_idx ^ 56);
     Square from_sq = Square(sf_from_idx);
+    
+    int from_rank = rank_of(from_sq);
+    int from_file = file_of(from_sq);
 
-    // Duyệt danh sách nước đi hợp lệ để khớp
-    for (const auto& m : MoveList<LEGAL>(pos)) {
-        if (m.from_sq() == from_sq) {
-            // Tạm thời dùng logic so sánh đơn giản để tăng tốc độ phản hồi trên Kaggle
-            // Trong bản nâng cao, chúng ta sẽ decode move_type thành (to_sq, promotion)
-            // Hiện tại, chúng ta trả về nước đi hợp lệ đầu tiên từ ô đi này nếu nó khớp với xu hướng AI
-            return m; 
+    Square to_sq = SQ_NONE;
+    PieceType prom = NO_PIECE_TYPE;
+
+    if (move_type < 56) { // Queen-like moves
+        int direction = move_type / 7;
+        int distance = (move_type % 7) + 1;
+        static const int dr[] = {1, 1, 0, -1, -1, -1, 0, 1};
+        static const int df[] = {0, 1, 1, 1, 0, -1, -1, -1};
+        
+        int to_rank = from_rank + (us == WHITE ? dr[direction] : -dr[direction]) * distance;
+        int to_file = from_file + (us == WHITE ? df[direction] : -df[direction]) * distance;
+
+        if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file <= 7) {
+            to_sq = make_square(File(to_file), Rank(to_rank));
+            // Pawn move to backrank is auto-queen in this queen-move-type
+            if (pos.piece_on(from_sq) == make_piece(us, PAWN) && rank_of(to_sq) == (us == WHITE ? RANK_8 : RANK_1))
+                prom = QUEEN;
         }
+    } else if (move_type < 64) { // Knight moves
+        static const int knr[] = {2, 1, -1, -2, -2, -1, 1, 2};
+        static const int knf[] = {1, 2, 2, 1, -1, -2, -2, -1};
+        int to_rank = from_rank + (us == WHITE ? knr[move_type-56] : -knr[move_type-56]);
+        int to_file = from_file + (us == WHITE ? knf[move_type-56] : -knf[move_type-56]);
+        if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file <= 7)
+            to_sq = make_square(File(to_file), Rank(to_rank));
+    } else { // Underpromotions
+        int p_type = (move_type - 64) / 3; // 0: Knight, 1: Bishop, 2: Rook
+        int p_dir = (move_type - 64) % 3;  // 0: Left cap, 1: Straight, 2: Right cap
+        
+        int to_rank = (us == WHITE) ? RANK_8 : RANK_1;
+        int to_file = from_file + (p_dir - 1);
+        if (to_file >= 0 && to_file <= 7) {
+            to_sq = make_square(File(to_file), Rank(to_rank));
+            prom = (p_type == 0) ? KNIGHT : (p_type == 1) ? BISHOP : ROOK;
+        }
+    }
+
+    if (to_sq == SQ_NONE) return Move::none();
+
+    // Khớp với danh sách nước đi hợp lệ của Stockfish
+    for (const auto& m : MoveList<LEGAL>(pos)) {
+        if (m.from_sq() == from_sq && m.to_sq() == to_sq && m.promotion_type() == prom)
+            return m;
     }
     return Move::none();
 }
@@ -109,6 +146,7 @@ std::vector<Move> Lc0Policy::get_top_moves(const Position& pos, int n) {
 
         std::vector<Move> topMoves;
         for (int i = 0; i < (int)probs.size() && (int)topMoves.size() < n; ++i) {
+            if (probs[i].first < -10.0f) break; // Ngưỡng xác suất thấp
             Move m = index_to_move(probs[i].second, pos);
             if (m != Move::none()) {
                 if (std::find(topMoves.begin(), topMoves.end(), m) == topMoves.end())
