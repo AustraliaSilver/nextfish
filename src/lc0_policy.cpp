@@ -18,32 +18,124 @@ std::vector<const char*> Lc0Policy::output_node_names = {"policy_output/Softmax:
 
 bool Lc0Policy::initialize(const std::string& modelPath) {
     try {
-        if (modelPath.empty()) return false;
+        std::string actualPath = modelPath;
+        if (actualPath.empty() || actualPath == "<autodiscover>") {
+            actualPath = discover_networks();
+        }
+
+        if (actualPath.empty()) return false;
+        
+        // Print which model is being loaded
+        std::cout << "Nextfish: Loading AI Model from " << actualPath << "..." << std::endl;
+
         env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "Nextfish");
         Ort::SessionOptions session_options;
         
-        // Kích hoạt CUDA cho Kaggle GPU T4
-        try {
-            OrtCUDAProviderOptions cuda_options;
-            cuda_options.device_id = 0;
-            session_options.AppendExecutionProvider_CUDA(cuda_options);
-        } catch (...) {}
-
+        // Cấu hình GPU T4 cực kỳ quan trọng
+        OrtCUDAProviderOptions cuda_options;
+        cuda_options.device_id = 0;
+        cuda_options.arena_extend_strategy = 0;
+        cuda_options.gpu_mem_limit = 2ULL * 1024 * 1024 * 1024; // Giới hạn 2GB cho AI
+        cuda_options.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchExhaustive;
+        cuda_options.do_copy_in_default_stream = 1;
+        
+        session_options.AppendExecutionProvider_CUDA(cuda_options);
         session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
 #ifdef _WIN32
-        std::wstring wModelPath(modelPath.begin(), modelPath.end());
+        std::wstring wModelPath(actualPath.begin(), actualPath.end());
         session = std::make_unique<Ort::Session>(*env, wModelPath.c_str(), session_options);
 #else
-        session = std::make_unique<Ort::Session>(*env, modelPath.c_str(), session_options);
+        session = std::make_unique<Ort::Session>(*env, actualPath.c_str(), session_options);
 #endif
         initialized = true;
-        std::cout << "Nextfish: AI Model (112 planes) loaded on GPU successfully!" << std::endl;
+        std::cout << "Nextfish: AI Model loaded on GPU (CUDA) successfully!" << std::endl;
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Nextfish Error: " << e.what() << std::endl;
-        return false;
+        std::string actualPath = modelPath;
+        if (actualPath.empty() || actualPath == "<autodiscover>") actualPath = discover_networks();
+        
+        std::cerr << "Nextfish GPU Error: " << e.what() << ". Falling back to CPU..." << std::endl;
+        try {
+            Ort::SessionOptions cpu_options;
+            cpu_options.SetIntraOpNumThreads(2);
+#ifdef _WIN32
+            std::wstring wModelPath(actualPath.begin(), actualPath.end());
+            session = std::make_unique<Ort::Session>(*env, wModelPath.c_str(), cpu_options);
+#else
+            session = std::make_unique<Ort::Session>(*env, actualPath.c_str(), cpu_options);
+#endif
+            initialized = true;
+            return true;
+        } catch (...) { return false; }
     }
+}
+
+std::string Lc0Policy::discover_networks() {
+    namespace fs = std::filesystem;
+    std::vector<std::string> search_paths = {
+        ".",
+        "./networks",
+        "..",
+        "../networks",
+        "../../",
+        "../../networks",
+        "../../../",
+        "../../lc0-master",
+        "../../lc0-master/build",
+        "../../lc0-master/networks",
+        "../../../lc0-master",
+        "../../../lc0-master/networks",
+        "../Nextfish-dev",
+        "../../Nextfish-dev"
+    };
+
+    // Also try to find CAI directory specifically if we can
+    try {
+        fs::path current = fs::current_path();
+        while (current.has_parent_path()) {
+            if (current.filename() == "CAI") {
+                search_paths.push_back(current.string());
+                search_paths.push_back((current / "Nextfish-dev").string());
+                search_paths.push_back((current / "lc0-master").string());
+                search_paths.push_back((current / "lc0-master" / "networks").string());
+                break;
+            }
+            current = current.parent_path();
+        }
+    } catch (...) {}
+
+    std::string best_net = "";
+    fs::file_time_type best_time;
+    const uintmax_t kMinFileSize = 500000; // 500 KB, giống LC0
+
+    for (const auto& p : search_paths) {
+        if (!fs::exists(p)) continue;
+        try {
+            for (const auto& entry : fs::directory_iterator(p)) {
+                if (!entry.is_regular_file()) continue;
+                if (fs::file_size(entry) < kMinFileSize) continue;
+                
+                std::string ext = entry.path().extension().string();
+                std::string filename = entry.path().filename().string();
+                
+                // Prioritize .onnx for onnxruntime, then .pb.gz and .pb
+                bool is_net = (ext == ".onnx" || ext == ".pb" || filename.find(".pb.gz") != std::string::npos);
+                
+                if (is_net) {
+                    auto curr_time = fs::last_write_time(entry);
+                    // If it's an .onnx, we prefer it over .pb.gz if they have similar times
+                    // but for now let's just use the newest.
+                    if (best_net.empty() || curr_time > best_time) {
+                        best_time = curr_time;
+                        best_net = entry.path().string();
+                    }
+                }
+            }
+        } catch (...) { continue; }
+    }
+
+    return best_net;
 }
 
 void Lc0Policy::encode_position(const Position& pos, float* input) {
@@ -51,6 +143,7 @@ void Lc0Policy::encode_position(const Position& pos, float* input) {
     Color us = pos.side_to_move();
 
     // Planes 0-11: Piece positions (6 us, 6 them)
+    // Lc0 expects board symmetry: If Black to move, flip both Rank AND File
     for (PieceType pt : {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING}) {
         for (Color c : {WHITE, BLACK}) {
             Bitboard bb = pos.pieces(c, pt);
@@ -58,22 +151,18 @@ void Lc0Policy::encode_position(const Position& pos, float* input) {
             while (bb) {
                 Square s = pop_lsb(bb);
                 int row = (us == WHITE) ? rank_of(s) : 7 - rank_of(s);
-                int col = file_of(s); // Lc0 không flip file theo mặc định
+                int col = (us == WHITE) ? file_of(s) : 7 - file_of(s); // Sửa: Flip cả file cho đối xứng
                 input[plane_idx * 64 + row * 8 + col] = 1.0f;
             }
         }
     }
 
-    // Plane 104: Side to move (1.0 for White, but here it's perspective-neutral)
-    // Lc0 thường dùng plane này để chỉ định lượt đi nếu không flip board.
-    
-    // Planes 106-109: Castling Rights
+    // Planes 106-109: Castling Rights (đơn giản hóa cho us/them)
     if (pos.can_castle(us & WHITE_OO))   std::fill(input + 106 * 64, input + 107 * 64, 1.0f);
     if (pos.can_castle(us & WHITE_OOO))  std::fill(input + 107 * 64, input + 108 * 64, 1.0f);
     if (pos.can_castle(~us & BLACK_OO))  std::fill(input + 108 * 64, input + 109 * 64, 1.0f);
     if (pos.can_castle(~us & BLACK_OOO)) std::fill(input + 109 * 64, input + 110 * 64, 1.0f);
 
-    // Plane 110: Rule 50 (normalized)
     float rule50 = (float)pos.rule50_count() / 100.0f;
     std::fill(input + 110 * 64, input + 111 * 64, rule50);
 }
@@ -83,7 +172,8 @@ Move Lc0Policy::index_to_move(int index, const Position& pos) {
     int move_type = index % 73;
 
     Color us = pos.side_to_move();
-    int sf_from_idx = (us == WHITE) ? from_sq_idx : (from_sq_idx ^ 56);
+    // Decode from_sq (áp dụng flip nếu là Black)
+    int sf_from_idx = (us == WHITE) ? from_sq_idx : (from_sq_idx ^ 63); // Sửa: Flip cả rank/file
     Square from_sq = Square(sf_from_idx);
     int from_rank = rank_of(from_sq);
     int from_file = file_of(from_sq);
@@ -98,7 +188,7 @@ Move Lc0Policy::index_to_move(int index, const Position& pos) {
         int direction = move_type / 7;
         int distance = (move_type % 7) + 1;
         int to_rank = from_rank + (us == WHITE ? dr[direction] : -dr[direction]) * distance;
-        int to_file = from_file + df[direction] * distance; // KHÔNG flip file
+        int to_file = from_file + (us == WHITE ? df[direction] : -df[direction]) * distance;
 
         if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file <= 7) {
             to_sq = make_square(File(to_file), Rank(to_rank));
@@ -109,14 +199,14 @@ Move Lc0Policy::index_to_move(int index, const Position& pos) {
         static const int knr[] = {2, 1, -1, -2, -2, -1, 1, 2};
         static const int knf[] = {1, 2, 2, 1, -1, -2, -2, -1};
         int to_rank = from_rank + (us == WHITE ? knr[move_type-56] : -knr[move_type-56]);
-        int to_file = from_file + knf[move_type-56];
+        int to_file = from_file + (us == WHITE ? knf[move_type-56] : -knf[move_type-56]);
         if (to_rank >= 0 && to_rank <= 7 && to_file >= 0 && to_file <= 7)
             to_sq = make_square(File(to_file), Rank(to_rank));
     } else {
         int p_type = (move_type - 64) / 3;
         int p_dir = (move_type - 64) % 3;
         int to_rank = (us == WHITE) ? RANK_8 : RANK_1;
-        int to_file = from_file + (p_dir - 1);
+        int to_file = from_file + (us == WHITE ? (p_dir - 1) : -(p_dir - 1));
         if (to_file >= 0 && to_file <= 7) {
             to_sq = make_square(File(to_file), Rank(to_rank));
             prom = (p_type == 0) ? KNIGHT : (p_type == 1) ? BISHOP : ROOK;

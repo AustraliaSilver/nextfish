@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <filesystem>
 #include <onnxruntime_cxx_api.h>
 
 namespace Nextfish {
@@ -15,6 +16,7 @@ using namespace Stockfish;
 class Lc0Policy {
 public:
     static bool initialize(const std::string& modelPath);
+    static std::string discover_networks();
     static std::vector<Move> get_top_moves(const Position& pos, int n = 7);
     static bool is_ready() { return initialized; }
     static void set_active(bool active) { isActive = active; }
