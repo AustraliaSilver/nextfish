@@ -311,8 +311,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
         for (const auto& m : legalmoves)
             rootMoves.emplace_back(m);
 
-    // Nextfish: Filter top 7 moves using Lc0 Policy Network
-    if (Nextfish::Lc0Policy::is_ready() && rootMoves.size() > 7)
+    // Nextfish v2.0: Apply Lc0 Policy Filtering
+    if (Nextfish::Lc0Policy::is_ready() && Nextfish::Lc0Policy::is_active() && rootMoves.size() > 7)
     {
         auto topMoves = Nextfish::Lc0Policy::get_top_moves(pos, 7);
         if (!topMoves.empty())
@@ -320,9 +320,6 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
             Search::RootMoves filtered;
             for (auto m : topMoves)
                 filtered.emplace_back(m);
-            
-            // Note: In a real implementation, we would keep the remaining moves 
-            // but with a massive depth penalty (LMR) instead of deleting them.
             rootMoves = filtered;
         }
     }

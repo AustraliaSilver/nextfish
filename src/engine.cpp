@@ -17,6 +17,7 @@
 */
 
 #include "engine.h"
+#include "lc0_policy.h"
 
 #include <algorithm>
 #include <cassert>
@@ -140,6 +141,16 @@ Engine::Engine(std::optional<std::string> path) :
           load_small_network(o);
           return std::nullopt;
       }));
+
+    options.add("Lc0Policy_Active", Option(true, [](const Option& o) {
+                    Nextfish::Lc0Policy::set_active(o);
+                    return std::nullopt;
+                }));
+
+    options.add("Lc0Policy_ModelPath", Option("", [](const Option& o) {
+                    Nextfish::Lc0Policy::initialize(o);
+                    return std::nullopt;
+                }));
 
     load_networks();
     resize_threads();
