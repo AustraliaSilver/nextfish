@@ -28,14 +28,14 @@ def setup_chess_env():
     if not os.path.exists("fastchess"):
         run_cmd(f"wget {FASTCHESS_URL} -O fastchess.tar", "Tải Fastchess")
         run_cmd("tar -xf fastchess.tar", "Giải nén Fastchess")
-        run_cmd("find . -name 'fastchess' -type f -exec mv {} ./fastchess \";", "Định vị Fastchess binary")
+        run_cmd("find . -name 'fastchess' -type f -exec mv {} ./fastchess \;";, "Định vị Fastchess binary")
         run_cmd("chmod +x fastchess", "Cấp quyền Fastchess")
     
     # 2. Cài đặt Stockfish đối thủ (Standard)
     if not os.path.exists("stockfish_base"):
         run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar", "Tải Stockfish đối thủ")
         run_cmd("tar -xf sf_base.tar", "Giải nén Stockfish đối thủ")
-        run_cmd(f"find . -name 'stockfish-ubuntu-x86-64-avx2' -type f -exec mv {{}} {WORKING_DIR}/stockfish_base \";", "Cấu hình Stockfish_Standard")
+        run_cmd(f"find . -name 'stockfish-ubuntu-x86-64-avx2' -type f -exec mv {{}} {WORKING_DIR}/stockfish_base \;";, "Cấu hình Stockfish_Standard")
         run_cmd(f"chmod +x {WORKING_DIR}/stockfish_base", "Cấp quyền thực thi")
 
 def start_tournament():
@@ -47,8 +47,8 @@ def start_tournament():
         print(f"[❌] LỖI: Không tìm thấy Nextfish tại {NEXTFISH_BIN}. Hãy build engine trước!")
         return
 
-    # Lệnh Fastchess: 50 ván (25 rounds * repeat), 2 ván chạy song song
-    # Time Control: 10 phút + 0.1s cộng thêm mỗi nước
+    # Lệnh Fastchess: 50 ván, 2 ván chạy song song
+    # -output pgn=... là tham số thay thế cho -pgn trong các bản mới
     cmd = (
         f"./fastchess "
         f"-engine cmd={NEXTFISH_BIN} name=Nextfish "
@@ -60,7 +60,7 @@ def start_tournament():
         f"-concurrency 2 "
         f"-draw movenumber=40 movecount=8 score=8 "
         f"-resign movecount=3 score=600 "
-        f"-pgn nextfish_battle_report.pgn "
+        f"-output pgn=nextfish_battle_report.pgn "
         f"-log file=fastchess.log"
     )
     
