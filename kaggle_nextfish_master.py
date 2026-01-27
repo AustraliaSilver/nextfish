@@ -36,19 +36,33 @@ def main():
     run_cmd("apt-get update && apt-get install -y libonnxruntime-dev build-essential wget git", "Cài đặt thư viện C++ & ONNX")
     run_cmd("pip install onnxruntime-gpu tf2onnx", "Cài đặt thư viện Python AI")
 
-    # 2. Xử lý mã nguồn
-    if os.path.exists("nextfish"):
-        run_cmd("rm -rf nextfish", "Dọn dẹp thư mục cũ")
-    run_cmd(f"git clone {REPO_URL}", "Tải mã nguồn Nextfish")
+    # 2. Xử lý mã nguồn - Clone thẳng vào thư mục hiện tại hoặc thư mục con
+    working_dir = "/kaggle/working"
+    if not os.path.exists(working_dir):
+        working_dir = os.getcwd()
+
+    repo_dir = os.path.join(working_dir, "nextfish")
     
-    root_path = os.path.abspath("nextfish/CAI/Nextfish-dev/Stockfish-master")
+    if os.path.exists(repo_dir):
+        run_cmd(f"rm -rf {repo_dir}", "Dọn dẹp thư mục cũ")
+    
+    run_cmd(f"git clone {REPO_URL} {repo_dir}", "Tải mã nguồn Nextfish")
+    
+    # Tự động tìm thư mục chứa 'src'
+    root_path = repo_dir
+    for root, dirs, files in os.walk(repo_dir):
+        if "src" in dirs and "evaluate.cpp" in os.listdir(os.path.join(root, "src")):
+            root_path = root
+            break
+    
+    print(f"[📍] Thư mục gốc dự án: {root_path}")
     os.chdir(root_path)
 
     # 3. Xử lý Model Lc0
     print("\n[🧠] Đang chuẩn bị bộ não Lc0 (BT4-it332)...")
     
     # Tự động tìm kiếm trong thư mục input của Kaggle
-    kaggle_input_path = "/kaggle/input"
+    kaggle_input_path = "/kaggle/input/neuronnetwork"
     local_model_found = False
     
     if os.path.exists(kaggle_input_path):
