@@ -48,36 +48,37 @@ def setup_chess_env():
     if not os.path.exists("stockfish_base"):
         run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar", "Tải Stockfish đối thủ")
         run_cmd("tar -xf sf_base.tar", "Giải nén Stockfish đối thủ")
-        # Tìm file bắt đầu bằng stockfish-ubuntu...
         if not find_and_move("stockfish-ubuntu*", "stockfish_base"):
-            # Thử tìm file bất kỳ bắt đầu bằng stockfish
             find_and_move("stockfish*", "stockfish_base")
 
 def start_tournament():
     print("\n" + "="*60)
-    print("⚔️  BẮT ĐẦU GIẢI ĐẤU: NEXTFISH VS STOCKFISH STANDARD")
+    print("⚔️  BẮT ĐẦU GIẢI ĐẤU: NEXTFISH (GPU) VS STOCKFISH STANDARD")
     print("="*60)
     
     os.chdir(WORKING_DIR)
+    # Đường dẫn thư viện ONNX GPU cực kỳ quan trọng cho T4
+    onnx_lib = "/kaggle/working/onnxruntime-linux-x64-gpu-1.17.1/lib"
     
     if not os.path.exists(NEXTFISH_BIN):
-        print(f"[❌] LỖI: Không tìm thấy Nextfish tại {NEXTFISH_BIN}. Hãy build engine trước!")
+        print(f"[❌] LỖI: Không tìm thấy Nextfish tại {NEXTFISH_BIN}.")
         return
     
     if not os.path.exists("./fastchess") or not os.path.exists("./stockfish_base"):
-        print("[❌] LỖI: Thiếu công cụ thi đấu (fastchess hoặc stockfish_base).")
+        print("[❌] LỖI: Thiếu công cụ thi đấu.")
         return
 
-    # Lệnh Fastchess
+    # Lệnh Fastchess với LD_LIBRARY_PATH để kích hoạt GPU
+    # concurrency 1: Dành toàn bộ GPU cho 1 ván duy nhất để đạt sức mạnh tối đa
     cmd = (
-        f"./fastchess "
+        f"LD_LIBRARY_PATH={onnx_lib}:$LD_LIBRARY_PATH ./fastchess "
         f"-engine cmd={NEXTFISH_BIN} name=Nextfish "
         f"option.Lc0Policy_ModelPath={MODEL_PATH} "
         f"option.Lc0Policy_Active=true "
         f"-engine cmd=./stockfish_base name=Stockfish_Standard "
         f"-each tc=10+0.1 "
         f"-rounds 25 -repeat "
-        f"-concurrency 2 "
+        f"-concurrency 1 "
         f"-draw movenumber=40 movecount=8 score=8 "
         f"-resign movecount=3 score=600 "
         f"-output pgn=nextfish_battle_report.pgn "
