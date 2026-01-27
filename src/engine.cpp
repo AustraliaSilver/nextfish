@@ -147,6 +147,16 @@ Engine::Engine(std::optional<std::string> path) :
                     return std::nullopt;
                 }));
 
+    options.add("Lc0Policy_UseGPU", Option(true, [](const Option& o) {
+                    Nextfish::Lc0Policy::set_use_gpu(o);
+                    return std::nullopt;
+                }));
+
+    options.add("Lc0Policy_Threads", Option(2, 1, 128, [](const Option& o) {
+                    Nextfish::Lc0Policy::set_threads(o);
+                    return std::nullopt;
+                }));
+
     options.add("Lc0Policy_ModelPath", Option("", [](const Option& o) {
                     Nextfish::Lc0Policy::initialize(o);
                     return std::nullopt;

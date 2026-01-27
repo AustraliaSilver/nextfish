@@ -12,6 +12,8 @@ using namespace Stockfish;
 
 bool Lc0Policy::initialized = false;
 bool Lc0Policy::isActive = true;
+bool Lc0Policy::useGPU = true;
+int Lc0Policy::intraOpThreads = 2;
 std::unique_ptr<Ort::Env> Lc0Policy::env = nullptr;
 std::unique_ptr<Ort::Session> Lc0Policy::session = nullptr;
 std::vector<const char*> Lc0Policy::input_node_names = {"input:0"};
@@ -29,47 +31,54 @@ bool Lc0Policy::initialize(const std::string& modelPath) {
         // Print which model is being loaded (info string to be UCI compliant)
         sync_cout << "info string Nextfish: Loading AI Model from " << actualPath << "..." << sync_endl;
 
-        env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "Nextfish");
+        if (!env) env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "Nextfish");
         Ort::SessionOptions session_options;
         
-        // Cấu hình GPU T4 cực kỳ quan trọng
-        OrtCUDAProviderOptions cuda_options;
-        cuda_options.device_id = 0;
-        cuda_options.arena_extend_strategy = 0;
-        cuda_options.gpu_mem_limit = 2ULL * 1024 * 1024 * 1024; // Giới hạn 2GB cho AI
-        cuda_options.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchExhaustive;
-        cuda_options.do_copy_in_default_stream = 1;
-        
-        session_options.AppendExecutionProvider_CUDA(cuda_options);
-        session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        bool gpu_success = false;
+        if (useGPU) {
+            try {
+                // Cấu hình GPU CUDA
+                OrtCUDAProviderOptions cuda_options;
+                cuda_options.device_id = 0;
+                cuda_options.arena_extend_strategy = 0;
+                cuda_options.gpu_mem_limit = 2ULL * 1024 * 1024 * 1024; // Giới hạn 2GB cho AI
+                cuda_options.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchExhaustive;
+                cuda_options.do_copy_in_default_stream = 1;
+                
+                session_options.AppendExecutionProvider_CUDA(cuda_options);
+                session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
 #ifdef _WIN32
-        std::wstring wModelPath(actualPath.begin(), actualPath.end());
-        session = std::make_unique<Ort::Session>(*env, wModelPath.c_str(), session_options);
+                std::wstring wModelPath(actualPath.begin(), actualPath.end());
+                session = std::make_unique<Ort::Session>(*env, wModelPath.c_str(), session_options);
 #else
-        session = std::make_unique<Ort::Session>(*env, actualPath.c_str(), session_options);
+                session = std::make_unique<Ort::Session>(*env, actualPath.c_str(), session_options);
 #endif
-        initialized = true;
-        sync_cout << "info string Nextfish: AI Model loaded on GPU (CUDA) successfully!" << sync_endl;
-        return true;
-    } catch (const std::exception& e) {
-        std::string actualPath = modelPath;
-        if (actualPath.empty() || actualPath == "<autodiscover>") actualPath = discover_networks();
-        
-        sync_cout << "info string Nextfish GPU Error: " << e.what() << ". Falling back to CPU..." << sync_endl;
-        try {
-            if (!env) env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "Nextfish");
+                gpu_success = true;
+                sync_cout << "info string Nextfish: AI Model loaded on GPU (CUDA) successfully!" << sync_endl;
+            } catch (const std::exception& e) {
+                sync_cout << "info string Nextfish GPU Error: " << e.what() << ". Falling back to CPU..." << sync_endl;
+            }
+        }
+
+        if (!gpu_success) {
             Ort::SessionOptions cpu_options;
-            cpu_options.SetIntraOpNumThreads(2);
+            cpu_options.SetIntraOpNumThreads(intraOpThreads);
+            cpu_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 #ifdef _WIN32
             std::wstring wModelPath(actualPath.begin(), actualPath.end());
             session = std::make_unique<Ort::Session>(*env, wModelPath.c_str(), cpu_options);
 #else
             session = std::make_unique<Ort::Session>(*env, actualPath.c_str(), cpu_options);
 #endif
-            initialized = true;
-            return true;
-        } catch (...) { return false; }
+            sync_cout << "info string Nextfish: AI Model loaded on CPU (Threads: " << intraOpThreads << ") successfully!" << sync_endl;
+        }
+
+        initialized = true;
+        return true;
+    } catch (...) { 
+        initialized = false;
+        return false; 
     }
 }
 

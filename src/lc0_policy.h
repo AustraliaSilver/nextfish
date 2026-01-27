@@ -21,10 +21,14 @@ public:
     static bool is_ready() { return initialized; }
     static void set_active(bool active) { isActive = active; }
     static bool is_active() { return isActive; }
+    static void set_use_gpu(bool gpu) { useGPU = gpu; }
+    static void set_threads(int threads) { intraOpThreads = threads; }
 
 private:
     static bool initialized;
     static bool isActive;
+    static bool useGPU;
+    static int intraOpThreads;
     static std::unique_ptr<Ort::Env> env;
     static std::unique_ptr<Ort::Session> session;
     static std::vector<const char*> input_node_names;
