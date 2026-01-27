@@ -8,8 +8,8 @@ NEXTFISH_BIN = os.path.join(WORKING_DIR, "nextfish/src/stockfish")
 MODEL_PATH = os.path.join(WORKING_DIR, "model.onnx")
 
 # Link tải công cụ
-FASTCHESS_URL = "https://github.com/FastChess/fastchess/releases/download/v0.9.0/fastchess-v0.9.0-linux-x86-64.tar.gz"
-STOCKFISH_BASE_URL = "https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar.gz"
+FASTCHESS_URL = "https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar"
+STOCKFISH_BASE_URL = "https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar"
 
 def run_cmd(cmd, desc):
     print(f"\n[🚀] {desc}...")
@@ -24,13 +24,18 @@ def setup_chess_env():
     
     # 1. Cài đặt Fastchess
     if not os.path.exists("fastchess"):
-        run_cmd(f"wget {FASTCHESS_URL} -O fastchess.tar.gz && tar -zxvf fastchess.tar.gz && chmod +x fastchess", "Tải Fastchess")
+        run_cmd(f"wget {FASTCHESS_URL} -O fastchess.tar.gz", "Tải Fastchess")
+        run_cmd("tar -xzf fastchess.tar.gz", "Giải nén Fastchess")
+        # Đảm bảo file thực thi có tên 'fastchess' trong thư mục gốc
+        run_cmd("find . -name 'fastchess' -type f -exec mv {} ./fastchess \\;", "Định vị Fastchess binary")
+        run_cmd("chmod +x fastchess", "Cấp quyền Fastchess")
     
     # 2. Cài đặt Stockfish đối thủ (Standard)
     if not os.path.exists("stockfish_base"):
-        run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar.gz && tar -zxvf sf_base.tar.gz", "Tải Stockfish đối thủ")
-        # Tìm file thực thi và đưa ra ngoài
-        run_cmd(f"find . -name 'stockfish-ubuntu-x86-64-avx2' -exec mv {{}} {WORKING_DIR}/stockfish_base \\;", "Cấu hình Stockfish_Standard")
+        run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar.gz", "Tải Stockfish đối thủ")
+        run_cmd("tar -xzf sf_base.tar.gz", "Giải nén Stockfish đối thủ")
+        # Tìm file thực thi và đưa ra ngoài với tên stockfish_base
+        run_cmd(f"find . -name 'stockfish-ubuntu-x86-64-avx2' -type f -exec mv {{}} {WORKING_DIR}/stockfish_base \\;", "Cấu hình Stockfish_Standard")
         run_cmd(f"chmod +x {WORKING_DIR}/stockfish_base", "Cấp quyền thực thi")
 
 def start_tournament():
