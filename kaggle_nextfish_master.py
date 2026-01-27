@@ -49,7 +49,9 @@ def main():
     pb_file = next((f for f in os.listdir(".") if f.endswith(".pb")), None)
     if pb_file:
         run_cmd("pip install tf2onnx onnxruntime-gpu", "Cài converter & GPU Runtime")
-        run_cmd(f"python -m tf2onnx.convert --input {pb_file} --output model.onnx --inputs input:0 --outputs policy:0,value:0", "Convert Model")
+        # Chạy convert trên CPU (CUDA_VISIBLE_DEVICES="") để tránh lỗi bộ nhớ GPU
+        # Sử dụng tên node chuẩn không có :0
+        run_cmd(f"CUDA_VISIBLE_DEVICES='' python -m tf2onnx.convert --input {pb_file} --output model.onnx --inputs input:0 --outputs policy:0,value:0 --fold_const", "Convert Model")
     model_path = os.path.abspath("model.onnx")
 
     # 4. Biên dịch
