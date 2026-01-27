@@ -38,10 +38,17 @@ def main():
     
     # Vá Makefile trực tiếp để link ONNX Runtime (Thêm CUDA support)
     print("[🛠️] Đang vá Makefile để hỗ trợ ONNX GPU...")
-    patch_make = f"""
-    sed -i 's|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS) -L{onnx_lib} -L/usr/local/cuda/lib64 -lonnxruntime -lpthread -ldl -lcudart -lcuda -Wl,-rpath,{onnx_lib} -Wl,-rpath,/usr/local/cuda/lib64|' Makefile
+    # Tự động dò tìm đường dẫn CUDA trên Kaggle
+    cuda_path = "/usr/local/cuda/lib64"
+    if not os.path.exists(cuda_path):
+        cuda_path = "/usr/local/cuda/targets/x86_64-linux/lib"
+    
+    # Chèn thêm vào cuối Makefile để tránh bị ghi đè
+    patch_cmd = f"""
+    echo "LDFLAGS += -L{onnx_lib} -L{cuda_path} -L/usr/lib/x86_64-linux-gnu -lonnxruntime -lpthread -ldl -lcudart -lcuda" >> Makefile
+    echo "LDFLAGS += -Wl,-rpath,{onnx_lib} -Wl,-rpath,{cuda_path} -Wl,-rpath,/usr/lib/x86_64-linux-gnu" >> Makefile
     """
-    run_cmd(patch_make, "Vá Makefile")
+    run_cmd(patch_cmd, "Vá Makefile (Append LDFLAGS)")
 
     # 3. Xử lý Model
     os.chdir(repo_dir)
@@ -58,7 +65,6 @@ def inspect_pb(pb_path):
         graph_def = tf.compat.v1.GraphDef()
         graph_def.ParseFromString(f.read())
     nodes = [node.name for node in graph_def.node]
-    # Tìm node chứa 'input', 'policy', 'value'
     inputs = [n for n in nodes if 'input' in n.lower()]
     policies = [n for n in nodes if 'policy' in n.lower() and 'softmax' in n.lower()]
     if not policies: policies = [n for n in nodes if 'policy' in n.lower()]
@@ -73,7 +79,6 @@ inspect_pb('{pb_file}')
         with open("inspect_model.py", "w") as f: f.write(inspect_script)
         
         print("[🔍] Đang phân tích cấu trúc Model...")
-        # Lấy kết quả từ script inspect
         result = subprocess.check_output("python inspect_model.py", shell=True, text=True)
         print(result)
         
@@ -81,13 +86,11 @@ inspect_pb('{pb_file}')
         pol = next(line.split(": ")[1] for line in result.split("\n") if "DETECTED_POLICY" in line)
         val = next(line.split(": ")[1] for line in result.split("\n") if "DETECTED_VALUE" in line)
 
-        # Chạy convert với node name đã tìm thấy
         run_cmd(f"CUDA_VISIBLE_DEVICES='' python -m tf2onnx.convert --input {pb_file} --output model.onnx --inputs {inp} --outputs {pol},{val} --fold_const", "Convert Model")
     model_path = os.path.abspath("model.onnx")
 
     # 4. Biên dịch
     os.chdir(src_dir)
-    # Bây giờ LDFLAGS đã được vá trong file, chỉ cần truyền CXXFLAGS
     make_flags = f"ARCH={ARCH} COMP=gcc CXXFLAGS='-I{onnx_inc}'"
     
     if run_cmd(f"make -j$(nproc) build {make_flags}", "Biên dịch Nextfish"):
