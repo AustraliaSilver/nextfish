@@ -28,7 +28,7 @@ def main():
     onnx_root = os.path.join(working_dir, "onnxruntime-linux-x64-1.17.1")
     onnx_inc, onnx_lib = os.path.join(onnx_root, "include"), os.path.join(onnx_root, "lib")
 
-    # 2. Tải & Vá lỗi mã nguồn (Fix Header + Fix Makefile)
+    # 2. Tải & Vá lỗi mã nguồn (Fix Makefile)
     repo_dir = os.path.join(working_dir, "nextfish")
     if os.path.exists(repo_dir): run_cmd(f"rm -rf {repo_dir}", "Dọn dẹp")
     run_cmd(f"git clone {REPO_URL} {repo_dir}", "Tải mã nguồn")
@@ -36,6 +36,13 @@ def main():
     src_dir = os.path.join(repo_dir, "src")
     os.chdir(src_dir)
     
+    # Vá Makefile trực tiếp để link ONNX Runtime
+    print("[🛠️] Đang vá Makefile để hỗ trợ ONNX...")
+    patch_make = f"""
+    sed -i 's|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS) -L{onnx_lib} -lonnxruntime -lpthread -ldl -Wl,-rpath,{onnx_lib}|' Makefile
+    """
+    run_cmd(patch_make, "Vá Makefile")
+
     # 3. Xử lý Model
     os.chdir(repo_dir)
     run_cmd(f"wget {MODEL_URL} -O model_raw.pb.gz && gunzip -f model_raw.pb.gz", "Chuẩn bị Model")
@@ -47,8 +54,8 @@ def main():
 
     # 4. Biên dịch
     os.chdir(src_dir)
-    # Sử dụng EXTRALDFLAGS để nối thêm thay vì ghi đè hoàn toàn LDFLAGS của Makefile
-    make_flags = f"ARCH={ARCH} COMP=gcc CXXFLAGS='-I{onnx_inc}' EXTRALDFLAGS='-L{onnx_lib} -lonnxruntime -lpthread -ldl -Wl,-rpath,{onnx_lib}'"
+    # Bây giờ LDFLAGS đã được vá trong file, chỉ cần truyền CXXFLAGS
+    make_flags = f"ARCH={ARCH} COMP=gcc CXXFLAGS='-I{onnx_inc}'"
     
     if run_cmd(f"make -j$(nproc) build {make_flags}", "Biên dịch Nextfish"):
         engine_path = os.path.abspath("stockfish")
