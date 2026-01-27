@@ -53,19 +53,4 @@ def start_tournament():
         f"./fastchess "
         f"-engine cmd={NEXTFISH_BIN} name=Nextfish "
         f"option.Lc0Policy_ModelPath={MODEL_PATH} "
-        f"option.Lc0Policy_Active=true "
-        f"-engine cmd={WORKING_DIR}/stockfish_base name=Stockfish_Standard "
-        f"-each tc=10+0.1 "
-        f"-rounds 25 -repeat "
-        f"-concurrency 2 "
-        f"-draw movenumber=40 movecount=8 score=8 "
-        f"-resign movecount=3 score=600 "
-        f"-output pgn=nextfish_battle_report.pgn "
-        f"-log file=fastchess.log"
-    )
-    
-    run_cmd(cmd, "Đang thi đấu (50 ván)")
-
-if __name__ == "__main__":
-    setup_chess_env()
-    start_tournament()
+        f
