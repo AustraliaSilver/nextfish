@@ -7,12 +7,16 @@ WORKING_DIR = "/kaggle/working"
 NEXTFISH_BIN = os.path.join(WORKING_DIR, "nextfish/src/stockfish")
 MODEL_PATH = os.path.join(WORKING_DIR, "model.onnx")
 
-# Link tải công cụ
+# Link tải công cụ (Cập nhật sang link tải trực tiếp file .tar của Stockfish và Fastchess)
 FASTCHESS_URL = "https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar"
 STOCKFISH_BASE_URL = "https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar"
 
 def run_cmd(cmd, desc):
     print(f"\n[🚀] {desc}...")
+    # Thêm -L cho wget để xử lý redirect từ GitHub
+    if "wget " in cmd:
+        cmd = cmd.replace("wget ", "wget -L ")
+    
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     for line in process.stdout:
         print(f"  {line.strip()}")
@@ -24,18 +28,18 @@ def setup_chess_env():
     
     # 1. Cài đặt Fastchess
     if not os.path.exists("fastchess"):
-        run_cmd(f"wget {FASTCHESS_URL} -O fastchess.tar.gz", "Tải Fastchess")
-        run_cmd("tar -xzf fastchess.tar.gz", "Giải nén Fastchess")
-        # Đảm bảo file thực thi có tên 'fastchess' trong thư mục gốc
-        run_cmd("find . -name 'fastchess' -type f -exec mv {} ./fastchess \\;", "Định vị Fastchess binary")
+        run_cmd(f"wget {FASTCHESS_URL} -O fastchess.tar", "Tải Fastchess")
+        run_cmd("tar -xf fastchess.tar", "Giải nén Fastchess")
+        # Định vị file thực thi
+        run_cmd("find . -name 'fastchess' -type f -exec mv {} ./fastchess \";", "Định vị Fastchess binary")
         run_cmd("chmod +x fastchess", "Cấp quyền Fastchess")
     
     # 2. Cài đặt Stockfish đối thủ (Standard)
     if not os.path.exists("stockfish_base"):
-        run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar.gz", "Tải Stockfish đối thủ")
-        run_cmd("tar -xzf sf_base.tar.gz", "Giải nén Stockfish đối thủ")
+        run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar", "Tải Stockfish đối thủ")
+        run_cmd("tar -xf sf_base.tar", "Giải nén Stockfish đối thủ")
         # Tìm file thực thi và đưa ra ngoài với tên stockfish_base
-        run_cmd(f"find . -name 'stockfish-ubuntu-x86-64-avx2' -type f -exec mv {{}} {WORKING_DIR}/stockfish_base \\;", "Cấu hình Stockfish_Standard")
+        run_cmd(f"find . -name 'stockfish-ubuntu-x86-64-avx2' -type f -exec mv {{}} {WORKING_DIR}/stockfish_base \";", "Cấu hình Stockfish_Standard")
         run_cmd(f"chmod +x {WORKING_DIR}/stockfish_base", "Cấp quyền thực thi")
 
 def start_tournament():
