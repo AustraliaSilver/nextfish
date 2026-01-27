@@ -47,8 +47,8 @@ def main():
 
     # 4. Biên dịch
     os.chdir(src_dir)
-    # Thêm -lonnxruntime vào LDFLAGS và đảm bảo link đúng đường dẫn
-    make_flags = f"ARCH={ARCH} COMP=gcc CXXFLAGS='-I{onnx_inc}' LDFLAGS='-L{onnx_lib} -lonnxruntime -Wl,-rpath,{onnx_lib}'"
+    # Sử dụng EXTRALDFLAGS để nối thêm thay vì ghi đè hoàn toàn LDFLAGS của Makefile
+    make_flags = f"ARCH={ARCH} COMP=gcc CXXFLAGS='-I{onnx_inc}' EXTRALDFLAGS='-L{onnx_lib} -lonnxruntime -lpthread -ldl -Wl,-rpath,{onnx_lib}'"
     
     if run_cmd(f"make -j$(nproc) build {make_flags}", "Biên dịch Nextfish"):
         engine_path = os.path.abspath("stockfish")
