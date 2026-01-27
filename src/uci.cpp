@@ -38,6 +38,7 @@
 #include "search.h"
 #include "types.h"
 #include "ucioption.h"
+#include "lc0_policy.h"
 
 namespace Stockfish {
 
@@ -116,6 +117,10 @@ void UCIEngine::loop() {
         {
             sync_cout << "id name " << engine_info(true) << "\n"
                       << engine.get_options() << sync_endl;
+
+            // Nextfish: Initialize Lc0Policy with current model path if not already done
+            if (!Nextfish::Lc0Policy::is_ready())
+                Nextfish::Lc0Policy::initialize(engine.get_options()["Lc0Policy_ModelPath"]);
 
             // Nextfish: Print TCEC relevant info
             print_info_string(has_large_pages() ? "Large Pages: ON" : "Large Pages: OFF");

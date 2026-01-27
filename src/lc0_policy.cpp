@@ -1,5 +1,6 @@
 #include "lc0_policy.h"
 #include "movegen.h"
+#include "misc.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -25,8 +26,8 @@ bool Lc0Policy::initialize(const std::string& modelPath) {
 
         if (actualPath.empty()) return false;
         
-        // Print which model is being loaded
-        std::cout << "Nextfish: Loading AI Model from " << actualPath << "..." << std::endl;
+        // Print which model is being loaded (info string to be UCI compliant)
+        sync_cout << "info string Nextfish: Loading AI Model from " << actualPath << "..." << sync_endl;
 
         env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "Nextfish");
         Ort::SessionOptions session_options;
@@ -49,14 +50,15 @@ bool Lc0Policy::initialize(const std::string& modelPath) {
         session = std::make_unique<Ort::Session>(*env, actualPath.c_str(), session_options);
 #endif
         initialized = true;
-        std::cout << "Nextfish: AI Model loaded on GPU (CUDA) successfully!" << std::endl;
+        sync_cout << "info string Nextfish: AI Model loaded on GPU (CUDA) successfully!" << sync_endl;
         return true;
     } catch (const std::exception& e) {
         std::string actualPath = modelPath;
         if (actualPath.empty() || actualPath == "<autodiscover>") actualPath = discover_networks();
         
-        std::cerr << "Nextfish GPU Error: " << e.what() << ". Falling back to CPU..." << std::endl;
+        sync_cout << "info string Nextfish GPU Error: " << e.what() << ". Falling back to CPU..." << sync_endl;
         try {
+            if (!env) env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "Nextfish");
             Ort::SessionOptions cpu_options;
             cpu_options.SetIntraOpNumThreads(2);
 #ifdef _WIN32
@@ -93,7 +95,8 @@ std::string Lc0Policy::discover_networks() {
     // Also try to find CAI directory specifically if we can
     try {
         fs::path current = fs::current_path();
-        while (current.has_parent_path()) {
+        int depth_limit = 10;
+        while (current.has_parent_path() && depth_limit-- > 0) {
             if (current.filename() == "CAI") {
                 search_paths.push_back(current.string());
                 search_paths.push_back((current / "Nextfish-dev").string());
@@ -101,7 +104,9 @@ std::string Lc0Policy::discover_networks() {
                 search_paths.push_back((current / "lc0-master" / "networks").string());
                 break;
             }
-            current = current.parent_path();
+            fs::path parent = current.parent_path();
+            if (parent == current) break;
+            current = parent;
         }
     } catch (...) {}
 

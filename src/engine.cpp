@@ -152,9 +152,6 @@ Engine::Engine(std::optional<std::string> path) :
                     return std::nullopt;
                 }));
 
-    // Initialize Lc0Policy with default or discovered network
-    Nextfish::Lc0Policy::initialize(options["Lc0Policy_ModelPath"]);
-
     load_networks();
     resize_threads();
 }
