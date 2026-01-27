@@ -7,16 +7,14 @@ WORKING_DIR = "/kaggle/working"
 NEXTFISH_BIN = os.path.join(WORKING_DIR, "nextfish/src/stockfish")
 MODEL_PATH = os.path.join(WORKING_DIR, "model.onnx")
 
-# Link tải công cụ (Cập nhật sang link tải trực tiếp file .tar của Stockfish và Fastchess)
+# Link tải công cụ
 FASTCHESS_URL = "https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar"
 STOCKFISH_BASE_URL = "https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar"
 
 def run_cmd(cmd, desc):
     print(f"\n[🚀] {desc}...")
-    # Thêm -L cho wget để xử lý redirect từ GitHub
     if "wget " in cmd:
         cmd = cmd.replace("wget ", "wget -L ")
-    
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     for line in process.stdout:
         print(f"  {line.strip()}")
@@ -30,7 +28,6 @@ def setup_chess_env():
     if not os.path.exists("fastchess"):
         run_cmd(f"wget {FASTCHESS_URL} -O fastchess.tar", "Tải Fastchess")
         run_cmd("tar -xf fastchess.tar", "Giải nén Fastchess")
-        # Định vị file thực thi
         run_cmd("find . -name 'fastchess' -type f -exec mv {} ./fastchess \";", "Định vị Fastchess binary")
         run_cmd("chmod +x fastchess", "Cấp quyền Fastchess")
     
@@ -38,7 +35,6 @@ def setup_chess_env():
     if not os.path.exists("stockfish_base"):
         run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar", "Tải Stockfish đối thủ")
         run_cmd("tar -xf sf_base.tar", "Giải nén Stockfish đối thủ")
-        # Tìm file thực thi và đưa ra ngoài với tên stockfish_base
         run_cmd(f"find . -name 'stockfish-ubuntu-x86-64-avx2' -type f -exec mv {{}} {WORKING_DIR}/stockfish_base \";", "Cấu hình Stockfish_Standard")
         run_cmd(f"chmod +x {WORKING_DIR}/stockfish_base", "Cấp quyền thực thi")
 
@@ -64,7 +60,8 @@ def start_tournament():
         f"-concurrency 2 "
         f"-draw movenumber=40 movecount=8 score=8 "
         f"-resign movecount=3 score=600 "
-        f"-pgn nextfish_battle_report.pgn"
+        f"-pgn nextfish_battle_report.pgn "
+        f"-log file=fastchess.log"
     )
     
     run_cmd(cmd, "Đang thi đấu (50 ván)")
