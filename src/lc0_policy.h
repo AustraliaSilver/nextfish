@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <onnxruntime_cxx_api.h>
 
 namespace Nextfish {
 
@@ -22,6 +23,11 @@ public:
 private:
     static bool initialized;
     static bool isActive;
+    static std::unique_ptr<Ort::Env> env;
+    static std::unique_ptr<Ort::Session> session;
+    static std::vector<const char*> input_node_names;
+    static std::vector<const char*> output_node_names;
+
     static void encode_position(const Position& pos, float* input);
     static Move index_to_move(int index, const Position& pos);
 };
