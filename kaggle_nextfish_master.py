@@ -4,7 +4,7 @@ import time
 
 # --- CẤU HÌNH ---
 REPO_URL = "https://github.com/AustraliaSilver/nextfish.git"
-MODEL_URL = "https://storage.lczero.org/files/BT4-it332.pb.gz"
+MODEL_URL = "https://storage.lczero.org/files/networks-contrib/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz"
 ONNX_LIB_URL = "https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-linux-x64-1.17.1.tgz"
 ARCH = "x86-64-avx2"
 
@@ -36,10 +36,10 @@ def main():
     src_dir = os.path.join(repo_dir, "src")
     os.chdir(src_dir)
     
-    # Vá Makefile trực tiếp để link ONNX Runtime
-    print("[🛠️] Đang vá Makefile để hỗ trợ ONNX...")
+    # Vá Makefile trực tiếp để link ONNX Runtime (Thêm CUDA support)
+    print("[🛠️] Đang vá Makefile để hỗ trợ ONNX GPU...")
     patch_make = f"""
-    sed -i 's|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS) -L{onnx_lib} -lonnxruntime -lpthread -ldl -Wl,-rpath,{onnx_lib}|' Makefile
+    sed -i 's|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS) -L{onnx_lib} -lonnxruntime -lpthread -ldl -lcudart -lcuda -Wl,-rpath,{onnx_lib}|' Makefile
     """
     run_cmd(patch_make, "Vá Makefile")
 
@@ -48,7 +48,7 @@ def main():
     run_cmd(f"wget {MODEL_URL} -O model_raw.pb.gz && gunzip -f model_raw.pb.gz", "Chuẩn bị Model")
     pb_file = next((f for f in os.listdir(".") if f.endswith(".pb")), None)
     if pb_file:
-        run_cmd("pip install tf2onnx onnxruntime-gpu", "Cài converter")
+        run_cmd("pip install tf2onnx onnxruntime-gpu", "Cài converter & GPU Runtime")
         run_cmd(f"python -m tf2onnx.convert --input {pb_file} --output model.onnx --inputs input:0 --outputs policy:0,value:0", "Convert Model")
     model_path = os.path.abspath("model.onnx")
 

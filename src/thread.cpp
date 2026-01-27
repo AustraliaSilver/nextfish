@@ -311,16 +311,25 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
         for (const auto& m : legalmoves)
             rootMoves.emplace_back(m);
 
-    // Nextfish v2.0: Apply Lc0 Policy Filtering
-    if (Nextfish::Lc0Policy::is_ready() && Nextfish::Lc0Policy::is_active() && rootMoves.size() > 7)
+    // Nextfish v3.0: Apply Lc0 Policy Reordering (Better than Filtering)
+    if (Nextfish::Lc0Policy::is_ready() && Nextfish::Lc0Policy::is_active() && rootMoves.size() > 1)
     {
-        auto topMoves = Nextfish::Lc0Policy::get_top_moves(pos, 7);
+        auto topMoves = Nextfish::Lc0Policy::get_top_moves(pos, 5);
         if (!topMoves.empty())
         {
-            Search::RootMoves filtered;
-            for (auto m : topMoves)
-                filtered.emplace_back(m);
-            rootMoves = filtered;
+            // Đưa các nước AI chọn lên đầu danh sách
+            for (int i = (int)topMoves.size() - 1; i >= 0; --i)
+            {
+                auto it = std::find_if(rootMoves.begin(), rootMoves.end(), 
+                                       [&](const Search::RootMove& rm) { return rm.pv[0] == topMoves[i]; });
+                
+                if (it != rootMoves.end())
+                {
+                    Search::RootMove m = *it;
+                    rootMoves.erase(it);
+                    rootMoves.insert(rootMoves.begin(), m);
+                }
+            }
         }
     }
 
