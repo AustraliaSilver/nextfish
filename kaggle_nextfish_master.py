@@ -39,7 +39,7 @@ def main():
     # Vá Makefile trực tiếp để link ONNX Runtime (Thêm CUDA support)
     print("[🛠️] Đang vá Makefile để hỗ trợ ONNX GPU...")
     patch_make = f"""
-    sed -i 's|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS) -L{onnx_lib} -lonnxruntime -lpthread -ldl -lcudart -lcuda -Wl,-rpath,{onnx_lib}|' Makefile
+    sed -i 's|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS)|LDFLAGS = $(ENV_LDFLAGS) $(EXTRALDFLAGS) -L{onnx_lib} -L/usr/local/cuda/lib64 -lonnxruntime -lpthread -ldl -lcudart -lcuda -Wl,-rpath,{onnx_lib} -Wl,-rpath,/usr/local/cuda/lib64|' Makefile
     """
     run_cmd(patch_make, "Vá Makefile")
 
