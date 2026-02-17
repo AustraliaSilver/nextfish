@@ -81,6 +81,8 @@ jobs:
 
       - name: Run Auto Tune
         if: env.SKIP_TUNE == '0'
+        id: autotune
+        continue-on-error: true
         run: |
           python scripts/auto_tune_lc0_threads.py \
             --engine ./nextfish \
@@ -98,7 +100,7 @@ jobs:
           echo "Skipped autotune in this run because engine/fastchess build failed."
 
       - name: Commit tuned value
-        if: env.SKIP_TUNE == '0'
+        if: env.SKIP_TUNE == '0' && steps.autotune.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -120,3 +122,9 @@ jobs:
           path: |
             autotune_results/*.json
           if-no-files-found: warn
+
+      - name: Final Summary
+        if: always()
+        run: |
+          echo "SKIP_TUNE=$SKIP_TUNE"
+          echo "AUTOTUNE_OUTCOME=${{ steps.autotune.outcome }}"
