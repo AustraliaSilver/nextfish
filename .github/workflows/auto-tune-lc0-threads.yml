@@ -12,11 +12,11 @@ on:
       rounds:
         description: "Fastchess rounds (2 games each)"
         required: false
-        default: "8"
+        default: "2"
       tc:
         description: "Time control"
         required: false
-        default: "10+0.1"
+        default: "3+0.03"
       concurrency:
         description: "Fastchess concurrency"
         required: false
@@ -25,15 +25,11 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: auto-tune-lc0-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   tune-lc0-threads:
     if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip-tune]')
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -75,8 +71,8 @@ jobs:
             --engine ./nextfish \
             --fastchess ./fastchess \
             --book UHO_2022_8mvs_+110_+119.pgn \
-            --rounds ${{ github.event.inputs.rounds || '8' }} \
-            --tc "${{ github.event.inputs.tc || '10+0.1' }}" \
+            --rounds ${{ github.event.inputs.rounds || '2' }} \
+            --tc "${{ github.event.inputs.tc || '3+0.03' }}" \
             --concurrency ${{ github.event.inputs.concurrency || '2' }} \
             --base 2 \
             --candidates 1,2,3,4
@@ -103,4 +99,3 @@ jobs:
           path: |
             autotune_results/*.json
           if-no-files-found: warn
-
