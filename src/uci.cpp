@@ -38,7 +38,6 @@
 #include "search.h"
 #include "types.h"
 #include "ucioption.h"
-#include "lc0_policy.h"
 
 namespace Stockfish {
 
@@ -118,13 +117,6 @@ void UCIEngine::loop() {
             sync_cout << "id name " << engine_info(true) << "\n"
                       << engine.get_options() << sync_endl;
 
-            // Nextfish: Initialize Lc0Policy with current model path if not already done
-            if (!Nextfish::Lc0Policy::is_ready())
-                Nextfish::Lc0Policy::initialize(engine.get_options()["Lc0Policy_ModelPath"]);
-
-            // Nextfish: Print TCEC relevant info
-            print_info_string(has_large_pages() ? "Large Pages: ON" : "Large Pages: OFF");
-
             sync_cout << "uciok" << sync_endl;
         }
 
@@ -172,11 +164,12 @@ void UCIEngine::loop() {
         }
         else if (token == "--help" || token == "help" || token == "--license" || token == "license")
             sync_cout
-              << "\nStockfish is a powerful chess engine for playing and analyzing."
+              << "\nNextfish - A powerful chess engine with Shashin Theory integration."
+                 "\nDerived from Stockfish with advanced position classification (Tal/Capablanca/Petrosian)."
                  "\nIt is released as free software licensed under the GNU GPLv3 License."
-                 "\nStockfish is normally used with a graphical user interface (GUI) and implements"
+                 "\nNextfish is normally used with a graphical user interface (GUI) and implements"
                  "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
-                 "\nFor any further information, visit https://github.com/official-stockfish/Stockfish#readme"
+                 "\nFor any further information, visit the Nextfish repository."
                  "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n"
               << sync_endl;
         else if (!token.empty() && token[0] != '#')
@@ -515,8 +508,8 @@ WinRateParams win_rate_params(const Position& pos) {
     double m = std::clamp(material, 17, 78) / 58.0;
 
     // Return a = p_a(material) and b = p_b(material), see github.com/official-stockfish/WDL_model
-    constexpr double as[] = {-13.50030198, 40.92780883, -36.82753545, 386.83004070};
-    constexpr double bs[] = {96.53354896, -165.79058388, 90.89679019, 49.29561889};
+    constexpr double as[] = {-72.32565836, 185.93832038, -144.58862193, 416.44950446};
+    constexpr double bs[] = {83.86794042, -136.06112997, 69.98820887, 47.62901433};
 
     double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
     double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];

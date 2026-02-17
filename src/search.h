@@ -39,6 +39,7 @@
 #include "numa.h"
 #include "position.h"
 #include "score.h"
+#include "shashin.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
@@ -361,6 +362,9 @@ class Worker {
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;
+    
+    // Shashin position classification manager
+    std::unique_ptr<ShashinManager> shashinManager;
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;

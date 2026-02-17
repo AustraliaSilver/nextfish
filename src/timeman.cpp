@@ -130,10 +130,6 @@ void TimeManagement::init(Search::LimitsType& limits,
 
     // Limit the maximum possible time for this move
     optimumTime = TimePoint(optScale * timeLeft);
-    
-    // Nextfish Apex: +10% time for Black defense
-    if (us == BLACK) optimumTime = (optimumTime * 110) / 100;
-
     maximumTime =
       TimePoint(std::min(0.825179 * limits.time[us] - moveOverhead, maxScale * optimumTime)) - 10;
 

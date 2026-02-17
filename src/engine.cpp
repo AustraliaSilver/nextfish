@@ -17,7 +17,6 @@
 */
 
 #include "engine.h"
-#include "lc0_policy.h"
 
 #include <algorithm>
 #include <cassert>
@@ -53,9 +52,15 @@ constexpr auto StartFEN   = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq 
 constexpr int  MaxHashMB  = Is64Bit ? 33554432 : 2048;
 int            MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 
+// The default configuration will attempt to group L3 domains up to 32 threads.
+// This size was found to be a good balance between the Elo gain of increased
+// history sharing and the speed loss from more cross-cache accesses (see
+// PR#6526). The user can always explicitly override this behavior.
+constexpr NumaAutoPolicy DefaultNumaPolicy = BundledL3Policy{32};
+
 Engine::Engine(std::optional<std::string> path) :
     binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
-    numaContext(NumaConfig::from_system()),
+    numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
     states(new std::deque<StateInfo>(1)),
     threads(),
     networks(numaContext,
@@ -118,6 +123,31 @@ Engine::Engine(std::optional<std::string> path) :
 
     options.add("UCI_ShowWDL", Option(false));
 
+    // MCTS (Monte Carlo Tree Search) options for complex positions
+    options.add("Shashin Enabled", Option(true));
+    options.add("Shashin Root White Scale", Option(100, 50, 200));
+    options.add("Shashin Root Black Scale", Option(100, 50, 200));
+    options.add("Shashin Root Capture Bonus", Option(180, 0, 400));
+    options.add("Shashin Root Check Bonus", Option(120, 0, 300));
+    options.add("Shashin Root Promotion Bonus", Option(150, 0, 300));
+    options.add("Shashin Root Castle Bonus", Option(100, -100, 250));
+    options.add("Shashin Root BadCapture Penalty", Option(140, 0, 300));
+    options.add("Shashin Root BadCheck Penalty", Option(90, 0, 250));
+    options.add("Shashin Root OppKingAttack Bonus", Option(40, 0, 200));
+    options.add("Shashin Root Black Risk Penalty", Option(35, 0, 200));
+    options.add("Shashin Root Black Capture Bonus", Option(10, -50, 100));
+    options.add("Shashin Root Quiet Bonus", Option(35, 0, 120));
+
+    options.add("MCTS Enabled", Option(false));
+    options.add("MCTS Root Node Percent", Option(0, 0, 20));
+    options.add("MCTS Root Min Depth", Option(8, 1, 32));
+    options.add("MCTS Root Min Iterations", Option(40, 1, 1000));
+    options.add("MCTS Root Max Iterations", Option(300, 10, 2000));
+    options.add("MCTS Root Nodes Per Iteration", Option(3000, 500, 20000));
+    options.add("MCTS Root Reorder TopK", Option(2, 1, 8));
+    
+    options.add("MCTS Iterations", Option(1000, 100, 10000));
+
     options.add(  //
       "SyzygyPath", Option("", [](const Option& o) {
           Tablebases::init(o);
@@ -141,26 +171,6 @@ Engine::Engine(std::optional<std::string> path) :
           load_small_network(o);
           return std::nullopt;
       }));
-
-    options.add("Lc0Policy_Active", Option(true, [](const Option& o) {
-                    Nextfish::Lc0Policy::set_active(o);
-                    return std::nullopt;
-                }));
-
-    options.add("Lc0Policy_UseGPU", Option(true, [](const Option& o) {
-                    Nextfish::Lc0Policy::set_use_gpu(o);
-                    return std::nullopt;
-                }));
-
-    options.add("Lc0Policy_Threads", Option(2, 1, 128, [](const Option& o) {
-                    Nextfish::Lc0Policy::set_threads(o);
-                    return std::nullopt;
-                }));
-
-    options.add("Lc0Policy_ModelPath", Option("", [](const Option& o) {
-                    Nextfish::Lc0Policy::initialize(o);
-                    return std::nullopt;
-                }));
 
     load_networks();
     resize_threads();
@@ -234,12 +244,12 @@ void Engine::set_position(const std::string& fen, const std::vector<std::string>
 void Engine::set_numa_config_from_option(const std::string& o) {
     if (o == "auto" || o == "system")
     {
-        numaContext.set_numa_config(NumaConfig::from_system());
+        numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
     }
     else if (o == "hardware")
     {
         // Don't respect affinity set in the system.
-        numaContext.set_numa_config(NumaConfig::from_system(false));
+        numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy, false));
     }
     else if (o == "none")
     {
