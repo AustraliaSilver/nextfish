@@ -48,6 +48,8 @@ jobs:
           sudo apt-get install -y g++ make wget tar
 
       - name: Build fastchess
+        id: build_fastchess
+        continue-on-error: true
         run: |
           wget -q https://github.com/Disservin/fastchess/releases/download/v1.7.0-alpha/fastchess-linux-x86-64.tar
           tar -xf fastchess-linux-x86-64.tar
@@ -58,6 +60,8 @@ jobs:
           chmod +x fastchess
 
       - name: Build Nextfish
+        id: build_nextfish
+        continue-on-error: true
         run: |
           cd src
           make -j2 build ARCH=x86-64-modern
@@ -65,7 +69,18 @@ jobs:
           cd ..
           chmod +x nextfish
 
+      - name: Resolve tune readiness
+        run: |
+          if [ -x ./fastchess ] && [ -x ./nextfish ]; then
+            echo "SKIP_TUNE=0" >> $GITHUB_ENV
+            echo "Ready for autotune."
+          else
+            echo "SKIP_TUNE=1" >> $GITHUB_ENV
+            echo "Autotune skipped: build prerequisites are missing."
+          fi
+
       - name: Run Auto Tune
+        if: env.SKIP_TUNE == '0'
         run: |
           python scripts/auto_tune_lc0_threads.py \
             --engine ./nextfish \
@@ -77,7 +92,13 @@ jobs:
             --base 2 \
             --candidates 1,2,3,4
 
+      - name: Skip Notice
+        if: env.SKIP_TUNE == '1'
+        run: |
+          echo "Skipped autotune in this run because engine/fastchess build failed."
+
       - name: Commit tuned value
+        if: env.SKIP_TUNE == '0'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
