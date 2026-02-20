@@ -5,7 +5,7 @@ on:
     branches: [main, master]
     paths:
       - "nextfish-dev/Stockfish-master/src/**"
-      - "Stockfish-master/Stockfish-master/src/**"
+      - "src/**"
       - ".github/workflows/auto-solo-vs-stockfish.yml"
   workflow_dispatch:
     inputs:
@@ -122,7 +122,7 @@ jobs:
           )
           $dirs = @(
             "nextfish-dev/Stockfish-master/src",
-            "Stockfish-master/Stockfish-master/src"
+            "src"
           )
           foreach ($name in $nnueFiles) {
             $tmp = Join-Path $env:RUNNER_TEMP $name
@@ -148,13 +148,13 @@ jobs:
         run: |
           $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
           $ws = $ws -replace '^([A-Za-z]):','/$1'
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:\$PATH; cd $ws/Stockfish-master/Stockfish-master/src && make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
+          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:\$PATH; cd $ws/src && make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
 
       - name: Normalize shared NNUE nets
         shell: pwsh
         run: |
           $nextSrc = "nextfish-dev/Stockfish-master/src"
-          $stockSrc = "Stockfish-master/Stockfish-master/src"
+          $stockSrc = "src"
           $netFiles = Get-ChildItem "$nextSrc/nn-*.nnue" -File -ErrorAction SilentlyContinue
           if (-not $netFiles) {
             throw "No nn-*.nnue found in $nextSrc"
@@ -173,7 +173,7 @@ jobs:
           $stock = "builds/stockfish_orig_pgo_native_$stamp.exe"
 
           Copy-Item "nextfish-dev/Stockfish-master/src/stockfish.exe" $next -Force
-          Copy-Item "Stockfish-master/Stockfish-master/src/stockfish.exe" $stock -Force
+          Copy-Item "src/stockfish.exe" $stock -Force
 
           "NEXTFISH_EXE=$next" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "STOCKFISH_EXE=$stock" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
