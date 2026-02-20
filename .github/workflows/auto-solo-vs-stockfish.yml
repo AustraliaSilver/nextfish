@@ -196,17 +196,18 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "log_path=$log"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "summary_path=$summary"
 
-          if (-not (Test-Path "$env:NEXTFISH_EXE")) { throw "Nextfish exe not found: $env:NEXTFISH_EXE" }
-          if (-not (Test-Path "$env:STOCKFISH_EXE")) { throw "Stockfish exe not found: $env:STOCKFISH_EXE" }
-          $nextExe = (Resolve-Path "$env:NEXTFISH_EXE").Path
-          $stockExe = (Resolve-Path "$env:STOCKFISH_EXE").Path
-          if (Test-Path ".\cutechess-cli.exe") {
-            $cutechess = (Resolve-Path ".\cutechess-cli.exe").Path
-          } elseif (Test-Path ".\cutechess-cli") {
-            $cutechess = (Resolve-Path ".\cutechess-cli").Path
-          } else {
-            throw "cutechess-cli not found in workspace root"
-          }
+          try {
+            if (-not (Test-Path "$env:NEXTFISH_EXE")) { throw "Nextfish exe not found: $env:NEXTFISH_EXE" }
+            if (-not (Test-Path "$env:STOCKFISH_EXE")) { throw "Stockfish exe not found: $env:STOCKFISH_EXE" }
+            $nextExe = (Resolve-Path "$env:NEXTFISH_EXE").Path
+            $stockExe = (Resolve-Path "$env:STOCKFISH_EXE").Path
+            if (Test-Path ".\cutechess-cli.exe") {
+              $cutechess = (Resolve-Path ".\cutechess-cli.exe").Path
+            } elseif (Test-Path ".\cutechess-cli") {
+              $cutechess = (Resolve-Path ".\cutechess-cli").Path
+            } else {
+              throw "cutechess-cli not found in workspace root"
+            }
 
           $args = @(
             '-engine', "cmd=$nextExe", 'name=Nextfish', 'proto=uci',
@@ -241,36 +242,49 @@ jobs:
             $args += @('-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random')
           }
 
-          & $cutechess @args 2>&1 | Tee-Object -FilePath $log
-          if ($LASTEXITCODE -ne 0) {
-            if (Test-Path $log) {
-              Write-Host "Last cutechess lines:"
-              $tail = (Get-Content $log -Tail 80) -join "`n"
-              Write-Host $tail
-              Write-Host "::error::cutechess-cli failed; tail=`n$tail"
+            & $cutechess @args 2>&1 | Tee-Object -FilePath $log
+            if ($LASTEXITCODE -ne 0) {
+              if (Test-Path $log) {
+                Write-Host "Last cutechess lines:"
+                $tail = (Get-Content $log -Tail 80) -join "`n"
+                Write-Host $tail
+                Write-Host "::error::cutechess-cli failed; tail=`n$tail"
+              }
+              throw "cutechess-cli exited with code $LASTEXITCODE"
             }
-            throw "cutechess-cli exited with code $LASTEXITCODE"
+
+            $scoreLine = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
+            $eloLine = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
+            $whiteLine = Select-String -Path $log -Pattern 'playing White:' | Select-Object -Last 1
+            $blackLine = Select-String -Path $log -Pattern 'playing Black:' | Select-Object -Last 1
+            $sprtLine = Select-String -Path $log -Pattern '^SPRT:' | Select-Object -Last 1
+
+            @(
+              "Nextfish exe: $env:NEXTFISH_EXE"
+              "Stockfish exe: $env:STOCKFISH_EXE"
+              "Games: $env:GAMES  TC: $env:TC  Concurrency: $env:CONCURRENCY"
+              ($scoreLine.Line)
+              ($eloLine.Line)
+              ($whiteLine.Line)
+              ($blackLine.Line)
+              ($sprtLine.Line)
+            ) | Where-Object { $_ } | Set-Content $summary
+
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Nextfish vs Stockfish (PGO, same NNUE files)"
+            Get-Content $summary | ForEach-Object { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- " + $_) }
+          } catch {
+            $err = ($_ | Out-String).Trim()
+            if (-not (Test-Path $log)) { Set-Content -Path $log -Value $err }
+            @(
+              "FAILED"
+              "Error: $err"
+              "NEXTFISH_EXE=$env:NEXTFISH_EXE"
+              "STOCKFISH_EXE=$env:STOCKFISH_EXE"
+              "PWD=$((Get-Location).Path)"
+            ) | Set-Content -Path $summary
+            Write-Host "::error::$err"
+            throw
           }
-
-          $scoreLine = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
-          $eloLine = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
-          $whiteLine = Select-String -Path $log -Pattern 'playing White:' | Select-Object -Last 1
-          $blackLine = Select-String -Path $log -Pattern 'playing Black:' | Select-Object -Last 1
-          $sprtLine = Select-String -Path $log -Pattern '^SPRT:' | Select-Object -Last 1
-
-          @(
-            "Nextfish exe: $env:NEXTFISH_EXE"
-            "Stockfish exe: $env:STOCKFISH_EXE"
-            "Games: $env:GAMES  TC: $env:TC  Concurrency: $env:CONCURRENCY"
-            ($scoreLine.Line)
-            ($eloLine.Line)
-            ($whiteLine.Line)
-            ($blackLine.Line)
-            ($sprtLine.Line)
-          ) | Where-Object { $_ } | Set-Content $summary
-
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Nextfish vs Stockfish (PGO, same NNUE files)"
-          Get-Content $summary | ForEach-Object { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- " + $_) }
 
 
       - name: Upload artifacts
