@@ -138,21 +138,15 @@ jobs:
 
       - name: Build Nextfish (PGO + O3 + LTO)
         shell: pwsh
+        working-directory: nextfish-dev/Stockfish-master/src
         run: |
-          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
-          if ($ws -match '^([A-Za-z]):(.*)$') {
-            $ws = "/$($Matches[1].ToLower())$($Matches[2])"
-          }
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:`$PATH; cd '$ws/nextfish-dev/Stockfish-master/src' && make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
+          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:`$PATH; make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
 
       - name: Build Stockfish (PGO + O3 + LTO)
         shell: pwsh
+        working-directory: src
         run: |
-          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
-          if ($ws -match '^([A-Za-z]):(.*)$') {
-            $ws = "/$($Matches[1].ToLower())$($Matches[2])"
-          }
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:`$PATH; cd '$ws/src' && make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
+          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:`$PATH; make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
 
       - name: Normalize shared NNUE nets
         shell: pwsh
