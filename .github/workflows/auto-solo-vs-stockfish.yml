@@ -39,7 +39,7 @@ concurrency:
 
 jobs:
   elo:
-    runs-on: [self-hosted, windows]
+    runs-on: windows-latest
     timeout-minutes: 360
     env:
       GAMES: ${{ github.event_name == 'push' && '500' || (github.event.inputs.games || '500') }}
@@ -54,11 +54,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup MSYS2 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            make
+            unzip
+
       - name: Prepare directories
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force builds | Out-Null
           New-Item -ItemType Directory -Force matches | Out-Null
+
+      - name: Ensure cutechess-cli
+        shell: pwsh
+        run: |
+          if (Test-Path ".\cutechess-cli.exe" -or Test-Path ".\cutechess-cli") {
+            Write-Host "cutechess-cli already exists in workspace."
+            exit 0
+          }
+          $url = "https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-cli-win64.zip"
+          $zip = "cutechess-cli-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "." -Force
+          if (-not (Test-Path ".\cutechess-cli.exe")) {
+            throw "cutechess-cli.exe not found after download/extract"
+          }
 
       - name: Verify toolchain
         shell: pwsh
