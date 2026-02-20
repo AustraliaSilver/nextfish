@@ -76,9 +76,24 @@ jobs:
             Write-Host "cutechess-cli already exists in workspace."
             exit 0
           }
-          $url = "https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-cli-win64.zip"
+          $urls = @(
+            "https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-1.3.1-win64.zip",
+            "https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-cli-win64.zip"
+          )
           $zip = "cutechess-cli-win64.zip"
-          Invoke-WebRequest -Uri $url -OutFile $zip
+          $downloaded = $false
+          foreach ($url in $urls) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $zip
+              $downloaded = $true
+              break
+            } catch {
+              Write-Warning "Failed to download from $url"
+            }
+          }
+          if (-not $downloaded) {
+            throw "Could not download cutechess zip from known URLs"
+          }
           Expand-Archive -Path $zip -DestinationPath "." -Force
           if (-not (Test-Path ".\cutechess-cli.exe")) {
             throw "cutechess-cli.exe not found after download/extract"
