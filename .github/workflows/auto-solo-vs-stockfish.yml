@@ -72,7 +72,7 @@ jobs:
       - name: Ensure cutechess-cli
         shell: pwsh
         run: |
-          if (Test-Path ".\cutechess-cli.exe" -or Test-Path ".\cutechess-cli") {
+          if ((Test-Path ".\cutechess-cli.exe") -or (Test-Path ".\cutechess-cli")) {
             Write-Host "cutechess-cli already exists in workspace."
             exit 0
           }
