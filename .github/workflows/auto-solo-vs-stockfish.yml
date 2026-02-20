@@ -189,6 +189,9 @@ jobs:
           $pgn = "matches/nextfish_vs_stockfish_${stamp}.pgn"
           $log = "matches/nextfish_vs_stockfish_${stamp}.log"
           $summary = "matches/nextfish_vs_stockfish_${stamp}.summary.txt"
+          "pgn_path=$pgn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "log_path=$log" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "summary_path=$summary" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           $nextExe = (Resolve-Path $env:NEXTFISH_EXE).Path
           $stockExe = (Resolve-Path $env:STOCKFISH_EXE).Path
@@ -234,7 +237,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             if (Test-Path $log) {
               Write-Host "Last cutechess lines:"
-              Get-Content $log -Tail 80
+              $tail = (Get-Content $log -Tail 80) -join "`n"
+              Write-Host $tail
+              Write-Host "::error::cutechess-cli failed; tail=`n$tail"
             }
             throw "cutechess-cli exited with code $LASTEXITCODE"
           }
@@ -259,9 +264,6 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Nextfish vs Stockfish (PGO, same NNUE files)"
           Get-Content $summary | ForEach-Object { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- " + $_) }
 
-          "pgn_path=$pgn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "log_path=$log" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "summary_path=$summary" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Upload artifacts
         if: always()
