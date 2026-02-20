@@ -196,12 +196,17 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "log_path=$log"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "summary_path=$summary"
 
+          if (-not (Test-Path "$env:NEXTFISH_EXE")) { throw "Nextfish exe not found: $env:NEXTFISH_EXE" }
+          if (-not (Test-Path "$env:STOCKFISH_EXE")) { throw "Stockfish exe not found: $env:STOCKFISH_EXE" }
           $nextExe = (Resolve-Path "$env:NEXTFISH_EXE").Path
           $stockExe = (Resolve-Path "$env:STOCKFISH_EXE").Path
-          $cutechess = (Resolve-Path ".\cutechess-cli.exe").Path
-
-          if (-not (Test-Path $nextExe)) { throw "Nextfish exe not found: $env:NEXTFISH_EXE" }
-          if (-not (Test-Path $stockExe)) { throw "Stockfish exe not found: $env:STOCKFISH_EXE" }
+          if (Test-Path ".\cutechess-cli.exe") {
+            $cutechess = (Resolve-Path ".\cutechess-cli.exe").Path
+          } elseif (Test-Path ".\cutechess-cli") {
+            $cutechess = (Resolve-Path ".\cutechess-cli").Path
+          } else {
+            throw "cutechess-cli not found in workspace root"
+          }
 
           $args = @(
             '-engine', "cmd=$nextExe", 'name=Nextfish', 'proto=uci',
