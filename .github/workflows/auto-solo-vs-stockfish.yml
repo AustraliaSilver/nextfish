@@ -217,21 +217,38 @@ jobs:
               throw "cutechess-cli not found in workspace root"
             }
 
+          $uciDump = "uci`nquit`n" | & $nextExe
+          $nextOptions = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+          $uciDump | ForEach-Object {
+            if ($_ -match '^option name (.+?) type ') {
+              [void]$nextOptions.Add($matches[1])
+            }
+          }
+          function Add-NextOption([string]$name, [string]$value) {
+            if ($nextOptions.Contains($name)) {
+              $script:args += "option.`"$name`"=$value"
+            } else {
+              Write-Host "Skip unsupported Nextfish option: $name"
+            }
+          }
+
           $args = @(
             '-engine', "cmd=$nextExe", 'name=Nextfish', 'proto=uci',
-            'option."MCTS Enabled"=true',
-            'option."MCTS Iterations"=300',
-            'option."MCTS Root Node Percent"=9',
-            'option."MCTS Deep Enabled"=false',
-            'option."AAW Enabled"=true',
-            'option."AAW Base Delta"=8',
-            'option."AAW Volatility Weight"=8',
-            'option."AAW Trend Asymmetry"=8',
-            'option."AAW Recenter Weight"=10',
-            'option."AAW Directional Clamp"=false',
             "option.Threads=$env:THREADS",
-            "option.Hash=$env:HASH",
+            "option.Hash=$env:HASH"
+          )
+          Add-NextOption "MCTS Enabled" "true"
+          Add-NextOption "MCTS Iterations" "300"
+          Add-NextOption "MCTS Root Node Percent" "9"
+          Add-NextOption "MCTS Deep Enabled" "false"
+          Add-NextOption "AAW Enabled" "true"
+          Add-NextOption "AAW Base Delta" "8"
+          Add-NextOption "AAW Volatility Weight" "8"
+          Add-NextOption "AAW Trend Asymmetry" "8"
+          Add-NextOption "AAW Recenter Weight" "10"
+          Add-NextOption "AAW Directional Clamp" "false"
 
+          $args += @(
             '-engine', "cmd=$stockExe", 'name=Stockfish', 'proto=uci',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH",
