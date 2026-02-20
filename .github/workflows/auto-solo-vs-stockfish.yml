@@ -233,7 +233,7 @@ jobs:
           }
 
           $cuteArgs = @(
-            '-engine', "cmd=$nextExe", 'name=Nextfish', 'proto=uci',
+            '-engine', "cmd=$nextExe", 'name=NF-CI', 'proto=uci',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH"
           )
@@ -249,7 +249,7 @@ jobs:
           Add-NextOption "AAW Directional Clamp" "false"
 
           $cuteArgs += @(
-            '-engine', "cmd=$stockExe", 'name=Stockfish', 'proto=uci',
+            '-engine', "cmd=$stockExe", 'name=SF-CI', 'proto=uci',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH",
 
@@ -257,7 +257,6 @@ jobs:
             '-games', "$env:GAMES",
             '-pgnout', $pgn,
             '-concurrency', "$env:CONCURRENCY",
-            '-recover',
             '-repeat',
             '-draw', 'movenumber=40', 'movecount=8', 'score=10',
             '-resign', 'movecount=3', 'score=500'
