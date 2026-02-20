@@ -113,6 +113,29 @@ jobs:
             throw "MSYS2 bash not found at C:\msys64\usr\bin\bash.exe"
           }
 
+      - name: Ensure shared NNUE files before build
+        shell: pwsh
+        run: |
+          $nnueFiles = @(
+            "nn-3dd094f3dfcf.nnue",
+            "nn-37f18f62d772.nnue"
+          )
+          $dirs = @(
+            "nextfish-dev/Stockfish-master/src",
+            "Stockfish-master/Stockfish-master/src"
+          )
+          foreach ($name in $nnueFiles) {
+            $tmp = Join-Path $env:RUNNER_TEMP $name
+            if (-not (Test-Path $tmp)) {
+              $url = "https://tests.stockfishchess.org/api/nn/$name"
+              Invoke-WebRequest -Uri $url -OutFile $tmp
+            }
+            foreach ($d in $dirs) {
+              Copy-Item $tmp (Join-Path $d $name) -Force
+            }
+          }
+          Write-Host "NNUE files synced for both engines."
+
       - name: Build Nextfish (PGO + O3 + LTO)
         shell: pwsh
         run: |
