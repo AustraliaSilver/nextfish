@@ -177,12 +177,15 @@ jobs:
           Copy-Item "nextfish-dev/Stockfish-master/src/stockfish.exe" $next -Force
           Copy-Item "src/stockfish.exe" $stock -Force
 
-          Add-Content -Path $env:GITHUB_ENV -Value "NEXTFISH_EXE=$next"
-          Add-Content -Path $env:GITHUB_ENV -Value "STOCKFISH_EXE=$stock"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "nextfish_exe=$next"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "stockfish_exe=$stock"
 
       - name: Run Elo match (500 games on push)
         id: match
         shell: pwsh
+        env:
+          NEXTFISH_EXE: ${{ steps.save_bin.outputs.nextfish_exe }}
+          STOCKFISH_EXE: ${{ steps.save_bin.outputs.stockfish_exe }}
         run: |
           $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
           $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
@@ -193,8 +196,8 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "log_path=$log"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "summary_path=$summary"
 
-          $nextExe = (Resolve-Path $env:NEXTFISH_EXE).Path
-          $stockExe = (Resolve-Path $env:STOCKFISH_EXE).Path
+          $nextExe = (Resolve-Path "$env:NEXTFISH_EXE").Path
+          $stockExe = (Resolve-Path "$env:STOCKFISH_EXE").Path
           $cutechess = (Resolve-Path ".\cutechess-cli.exe").Path
 
           if (-not (Test-Path $nextExe)) { throw "Nextfish exe not found: $env:NEXTFISH_EXE" }
