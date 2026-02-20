@@ -137,16 +137,18 @@ jobs:
           Write-Host "NNUE files synced for both engines."
 
       - name: Build Nextfish (PGO + O3 + LTO)
-        shell: pwsh
+        shell: msys2 {0}
         working-directory: nextfish-dev/Stockfish-master/src
         run: |
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:`$PATH; make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
+          make -j4 profile-build ARCH=native COMP=gcc
+          make strip ARCH=native COMP=gcc
 
       - name: Build Stockfish (PGO + O3 + LTO)
-        shell: pwsh
+        shell: msys2 {0}
         working-directory: src
         run: |
-          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:`$PATH; make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
+          make -j4 profile-build ARCH=native COMP=gcc
+          make strip ARCH=native COMP=gcc
 
       - name: Normalize shared NNUE nets
         shell: pwsh
