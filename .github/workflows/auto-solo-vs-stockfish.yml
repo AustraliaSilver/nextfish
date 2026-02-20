@@ -187,8 +187,15 @@ jobs:
           $log = "matches/nextfish_vs_stockfish_${stamp}.log"
           $summary = "matches/nextfish_vs_stockfish_${stamp}.summary.txt"
 
+          $nextExe = (Resolve-Path $env:NEXTFISH_EXE).Path
+          $stockExe = (Resolve-Path $env:STOCKFISH_EXE).Path
+          $cutechess = (Resolve-Path ".\cutechess-cli.exe").Path
+
+          if (-not (Test-Path $nextExe)) { throw "Nextfish exe not found: $env:NEXTFISH_EXE" }
+          if (-not (Test-Path $stockExe)) { throw "Stockfish exe not found: $env:STOCKFISH_EXE" }
+
           $args = @(
-            '-engine', "cmd=$env:NEXTFISH_EXE", 'name=Nextfish', 'proto=uci',
+            '-engine', "cmd=$nextExe", 'name=Nextfish', 'proto=uci',
             'option."MCTS Enabled"=true',
             'option."MCTS Iterations"=300',
             'option."MCTS Root Node Percent"=9',
@@ -202,7 +209,7 @@ jobs:
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH",
 
-            '-engine', "cmd=$env:STOCKFISH_EXE", 'name=Stockfish', 'proto=uci',
+            '-engine', "cmd=$stockExe", 'name=Stockfish', 'proto=uci',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH",
 
@@ -210,6 +217,7 @@ jobs:
             '-games', "$env:GAMES",
             '-pgnout', $pgn,
             '-concurrency', "$env:CONCURRENCY",
+            '-recover',
             '-repeat',
             '-draw', 'movenumber=40', 'movecount=8', 'score=10',
             '-resign', 'movecount=3', 'score=500'
@@ -219,10 +227,14 @@ jobs:
             $args += @('-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random')
           }
 
-          $cutechess = if (Test-Path ".\cutechess-cli.exe") { ".\cutechess-cli.exe" } else { ".\cutechess-cli" }
-
           & $cutechess @args 2>&1 | Tee-Object -FilePath $log
-          if ($LASTEXITCODE -ne 0) { throw "cutechess-cli exited with code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $log) {
+              Write-Host "Last cutechess lines:"
+              Get-Content $log -Tail 80
+            }
+            throw "cutechess-cli exited with code $LASTEXITCODE"
+          }
 
           $scoreLine = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
           $eloLine = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
