@@ -1,0 +1,966 @@
+/*
+  Nextfish - Shashin Theory Implementation v3
+  Highly Optimized MCTS with significant improvements
+  Copyright (C) 2004-2025 Andrea Manzo, F. Ferraguti, K.Kiniama and ShashChess developers
+  Adapted for Nextfish
+*/
+
+#include "shashin.h"
+#include "evaluate.h"
+#include "movegen.h"
+#include "bitboard.h"
+#include "misc.h"
+#include "search.h"
+#include "thread.h"
+
+#include <algorithm>
+#include <random>
+#include <limits>
+#include <thread>
+#include <future>
+#include <vector>
+#include <mutex>
+
+namespace Stockfish {
+
+// Static members initialization
+bool MoveConfig::isStrategical = false;
+bool MoveConfig::isAggressive = false;
+bool MoveConfig::isFortress = false;
+
+// ==================== HIGHLY OPTIMIZED MCTS v3 ====================
+
+MCTSNode::MCTSNode(Move m, MCTSNode* par, double movePrior) 
+    : move(m), parent(par), isExpanded(false), isTerminal(false), priorScore(movePrior) {
+    visits.store(0);
+    totalScore.store(0.0);
+    prior.store(movePrior);
+}
+
+// Optimized PUCT with dynamic exploration
+double MCTSNode::uctScore(double explorationConstant) const {
+    int parentVisits = parent ? parent->visits.load() : 1;
+    int nodeVisits = visits.load();
+    
+    if (nodeVisits == 0) {
+        // First play urgency with prior
+        return priorScore + explorationConstant * std::sqrt(std::log(parentVisits));
+    }
+    
+    double exploitation = totalScore.load() / nodeVisits;
+    // Progressive widening: reduce exploration as visits increase
+    double progressiveFactor = std::sqrt(2.0 / (1.0 + nodeVisits / 10.0));
+    double exploration = explorationConstant * progressiveFactor * std::sqrt(std::log(parentVisits) / nodeVisits);
+    
+    // PUCT with decaying prior influence
+    double priorBonus = priorScore * std::max(0.05, 0.3 - nodeVisits * 0.01);
+    
+    return exploitation + exploration + priorBonus;
+}
+
+MCTSNode* MCTSNode::bestChild(double explorationConstant) const {
+    MCTSNode* best = nullptr;
+    double bestScore = -std::numeric_limits<double>::infinity();
+    
+    for (const auto& child : children) {
+        double score = child->uctScore(explorationConstant);
+        if (score > bestScore) {
+            bestScore = score;
+            best = child.get();
+        }
+    }
+    return best;
+}
+
+bool MCTSNode::isFullyExpanded(int legalMoveCount) const {
+    return static_cast<int>(children.size()) >= legalMoveCount;
+}
+
+MCTSNode* MCTSNode::addChild(Move m, double prior) {
+    auto child = std::make_unique<MCTSNode>(m, this, prior);
+    MCTSNode* childPtr = child.get();
+    children.push_back(std::move(child));
+    return childPtr;
+}
+
+// ==================== OPTIMIZED MCTSTree v3 ====================
+
+MCTSTree::MCTSTree(int iterations, double exploration, ShashinStyle style,
+                   NNUE::Network* net, NNUE::AccumulatorStack* acc)
+    : maxIterations(iterations), 
+      explorationConstant(exploration), 
+      style(style),
+      network(net),
+      accumulatorStack(acc),
+      rng(std::random_device{}()) {
+    
+    // Optimized parameters per style
+    switch (style) {
+        case HIGH_TAL: 
+            explorationConstant = 2.2; 
+            maxSimDepth = 60; 
+            quiescenceDepth = 15;
+            break;
+        case TAL: 
+            explorationConstant = 2.0; 
+            maxSimDepth = 55; 
+            quiescenceDepth = 12;
+            break;
+        case CAPABLANCA: 
+            explorationConstant = 1.6; 
+            maxSimDepth = 50; 
+            quiescenceDepth = 10;
+            break;
+        case PETROSIAN: 
+            explorationConstant = 1.3; 
+            maxSimDepth = 45; 
+            quiescenceDepth = 8;
+            break;
+        case HIGH_PETROSIAN: 
+            explorationConstant = 1.1; 
+            maxSimDepth = 40; 
+            quiescenceDepth = 6;
+            break;
+        default: 
+            explorationConstant = exploration; 
+            maxSimDepth = 50; 
+            quiescenceDepth = 10;
+            break;
+    }
+}
+
+struct StateMove {
+    StateInfo state;
+    Move move;
+};
+
+// Fast move prior calculation with heuristics
+double MCTSTree::calculateMovePrior(Position& pos, Move move) const {
+    double prior = 0.5;
+    
+    // Capture bonus with SEE
+    if (pos.capture_stage(move)) {
+        Piece captured = pos.piece_on(move.to_sq());
+        if (captured != NO_PIECE) {
+            int seeValue = pos.see(move);
+            if (seeValue > 0) {
+                prior += 0.15 + std::min(seeValue / 500.0, 0.2);
+            } else if (seeValue >= 0) {
+                prior += 0.1;
+            }
+        }
+    }
+    
+    // Check bonus
+    if (pos.gives_check(move)) {
+        prior += 0.12;
+        // Discovered check bonus
+        if (!pos.capture_stage(move)) {
+            prior += 0.05;
+        }
+    }
+    
+    // Promotion bonus
+    if (move.type_of() == PROMOTION) {
+        PieceType promotion = move.promotion_type();
+        prior += 0.15 + (promotion == QUEEN ? 0.1 : 0.05);
+    }
+    
+    // Central control bonus
+    Square to = move.to_sq();
+    if (to >= SQ_C3 && to <= SQ_F6) {
+        prior += 0.03;
+    }
+    
+    return std::min(prior, 0.95);
+}
+
+Move MCTSTree::search(Position& rootPos) {
+    auto root = std::make_unique<MCTSNode>(Move::none(), nullptr, 1.0);
+    MoveList<LEGAL> rootMoves(rootPos);
+    
+    if (rootMoves.size() == 0) {
+        return Move::none();
+    }
+    
+    // Pre-calculate all move priors
+    std::vector<std::pair<Move, double>> movePriors;
+    movePriors.reserve(rootMoves.size());
+    for (const auto& move : rootMoves) {
+        movePriors.push_back({move, calculateMovePrior(rootPos, move)});
+    }
+    
+    // Sort by prior for better expansion order
+    std::sort(movePriors.begin(), movePriors.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    // Main MCTS loop
+    for (int i = 0; i < maxIterations; ++i) {
+        // Selection with PUCT
+        MCTSNode* selected = select(root.get(), rootPos);
+        
+        // Expansion with best prior
+        MCTSNode* expanded = expandWithPrior(selected, rootPos, movePriors);
+        
+        // Optimized simulation
+        double score = simulateOptimized(expanded, rootPos);
+        
+        // Backpropagation
+        backpropagate(expanded, score);
+    }
+    
+    // Select best move with robust formula
+    return getBestMove(root.get());
+}
+
+MCTSNode* MCTSTree::select(MCTSNode* node, Position& rootPos) {
+    std::vector<Move> path = getPathFromRoot(node);
+    std::vector<StateMove> stateStack;
+    stateStack.reserve(path.size());
+    
+    for (Move m : path) {
+        if (m != Move::none()) {
+            stateStack.emplace_back();
+            stateStack.back().move = m;
+            rootPos.do_move(m, stateStack.back().state);
+        }
+    }
+    
+    while (!node->isTerminal && !node->children.empty()) {
+        MoveList<LEGAL> legalMoves(rootPos);
+        if (node->isFullyExpanded(static_cast<int>(legalMoves.size()))) {
+            node = node->bestChild(explorationConstant);
+            if (node && node->move != Move::none()) {
+                stateStack.emplace_back();
+                stateStack.back().move = node->move;
+                rootPos.do_move(node->move, stateStack.back().state);
+            }
+        } else {
+            break;
+        }
+    }
+    
+    // Undo all moves
+    for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+        rootPos.undo_move(stateStack[i].move);
+    }
+    return node;
+}
+
+MCTSNode* MCTSTree::expandWithPrior(MCTSNode* node, Position& rootPos, 
+                                    const std::vector<std::pair<Move, double>>& movePriors) {
+    if (node->isTerminal) {
+        return node;
+    }
+    
+    std::vector<Move> path = getPathFromRoot(node);
+    std::vector<StateMove> stateStack;
+    stateStack.reserve(path.size() + 1);
+    
+    for (Move m : path) {
+        if (m != Move::none()) {
+            stateStack.emplace_back();
+            stateStack.back().move = m;
+            rootPos.do_move(m, stateStack.back().state);
+        }
+    }
+    
+    MoveList<LEGAL> legalMoves(rootPos);
+    if (legalMoves.size() == 0) {
+        node->isTerminal = true;
+        for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+            rootPos.undo_move(stateStack[i].move);
+        }
+        return node;
+    }
+    
+    // Find unexpanded moves
+    std::vector<Move> existingMoves;
+    for (const auto& child : node->children) {
+        existingMoves.push_back(child->move);
+    }
+    
+    // Find best unexpanded move
+    Move bestUnexpanded = Move::none();
+    double bestPrior = -1.0;
+    
+    for (const auto& [move, prior] : movePriors) {
+        // Check if move is legal and not expanded
+        bool isLegal = false;
+        for (const auto& legal : legalMoves) {
+            if (legal == move) {
+                isLegal = true;
+                break;
+            }
+        }
+        if (!isLegal) continue;
+        
+        bool isExpanded = false;
+        for (const auto& existing : existingMoves) {
+            if (existing == move) {
+                isExpanded = true;
+                break;
+            }
+        }
+        
+        if (!isExpanded && prior > bestPrior) {
+            bestPrior = prior;
+            bestUnexpanded = move;
+        }
+    }
+    
+    if (bestUnexpanded != Move::none()) {
+        MCTSNode* child = node->addChild(bestUnexpanded, bestPrior);
+        StateInfo st;
+        rootPos.do_move(bestUnexpanded, st);
+        MoveList<LEGAL> childMoves(rootPos);
+        child->isTerminal = (childMoves.size() == 0);
+        rootPos.undo_move(bestUnexpanded);
+        
+        for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+            rootPos.undo_move(stateStack[i].move);
+        }
+        return child;
+    }
+    
+    for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+        rootPos.undo_move(stateStack[i].move);
+    }
+    return node;
+}
+
+// Highly optimized simulation with quiescence
+double MCTSTree::simulateOptimized(MCTSNode* node, Position& rootPos) {
+    std::vector<Move> path = getPathFromRoot(node);
+    std::vector<StateMove> stateStack;
+    stateStack.reserve(maxSimDepth + path.size());
+    
+    for (Move m : path) {
+        if (m != Move::none()) {
+            stateStack.emplace_back();
+            stateStack.back().move = m;
+            rootPos.do_move(m, stateStack.back().state);
+        }
+    }
+    
+    int depth = 0;
+    Color rootSide = rootPos.side_to_move();
+    bool inQuiescence = false;
+    int quiescencePly = 0;
+    
+    while (depth < maxSimDepth) {
+        MoveList<LEGAL> legalMoves(rootPos);
+        
+        // Terminal check
+        if (legalMoves.size() == 0) {
+            double result;
+            if (rootPos.checkers()) {
+                result = (rootPos.side_to_move() == rootSide) ? 0.0 : 1.0;
+            } else {
+                result = 0.5;
+            }
+            for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+                rootPos.undo_move(stateStack[i].move);
+            }
+            return result;
+        }
+        
+        // Enter quiescence after 25 plies or when no good captures
+        if (depth >= 25 || inQuiescence) {
+            inQuiescence = true;
+            quiescencePly++;
+            
+            if (quiescencePly > quiescenceDepth) {
+                break; // Exit to evaluation
+            }
+            
+            // Find best capture or check
+            Move bestMove = Move::none();
+            int bestScore = -999999;
+            bool foundForcing = false;
+            
+            for (const auto& m : legalMoves) {
+                bool isCapture = rootPos.capture_stage(m);
+                bool isCheck = rootPos.gives_check(m);
+                
+                if (isCapture || isCheck) {
+                    int score = rootPos.see(m);
+                    if (isCheck) score += 50;
+                    
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = m;
+                        foundForcing = true;
+                    }
+                }
+            }
+            
+            if (foundForcing && bestMove != Move::none()) {
+                stateStack.emplace_back();
+                stateStack.back().move = bestMove;
+                rootPos.do_move(bestMove, stateStack.back().state);
+                depth++;
+                continue;
+            } else {
+                break; // No more forcing moves
+            }
+        }
+        
+        // Regular playout - smart selection
+        Move bestMove = Move::none();
+        double bestWeight = -1.0;
+        
+        // First pass: find best weighted move
+        for (const auto& m : legalMoves) {
+            double weight = 1.0;
+            
+            // SEE-based capture scoring
+            if (rootPos.capture_stage(m)) {
+                int see = rootPos.see(m);
+                if (see > 0) {
+                    weight += 3.0 + see / 200.0;
+                } else if (see >= 0) {
+                    weight += 1.5;
+                } else {
+                    weight += 0.5; // Still consider bad captures occasionally
+                }
+            }
+            
+            // Check bonus
+            if (rootPos.gives_check(m)) {
+                weight += 2.5;
+            }
+            
+            // Promotion
+            if (m.type_of() == PROMOTION) {
+                weight += 4.0;
+            }
+            
+            // Attacking moves
+            Square to = m.to_sq();
+            Bitboard attacks = rootPos.attackers_to(to, rootPos.pieces());
+            if (attacks & rootPos.pieces(~rootPos.side_to_move())) {
+                weight += 0.5;
+            }
+            
+            if (weight > bestWeight) {
+                bestWeight = weight;
+                bestMove = m;
+            }
+        }
+        
+        // Use best move 80% of time, random 20%
+        std::uniform_real_distribution<> dis(0.0, 1.0);
+        if (dis(rng) < 0.8 && bestMove != Move::none()) {
+            // Use best move
+        } else {
+            // Random selection
+            std::uniform_int_distribution<> idxDis(0, static_cast<int>(legalMoves.size()) - 1);
+            int idx = 0;
+            int target = idxDis(rng);
+            for (const auto& m : legalMoves) {
+                if (idx == target) {
+                    bestMove = m;
+                    break;
+                }
+                idx++;
+            }
+        }
+        
+        if (bestMove == Move::none()) {
+            bestMove = *legalMoves.begin();
+        }
+        
+        stateStack.emplace_back();
+        stateStack.back().move = bestMove;
+        rootPos.do_move(bestMove, stateStack.back().state);
+        depth++;
+    }
+    
+    // Optimized evaluation
+    double score = evaluateOptimized(rootPos, rootSide);
+    
+    for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+        rootPos.undo_move(stateStack[i].move);
+    }
+    return score;
+}
+
+void MCTSTree::backpropagate(MCTSNode* node, double score) {
+    while (node != nullptr) {
+        node->visits.fetch_add(1, std::memory_order_relaxed);
+        
+        double expected = node->totalScore.load(std::memory_order_relaxed);
+        double desired;
+        do {
+            desired = expected + score;
+        } while (!node->totalScore.compare_exchange_weak(
+            expected, desired, 
+            std::memory_order_relaxed,
+            std::memory_order_relaxed));
+        
+        score = 1.0 - score;
+        node = node->parent;
+    }
+}
+
+Move MCTSTree::getBestMove(MCTSNode* root) const {
+    if (!root || root->children.empty()) {
+        return Move::none();
+    }
+    
+    MCTSNode* bestChild = nullptr;
+    double bestScore = -std::numeric_limits<double>::infinity();
+    
+    for (const auto& child : root->children) {
+        int visits = child->visits.load();
+        if (visits == 0) continue;
+        
+        double winRate = child->totalScore.load() / visits;
+        
+        // Robust selection: balance win rate with confidence
+        double confidence = std::sqrt(visits) / 10.0;
+        double robustScore = winRate + 0.15 * confidence;
+        
+        // Bonus for moves with many visits (proven good)
+        if (visits > maxIterations / 5) {
+            robustScore += 0.05;
+        }
+        
+        if (robustScore > bestScore) {
+            bestScore = robustScore;
+            bestChild = child.get();
+        }
+    }
+    
+    return bestChild ? bestChild->move : Move::none();
+}
+
+std::vector<Move> MCTSTree::getPathFromRoot(MCTSNode* node) const {
+    std::vector<Move> path;
+    MCTSNode* current = node;
+    while (current != nullptr && current->parent != nullptr) {
+        path.push_back(current->move);
+        current = current->parent;
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+// Highly optimized evaluation
+double MCTSTree::evaluateOptimized(const Position& pos, Color rootSide) const {
+    Value evalValue = heuristicEvaluateOptimized(pos);
+    
+    // Normalize to [0, 1]
+    double score = 0.5 + evalValue / 6000.0;
+    score = std::max(0.0, std::min(1.0, score));
+    
+    Color us = pos.side_to_move();
+    if (us != rootSide) {
+        score = 1.0 - score;
+    }
+    
+    return score;
+}
+
+// Optimized heuristic evaluation with better weights
+Value MCTSTree::heuristicEvaluateOptimized(const Position& pos) const {
+    int material[COLOR_NB] = {0, 0};
+    int mobility[COLOR_NB] = {0, 0};
+    int kingSafety[COLOR_NB] = {0, 0};
+    int threats[COLOR_NB] = {0, 0};
+    int space[COLOR_NB] = {0, 0};
+    
+    // Material with piece-square tables approximation
+    for (PieceType pt = PAWN; pt <= QUEEN; ++pt) {
+        for (Color c : {WHITE, BLACK}) {
+            Bitboard pieces = pos.pieces(c, pt);
+            int count = popcount(pieces);
+            material[c] += count * PieceValue[pt];
+            
+            // Mobility
+            if (pt != PAWN && pt != KING) {
+                Bitboard attacks = 0;
+                Bitboard bb = pieces;
+                while (bb) {
+                    Square sq = pop_lsb(bb);
+                    attacks |= attacks_bb(pt, sq, pos.pieces());
+                }
+                int mob = popcount(attacks & ~pos.pieces(c));
+                int weight = (pt == KNIGHT || pt == BISHOP) ? 4 : (pt == ROOK ? 3 : 5);
+                mobility[c] += mob * weight;
+            }
+            
+            // Space control (advanced ranks)
+            if (pt == PAWN) {
+                Bitboard advanced = (c == WHITE) ? (pieces & (Rank4BB | Rank5BB | Rank6BB | Rank7BB))
+                                                  : (pieces & (Rank5BB | Rank4BB | Rank3BB | Rank2BB));
+                space[c] += popcount(advanced) * 10;
+            }
+        }
+    }
+    
+    // King safety with better weights
+    for (Color c : {WHITE, BLACK}) {
+        Square kingSq = pos.square<KING>(c);
+        Bitboard pawns = pos.pieces(c, PAWN);
+        
+        // Pawn shield
+        Bitboard shieldZone = attacks_bb<KING>(kingSq);
+        int shieldPawns = popcount(shieldZone & pawns);
+        kingSafety[c] += shieldPawns * 30;
+        
+        // King tropism (enemy pieces near king)
+        Color them = ~c;
+        int tropism = 0;
+        for (PieceType pt = KNIGHT; pt <= QUEEN; ++pt) {
+            Bitboard theirPieces = pos.pieces(them, pt);
+            while (theirPieces) {
+                Square sq = pop_lsb(theirPieces);
+                int dist = distance(sq, kingSq);
+                tropism += (7 - dist) * (pt == QUEEN ? 3 : pt == ROOK ? 2 : 1);
+            }
+        }
+        kingSafety[c] -= tropism * 3;
+        
+        // Open files near king
+        File kf = file_of(kingSq);
+        Bitboard fileMask = file_bb(kf);
+        if (kf > FILE_A) fileMask |= file_bb(File(kf - 1));
+        if (kf < FILE_H) fileMask |= file_bb(File(kf + 1));
+        if (popcount(pawns & fileMask) == 0) {
+            kingSafety[c] -= 50;
+        }
+    }
+    
+    // Threats and tactics
+    for (Color c : {WHITE, BLACK}) {
+        Color them = ~c;
+        
+        // Hanging pieces
+        Bitboard theirPieces = pos.pieces(them);
+        Bitboard ourAttacks = 0;
+        for (PieceType pt = KNIGHT; pt <= QUEEN; ++pt) {
+            Bitboard pieces = pos.pieces(c, pt);
+            while (pieces) {
+                Square sq = pop_lsb(pieces);
+                ourAttacks |= attacks_bb(pt, sq, pos.pieces());
+            }
+        }
+        
+        Bitboard hanging = theirPieces & ourAttacks;
+        // Exclude defended pieces
+        Bitboard theirAttacks = 0;
+        for (PieceType pt = PAWN; pt <= QUEEN; ++pt) {
+            Bitboard pieces = pos.pieces(them, pt);
+            while (pieces) {
+                Square sq = pop_lsb(pieces);
+                theirAttacks |= attacks_bb(pt, sq, pos.pieces());
+            }
+        }
+        hanging &= ~theirAttacks;
+        
+        threats[c] += popcount(hanging) * 75;
+        
+        // Passed pawns
+        Bitboard ourPawns = pos.pieces(c, PAWN);
+        Bitboard theirPawns = pos.pieces(them, PAWN);
+        Bitboard passed = ourPawns;
+        if (c == WHITE) {
+            Bitboard theirControl = shift<SOUTH>(theirPawns) | shift<SOUTH_WEST>(theirPawns) | shift<SOUTH_EAST>(theirPawns);
+            passed &= ~theirControl;
+            for (int i = 0; i < 3; ++i) passed &= ~shift<SOUTH>(passed);
+        } else {
+            Bitboard theirControl = shift<NORTH>(theirPawns) | shift<NORTH_WEST>(theirPawns) | shift<NORTH_EAST>(theirPawns);
+            passed &= ~theirControl;
+            for (int i = 0; i < 3; ++i) passed &= ~shift<NORTH>(passed);
+        }
+        
+        // Bonus by rank
+        Bitboard p = passed;
+        while (p) {
+            Square sq = pop_lsb(p);
+            int rank = relative_rank(c, sq);
+            threats[c] += (rank - RANK_2) * 25;
+        }
+    }
+    
+    Color us = pos.side_to_move();
+    int eval = (material[us] - material[~us]) 
+             + (mobility[us] - mobility[~us]) 
+             + (kingSafety[us] - kingSafety[~us]) * 2
+             + (threats[us] - threats[~us])
+             + (space[us] - space[~us]) / 2;
+    
+    // Tempo bonus
+    eval += 20;
+    
+    return Value(eval);
+}
+
+// ==================== SHASHIN MANAGER ====================
+
+ShashinManager::ShashinManager() = default;
+ShashinManager::~ShashinManager() = default;
+
+void ShashinManager::setStaticState(const Position& pos) {
+    state.staticState.stmKingExposed = detectKingExposed(pos, pos.side_to_move());
+    state.staticState.opponentKingExposed = detectKingExposed(pos, ~pos.side_to_move());
+    state.staticState.isSacrificial = detectSacrificial(pos);
+    state.staticState.kingDanger = detectKingDanger(pos);
+    state.staticState.pawnsNearPromotion = detectPawnsNearPromotion(pos);
+    state.staticState.allPiecesCount = pos.count<ALL_PIECES>() > 18; // Lowered threshold
+    state.staticState.legalMoveCount = uint8_t(MoveList<LEGAL>(pos).size());
+    state.staticState.highMaterial = state.staticState.allPiecesCount;
+    updateDynamicState(pos);
+    currentStyle = classifyPosition(pos);
+}
+
+void ShashinManager::updateDynamicState(const Position& pos) {
+    const auto& staticState = state.staticState;
+    auto& dynamic = state.dynamicDerived;
+    dynamic.isStrategical = !staticState.stmKingExposed && !staticState.opponentKingExposed
+                          && !staticState.isSacrificial && !staticState.kingDanger;
+    dynamic.isAggressive = staticState.stmKingExposed || staticState.opponentKingExposed
+                         || staticState.kingDanger || staticState.isSacrificial;
+    dynamic.isTactical = staticState.kingDanger || staticState.isSacrificial
+                       || staticState.pawnsNearPromotion;
+    dynamic.isTacticalReactive = staticState.opponentKingExposed || 
+                                 (staticState.kingDanger && staticState.stmKingExposed);
+    dynamic.isHighTal = staticState.stmKingExposed && staticState.opponentKingExposed
+                      && staticState.kingDanger;
+    dynamic.isComplex = pos.count<ALL_PIECES>() > 14 && 
+                       !dynamic.isStrategical && !dynamic.isAggressive;
+    // Relaxed MCTS criteria
+    dynamic.isMCTSApplicable = (dynamic.isHighTal || (dynamic.isTactical && staticState.allPiecesCount))
+                               && staticState.legalMoveCount > 8;
+}
+
+void ShashinManager::updateRootShashinState(Value score, const Position& pos, 
+                                           Depth depth, Depth rootDepth) {
+    (void)score;
+    (void)depth;
+    (void)rootDepth;
+    updateDynamicState(pos);
+    MoveConfig::isStrategical = isStrategical();
+    MoveConfig::isAggressive = isAggressive();
+    MoveConfig::isFortress = isFortress(pos);
+}
+
+ShashinStyle ShashinManager::classifyPosition(const Position& pos) const {
+    const auto& dynamic = state.dynamicDerived;
+    if (dynamic.isHighTal)
+        return HIGH_TAL;
+    else if (dynamic.isAggressive && !dynamic.isStrategical)
+        return TAL;
+    else if (dynamic.isStrategical && dynamic.isAggressive)
+        return CAPABLANCA;
+    else if (dynamic.isStrategical && !dynamic.isAggressive)
+        return PETROSIAN;
+    else if (isFortress(pos))
+        return HIGH_PETROSIAN;
+    else
+        return UNKNOWN_STYLE;
+}
+
+void ShashinManager::updateCurrentStyle(const Position& pos) {
+    currentStyle = classifyPosition(pos);
+}
+
+bool ShashinManager::isStrategical() const {
+    return state.dynamicDerived.isStrategical;
+}
+
+bool ShashinManager::isAggressive() const {
+    return state.dynamicDerived.isAggressive;
+}
+
+bool ShashinManager::isTal() const {
+    return isAggressive() && !isStrategical();
+}
+
+bool ShashinManager::isPetrosian() const {
+    return isStrategical() && !isAggressive();
+}
+
+bool ShashinManager::isCapablanca() const {
+    return isStrategical() && isAggressive();
+}
+
+bool ShashinManager::isTactical() const {
+    return state.dynamicDerived.isTactical;
+}
+
+bool ShashinManager::isComplexPosition() const {
+    return state.dynamicDerived.isComplex;
+}
+
+bool ShashinManager::isFortress(const Position& pos) const {
+    if (pos.count<ALL_PIECES>() > 12)
+        return false;
+    Bitboard pawns = pos.pieces(PAWN);
+    Bitboard blockedPawns = (shift<NORTH>(pawns) | shift<SOUTH>(pawns)) & pos.pieces();
+    if (popcount(blockedPawns) >= 4)
+        return true;
+    if (pos.count<BISHOP>() >= 2 && pos.count<PAWN>() <= 4)
+        return true;
+    return false;
+}
+
+bool ShashinManager::isMCTSApplicableByValue() const {
+    // Relaxed criteria: activate in tactical positions with enough material
+    return state.dynamicDerived.isMCTSApplicable;
+}
+
+bool ShashinManager::isMCTSExplorationApplicable() const {
+    return isComplexPosition() || isHighPieceDensityCapablancaPosition();
+}
+
+bool ShashinManager::isHighPieceDensityCapablancaPosition() const {
+    return state.staticState.highMaterial && isCapablanca();
+}
+
+bool ShashinManager::isTalTacticalHighMiddle() const {
+    return isTal() && state.staticState.highMaterial;
+}
+
+bool ShashinManager::isTacticalDefensive() const {
+    return state.dynamicDerived.isTacticalReactive && isPetrosian();
+}
+
+bool ShashinManager::isLowActivity() const {
+    return false;
+}
+
+const char* ShashinManager::getStyleName() const {
+    switch (currentStyle) {
+        case HIGH_TAL:     return "High Tal (Ultra Attacking)";
+        case TAL:          return "Tal (Attacking)";
+        case CAPABLANCA:   return "Capablanca (Balanced)";
+        case PETROSIAN:    return "Petrosian (Strategic)";
+        case HIGH_PETROSIAN: return "High Petrosian (Fortress)";
+        default:           return "Balanced";
+    }
+}
+
+const char* ShashinManager::getStyleEmoji() const {
+    switch (currentStyle) {
+        case HIGH_TAL:     return "[FIRE]";
+        case TAL:          return "[SWORD]";
+        case CAPABLANCA:   return "[SCALE]";
+        case PETROSIAN:    return "[SHIELD]";
+        case HIGH_PETROSIAN: return "[CASTLE]";
+        default:           return "[SCALE]";
+    }
+}
+
+bool ShashinManager::avoidStep10() const {
+    return (isStrategical() && state.staticState.kingDanger);
+}
+
+bool ShashinManager::allowCrystalProbCut() const {
+    return isTal() || isComplexPosition();
+}
+
+bool ShashinManager::useStep17CrystalLogic() const {
+    return isTal() || (isComplexPosition() && state.staticState.kingDanger);
+}
+
+Value ShashinManager::static_value(const Position& pos) {
+    (void)pos;
+    return VALUE_NONE;
+}
+
+Move ShashinManager::runMCTSSearch(Position& pos, int iterations) {
+    if (!config.useMCTS || !isMCTSApplicableByValue()) {
+        return Move::none();
+    }
+    
+    // Use 300 iterations for better quality (was 150)
+    int actualIterations = std::min(iterations, 300);
+    
+    MCTSTree tree(actualIterations, config.mctsExploration, currentStyle, 
+                  nullptr, nullptr);
+    Move bestMove = tree.search(pos);
+    
+    return bestMove;
+}
+
+bool ShashinManager::detectKingExposed(const Position& pos, Color side) const {
+    Square kingSq = pos.square<KING>(side);
+    Bitboard pawnShield = 0;
+    if (side == WHITE) {
+        if (rank_of(kingSq) >= RANK_2 && rank_of(kingSq) <= RANK_4) {
+            pawnShield = pos.pieces(side, PAWN) & (shift<SOUTH>(kingSq) | 
+                        shift<SOUTH_WEST>(kingSq) | shift<SOUTH_EAST>(kingSq));
+        }
+    } else {
+        if (rank_of(kingSq) >= RANK_5 && rank_of(kingSq) <= RANK_7) {
+            pawnShield = pos.pieces(side, PAWN) & (shift<NORTH>(kingSq) | 
+                        shift<NORTH_WEST>(kingSq) | shift<NORTH_EAST>(kingSq));
+        }
+    }
+    if (!pawnShield)
+        return true;
+    File kingFile = file_of(kingSq);
+    Bitboard fileMask = file_bb(kingFile);
+    if (kingFile > FILE_A) fileMask |= file_bb(File(kingFile - 1));
+    if (kingFile < FILE_H) fileMask |= file_bb(File(kingFile + 1));
+    Bitboard pawnsOnFile = pos.pieces(PAWN) & fileMask;
+    if (!pawnsOnFile)
+        return true;
+    return false;
+}
+
+bool ShashinManager::detectSacrificial(const Position& pos) const {
+    Color us = pos.side_to_move();
+    Square enemyKing = pos.square<KING>(~us);
+    Bitboard attackZone = attacks_bb<KING>(enemyKing);
+    Bitboard ourPieces = pos.pieces(us);
+    if ((attackZone & ourPieces) && popcount(attackZone & ourPieces) >= 2)
+        return true;
+    Bitboard ourQueens = pos.pieces(us, QUEEN);
+    if (ourQueens) {
+        Square queenSq = lsb(ourQueens);
+        if (distance(queenSq, enemyKing) <= 3)
+            return true;
+    }
+    return false;
+}
+
+bool ShashinManager::detectKingDanger(const Position& pos) const {
+    Color us = pos.side_to_move();
+    Square ourKing = pos.square<KING>(us);
+    Bitboard kingZone = attacks_bb<KING>(ourKing);
+    int attackers = 0;
+    for (PieceType pt = KNIGHT; pt <= QUEEN; ++pt) {
+        Bitboard pieces = pos.pieces(~us, pt);
+        while (pieces) {
+            Square sq = pop_lsb(pieces);
+            if (attacks_bb(pt, sq, pos.pieces()) & kingZone)
+                attackers++;
+        }
+    }
+    return attackers >= 2;
+}
+
+bool ShashinManager::detectPawnsNearPromotion(const Position& pos) const {
+    Bitboard whitePawns = pos.pieces(WHITE, PAWN);
+    Bitboard blackPawns = pos.pieces(BLACK, PAWN);
+    if ((whitePawns & (Rank6BB | Rank7BB)) != 0)
+        return true;
+    if ((blackPawns & (Rank2BB | Rank3BB)) != 0)
+        return true;
+    return false;
+}
+
+int ShashinManager::calculateActivity(const Position& pos) const {
+    int activity = 0;
+    for (PieceType pt = KNIGHT; pt <= QUEEN; ++pt) {
+        Bitboard pieces = pos.pieces(pt);
+        activity += popcount(pieces) * 10;
+    }
+    return activity;
+}
+
+} // namespace Stockfish

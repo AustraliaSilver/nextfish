@@ -1,0 +1,583 @@
+/*
+  Nextfish - Shashin Theory Implementation
+  Derived from ShashChess - Shashin position classification system
+  Copyright (C) 2004-2025 Andrea Manzo, F. Ferraguti, K.Kiniama and ShashChess developers
+  Adapted for Nextfish
+*/
+
+#include "shashin.h"
+#include "evaluate.h"
+#include "movegen.h"
+#include "bitboard.h"
+#include "misc.h"
+
+#include <algorithm>
+#include <random>
+#include <limits>
+
+namespace Stockfish {
+
+// Static members initialization
+bool MoveConfig::isStrategical = false;
+bool MoveConfig::isAggressive = false;
+bool MoveConfig::isFortress = false;
+
+// ==================== MCTS IMPLEMENTATION ====================
+
+MCTSNode::MCTSNode(Move m, MCTSNode* par) 
+    : move(m), parent(par), isExpanded(false), isTerminal(false) {
+    visits.store(0);
+    totalScore.store(0.0);
+    prior.store(0.0);
+}
+
+double MCTSNode::uctScore(double explorationConstant) const {
+    int parentVisits = parent ? parent->visits.load() : 1;
+    if (visits.load() == 0) {
+        return std::numeric_limits<double>::infinity();
+    }
+    double exploitation = totalScore.load() / visits.load();
+    double exploration = explorationConstant * std::sqrt(std::log(parentVisits) / visits.load());
+    return exploitation + exploration;
+}
+
+MCTSNode* MCTSNode::bestChild(double explorationConstant) const {
+    MCTSNode* best = nullptr;
+    double bestScore = -std::numeric_limits<double>::infinity();
+    for (const auto& child : children) {
+        double score = child->uctScore(explorationConstant);
+        if (score > bestScore) {
+            bestScore = score;
+            best = child.get();
+        }
+    }
+    return best;
+}
+
+bool MCTSNode::isFullyExpanded(int legalMoveCount) const {
+    return static_cast<int>(children.size()) >= legalMoveCount;
+}
+
+MCTSNode* MCTSNode::addChild(Move m) {
+    auto child = std::make_unique<MCTSNode>(m, this);
+    MCTSNode* childPtr = child.get();
+    children.push_back(std::move(child));
+    return childPtr;
+}
+
+// ==================== MCTSTree IMPLEMENTATION ====================
+
+MCTSTree::MCTSTree(int iterations, double exploration, ShashinStyle style)
+    : maxIterations(iterations), explorationConstant(exploration), rng(std::random_device{}()) {
+    // Adjust exploration constant based on Shashin style
+    switch (style) {
+        case HIGH_TAL: explorationConstant = 2.0; break;
+        case TAL: explorationConstant = 1.8; break;
+        case CAPABLANCA: explorationConstant = 1.414; break;
+        case PETROSIAN: explorationConstant = 1.2; break;
+        case HIGH_PETROSIAN: explorationConstant = 1.0; break;
+        default: explorationConstant = exploration; break;
+    }
+}
+
+struct StateMove {
+    StateInfo state;
+    Move move;
+};
+
+Move MCTSTree::search(Position& rootPos) {
+    auto root = std::make_unique<MCTSNode>(Move::none(), nullptr);
+    MoveList<LEGAL> rootMoves(rootPos);
+    if (rootMoves.size() == 0) {
+        return Move::none();
+    }
+    for (int i = 0; i < maxIterations; ++i) {
+        MCTSNode* selected = select(root.get(), rootPos);
+        MCTSNode* expanded = expand(selected, rootPos);
+        double score = simulate(expanded, rootPos);
+        backpropagate(expanded, score);
+    }
+    return getBestMove(root.get());
+}
+
+MCTSNode* MCTSTree::select(MCTSNode* node, Position& rootPos) {
+    std::vector<Move> path = getPathFromRoot(node);
+    std::vector<StateMove> stateStack;
+    stateStack.reserve(path.size());
+    for (Move m : path) {
+        if (m != Move::none()) {
+            stateStack.emplace_back();
+            stateStack.back().move = m;
+            rootPos.do_move(m, stateStack.back().state);
+        }
+    }
+    while (!node->isTerminal && !node->children.empty()) {
+        MoveList<LEGAL> legalMoves(rootPos);
+        if (node->isFullyExpanded(static_cast<int>(legalMoves.size()))) {
+            node = node->bestChild(explorationConstant);
+            if (node && node->move != Move::none()) {
+                stateStack.emplace_back();
+                stateStack.back().move = node->move;
+                rootPos.do_move(node->move, stateStack.back().state);
+            }
+        } else {
+            break;
+        }
+    }
+    for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+        rootPos.undo_move(stateStack[i].move);
+    }
+    return node;
+}
+
+MCTSNode* MCTSTree::expand(MCTSNode* node, Position& rootPos) {
+    if (node->isTerminal) {
+        return node;
+    }
+    std::vector<Move> path = getPathFromRoot(node);
+    std::vector<StateMove> stateStack;
+    stateStack.reserve(path.size() + 1);
+    for (Move m : path) {
+        if (m != Move::none()) {
+            stateStack.emplace_back();
+            stateStack.back().move = m;
+            rootPos.do_move(m, stateStack.back().state);
+        }
+    }
+    MoveList<LEGAL> legalMoves(rootPos);
+    if (legalMoves.size() == 0) {
+        node->isTerminal = true;
+        for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+            rootPos.undo_move(stateStack[i].move);
+        }
+        return node;
+    }
+    std::vector<Move> existingMoves;
+    for (const auto& child : node->children) {
+        existingMoves.push_back(child->move);
+    }
+    for (const auto& move : legalMoves) {
+        if (std::find(existingMoves.begin(), existingMoves.end(), move) == existingMoves.end()) {
+            MCTSNode* child = node->addChild(move);
+            StateInfo st;
+            rootPos.do_move(move, st);
+            MoveList<LEGAL> childMoves(rootPos);
+            child->isTerminal = (childMoves.size() == 0);
+            rootPos.undo_move(move);
+            for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+                rootPos.undo_move(stateStack[i].move);
+            }
+            return child;
+        }
+    }
+    for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+        rootPos.undo_move(stateStack[i].move);
+    }
+    return node;
+}
+
+double MCTSTree::simulate(MCTSNode* node, Position& rootPos) {
+    std::vector<Move> path = getPathFromRoot(node);
+    std::vector<StateMove> stateStack;
+    stateStack.reserve(30 + path.size());
+    for (Move m : path) {
+        if (m != Move::none()) {
+            stateStack.emplace_back();
+            stateStack.back().move = m;
+            rootPos.do_move(m, stateStack.back().state);
+        }
+    }
+    int depth = 0;
+    const int maxSimDepth = 20;
+    Color rootSide = rootPos.side_to_move();
+    while (depth < maxSimDepth) {
+        MoveList<LEGAL> legalMoves(rootPos);
+        if (legalMoves.size() == 0) {
+            if (rootPos.checkers()) {
+                double result = (rootPos.side_to_move() == rootSide) ? 0.0 : 1.0;
+                for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+                    rootPos.undo_move(stateStack[i].move);
+                }
+                return result;
+            }
+            for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+                rootPos.undo_move(stateStack[i].move);
+            }
+            return 0.5;
+        }
+        std::uniform_int_distribution<> dis(0, static_cast<int>(legalMoves.size()) - 1);
+        int moveIndex = dis(rng);
+        Move move = Move::none();
+        int idx = 0;
+        for (const auto& m : legalMoves) {
+            if (idx == moveIndex) {
+                move = m;
+                break;
+            }
+            idx++;
+        }
+        if (move == Move::none()) {
+            break;
+        }
+        stateStack.emplace_back();
+        stateStack.back().move = move;
+        rootPos.do_move(move, stateStack.back().state);
+        depth++;
+    }
+    double score = evaluatePosition(rootPos, rootSide);
+    for (int i = static_cast<int>(stateStack.size()) - 1; i >= 0; --i) {
+        rootPos.undo_move(stateStack[i].move);
+    }
+    return score;
+}
+
+void MCTSTree::backpropagate(MCTSNode* node, double score) {
+    while (node != nullptr) {
+        int currentVisits = node->visits.load();
+        node->visits.store(currentVisits + 1);
+        double currentScore = node->totalScore.load();
+        while (!node->totalScore.compare_exchange_weak(currentScore, currentScore + score)) {
+        }
+        score = 1.0 - score;
+        node = node->parent;
+    }
+}
+
+Move MCTSTree::getBestMove(MCTSNode* root) const {
+    if (!root || root->children.empty()) {
+        return Move::none();
+    }
+    MCTSNode* bestChild = nullptr;
+    int maxVisits = -1;
+    for (const auto& child : root->children) {
+        int visits = child->visits.load();
+        if (visits > maxVisits) {
+            maxVisits = visits;
+            bestChild = child.get();
+        }
+    }
+    return bestChild ? bestChild->move : Move::none();
+}
+
+std::vector<Move> MCTSTree::getPathFromRoot(MCTSNode* node) const {
+    std::vector<Move> path;
+    MCTSNode* current = node;
+    while (current != nullptr && current->parent != nullptr) {
+        path.push_back(current->move);
+        current = current->parent;
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+double MCTSTree::evaluatePosition(const Position& pos, Color rootSide) const {
+    int material[COLOR_NB] = {0, 0};
+    int mobility[COLOR_NB] = {0, 0};
+    int kingSafety[COLOR_NB] = {0, 0};
+    for (PieceType pt = PAWN; pt <= QUEEN; ++pt) {
+        for (Color c : {WHITE, BLACK}) {
+            int count = 0;
+            Bitboard pieces = pos.pieces(c, pt);
+            count = popcount(pieces);
+            material[c] += count * PieceValue[pt];
+            if (pt != PAWN && pt != KING) {
+                Bitboard attacks = 0;
+                Bitboard bb = pieces;
+                while (bb) {
+                    Square sq = pop_lsb(bb);
+                    attacks |= attacks_bb(pt, sq, pos.pieces());
+                }
+                mobility[c] += popcount(attacks) * (pt == KNIGHT ? 2 : 1);
+            }
+        }
+    }
+    for (Color c : {WHITE, BLACK}) {
+        Square kingSq = pos.square<KING>(c);
+        Bitboard kingZone = attacks_bb<KING>(kingSq);
+        Bitboard pawns = pos.pieces(c, PAWN);
+        Bitboard shield = kingZone & pawns;
+        kingSafety[c] = popcount(shield) * 15;
+        if (!shield) {
+            kingSafety[c] -= 30;
+        }
+    }
+    Color us = pos.side_to_move();
+    int diff = material[us] - material[~us];
+    int mobDiff = mobility[us] - mobility[~us];
+    int safetyDiff = kingSafety[us] - kingSafety[~us];
+    int totalEval = diff + mobDiff / 2 + safetyDiff;
+    double score = 0.5 + totalEval / 3000.0;
+    score = std::max(0.0, std::min(1.0, score));
+    if (us != rootSide) {
+        score = 1.0 - score;
+    }
+    return score;
+}
+
+// ==================== SHASHIN MANAGER ====================
+
+ShashinManager::ShashinManager() = default;
+ShashinManager::~ShashinManager() = default;
+
+void ShashinManager::setStaticState(const Position& pos) {
+    state.staticState.stmKingExposed = detectKingExposed(pos, pos.side_to_move());
+    state.staticState.opponentKingExposed = detectKingExposed(pos, ~pos.side_to_move());
+    state.staticState.isSacrificial = detectSacrificial(pos);
+    state.staticState.kingDanger = detectKingDanger(pos);
+    state.staticState.pawnsNearPromotion = detectPawnsNearPromotion(pos);
+    state.staticState.allPiecesCount = pos.count<ALL_PIECES>() > 20;
+    state.staticState.legalMoveCount = uint8_t(MoveList<LEGAL>(pos).size());
+    state.staticState.highMaterial = state.staticState.allPiecesCount;
+    updateDynamicState(pos);
+    currentStyle = classifyPosition(pos);
+}
+
+void ShashinManager::updateDynamicState(const Position& pos) {
+    const auto& staticState = state.staticState;
+    auto& dynamic = state.dynamicDerived;
+    dynamic.isStrategical = !staticState.stmKingExposed && !staticState.opponentKingExposed
+                          && !staticState.isSacrificial && !staticState.kingDanger;
+    dynamic.isAggressive = staticState.stmKingExposed || staticState.opponentKingExposed
+                         || staticState.kingDanger || staticState.isSacrificial;
+    dynamic.isTactical = staticState.kingDanger || staticState.isSacrificial
+                       || staticState.pawnsNearPromotion;
+    dynamic.isTacticalReactive = staticState.opponentKingExposed || 
+                                 (staticState.kingDanger && staticState.stmKingExposed);
+    dynamic.isHighTal = staticState.stmKingExposed && staticState.opponentKingExposed
+                      && staticState.kingDanger;
+    dynamic.isComplex = pos.count<ALL_PIECES>() > 16 && 
+                       !dynamic.isStrategical && !dynamic.isAggressive;
+    dynamic.isMCTSApplicable = dynamic.isComplex || dynamic.isHighTal;
+}
+
+void ShashinManager::updateRootShashinState(Value score, const Position& pos, 
+                                           Depth depth, Depth rootDepth) {
+    (void)score;
+    (void)depth;
+    (void)rootDepth;
+    updateDynamicState(pos);
+    MoveConfig::isStrategical = isStrategical();
+    MoveConfig::isAggressive = isAggressive();
+    MoveConfig::isFortress = isFortress(pos);
+}
+
+ShashinStyle ShashinManager::classifyPosition(const Position& pos) const {
+    const auto& dynamic = state.dynamicDerived;
+    if (dynamic.isHighTal)
+        return HIGH_TAL;
+    else if (dynamic.isAggressive && !dynamic.isStrategical)
+        return TAL;
+    else if (dynamic.isStrategical && dynamic.isAggressive)
+        return CAPABLANCA;
+    else if (dynamic.isStrategical && !dynamic.isAggressive)
+        return PETROSIAN;
+    else if (isFortress(pos))
+        return HIGH_PETROSIAN;
+    else
+        return UNKNOWN_STYLE;
+}
+
+void ShashinManager::updateCurrentStyle(const Position& pos) {
+    currentStyle = classifyPosition(pos);
+}
+
+bool ShashinManager::isStrategical() const {
+    return state.dynamicDerived.isStrategical;
+}
+
+bool ShashinManager::isAggressive() const {
+    return state.dynamicDerived.isAggressive;
+}
+
+bool ShashinManager::isTal() const {
+    return isAggressive() && !isStrategical();
+}
+
+bool ShashinManager::isPetrosian() const {
+    return isStrategical() && !isAggressive();
+}
+
+bool ShashinManager::isCapablanca() const {
+    return isStrategical() && isAggressive();
+}
+
+bool ShashinManager::isTactical() const {
+    return state.dynamicDerived.isTactical;
+}
+
+bool ShashinManager::isComplexPosition() const {
+    return state.dynamicDerived.isComplex;
+}
+
+bool ShashinManager::isFortress(const Position& pos) const {
+    if (pos.count<ALL_PIECES>() > 12)
+        return false;
+    Bitboard pawns = pos.pieces(PAWN);
+    Bitboard blockedPawns = (shift<NORTH>(pawns) | shift<SOUTH>(pawns)) & pos.pieces();
+    if (popcount(blockedPawns) >= 4)
+        return true;
+    if (pos.count<BISHOP>() >= 2 && pos.count<PAWN>() <= 4)
+        return true;
+    return false;
+}
+
+bool ShashinManager::isMCTSApplicableByValue() const {
+    // Only apply MCTS in truly complex tactical positions
+    // Not just for any complex position, but specifically HIGH_TAL
+    return state.dynamicDerived.isHighTal && 
+           state.staticState.allPiecesCount &&  // Not in endgame
+           state.staticState.legalMoveCount > 10;  // Not forced moves
+}
+
+
+bool ShashinManager::isMCTSExplorationApplicable() const {
+    return isComplexPosition() || isHighPieceDensityCapablancaPosition();
+}
+
+bool ShashinManager::isHighPieceDensityCapablancaPosition() const {
+    return state.staticState.highMaterial && isCapablanca();
+}
+
+bool ShashinManager::isTalTacticalHighMiddle() const {
+    return isTal() && state.staticState.highMaterial;
+}
+
+bool ShashinManager::isTacticalDefensive() const {
+    return state.dynamicDerived.isTacticalReactive && isPetrosian();
+}
+
+bool ShashinManager::isLowActivity() const {
+    return false;
+}
+
+const char* ShashinManager::getStyleName() const {
+    switch (currentStyle) {
+        case HIGH_TAL:     return "High Tal (Ultra Attacking)";
+        case TAL:          return "Tal (Attacking)";
+        case CAPABLANCA:   return "Capablanca (Balanced)";
+        case PETROSIAN:    return "Petrosian (Strategic)";
+        case HIGH_PETROSIAN: return "High Petrosian (Fortress)";
+        default:           return "Balanced";
+    }
+}
+
+const char* ShashinManager::getStyleEmoji() const {
+    switch (currentStyle) {
+        case HIGH_TAL:     return "[FIRE]";
+        case TAL:          return "[SWORD]";
+        case CAPABLANCA:   return "[SCALE]";
+        case PETROSIAN:    return "[SHIELD]";
+        case HIGH_PETROSIAN: return "[CASTLE]";
+        default:           return "[SCALE]";
+    }
+}
+
+bool ShashinManager::avoidStep10() const {
+    return (isStrategical() && state.staticState.kingDanger);
+}
+
+bool ShashinManager::allowCrystalProbCut() const {
+    return isTal() || isComplexPosition();
+}
+
+bool ShashinManager::useStep17CrystalLogic() const {
+    return isTal() || (isComplexPosition() && state.staticState.kingDanger);
+}
+
+Value ShashinManager::static_value(const Position& pos) {
+    (void)pos;
+    return VALUE_NONE;
+}
+
+Move ShashinManager::runMCTSSearch(Position& pos, int iterations) {
+    if (!config.useMCTS || !isMCTSApplicableByValue()) {
+        return Move::none();
+    }
+    
+    // Limit iterations to avoid overhead - only quick search
+    int actualIterations = std::min(iterations, 500);
+    
+    MCTSTree tree(actualIterations, config.mctsExploration, currentStyle);
+    Move bestMove = tree.search(pos);
+    return bestMove;
+}
+
+
+bool ShashinManager::detectKingExposed(const Position& pos, Color side) const {
+    Square kingSq = pos.square<KING>(side);
+    Bitboard pawnShield = 0;
+    if (side == WHITE) {
+        if (rank_of(kingSq) >= RANK_2 && rank_of(kingSq) <= RANK_4) {
+            pawnShield = pos.pieces(side, PAWN) & (shift<SOUTH>(kingSq) | 
+                        shift<SOUTH_WEST>(kingSq) | shift<SOUTH_EAST>(kingSq));
+        }
+    } else {
+        if (rank_of(kingSq) >= RANK_5 && rank_of(kingSq) <= RANK_7) {
+            pawnShield = pos.pieces(side, PAWN) & (shift<NORTH>(kingSq) | 
+                        shift<NORTH_WEST>(kingSq) | shift<NORTH_EAST>(kingSq));
+        }
+    }
+    if (!pawnShield)
+        return true;
+    File kingFile = file_of(kingSq);
+    Bitboard fileMask = file_bb(kingFile);
+    if (kingFile > FILE_A) fileMask |= file_bb(File(kingFile - 1));
+    if (kingFile < FILE_H) fileMask |= file_bb(File(kingFile + 1));
+    Bitboard pawnsOnFile = pos.pieces(PAWN) & fileMask;
+    if (!pawnsOnFile)
+        return true;
+    return false;
+}
+
+bool ShashinManager::detectSacrificial(const Position& pos) const {
+    Color us = pos.side_to_move();
+    Square enemyKing = pos.square<KING>(~us);
+    Bitboard attackZone = attacks_bb<KING>(enemyKing);
+    Bitboard ourPieces = pos.pieces(us);
+    if ((attackZone & ourPieces) && popcount(attackZone & ourPieces) >= 2)
+        return true;
+    Bitboard ourQueens = pos.pieces(us, QUEEN);
+    if (ourQueens) {
+        Square queenSq = lsb(ourQueens);
+        if (distance(queenSq, enemyKing) <= 3)
+            return true;
+    }
+    return false;
+}
+
+bool ShashinManager::detectKingDanger(const Position& pos) const {
+    Color us = pos.side_to_move();
+    Square ourKing = pos.square<KING>(us);
+    Bitboard kingZone = attacks_bb<KING>(ourKing);
+    int attackers = 0;
+    for (PieceType pt = KNIGHT; pt <= QUEEN; ++pt) {
+        Bitboard pieces = pos.pieces(~us, pt);
+        while (pieces) {
+            Square sq = pop_lsb(pieces);
+            if (attacks_bb(pt, sq, pos.pieces()) & kingZone)
+                attackers++;
+        }
+    }
+    return attackers >= 2;
+}
+
+bool ShashinManager::detectPawnsNearPromotion(const Position& pos) const {
+    Bitboard whitePawns = pos.pieces(WHITE, PAWN);
+    Bitboard blackPawns = pos.pieces(BLACK, PAWN);
+    if ((whitePawns & (Rank6BB | Rank7BB)) != 0)
+        return true;
+    if ((blackPawns & (Rank2BB | Rank3BB)) != 0)
+        return true;
+    return false;
+}
+
+int ShashinManager::calculateActivity(const Position& pos) const {
+    int activity = 0;
+    for (PieceType pt = KNIGHT; pt <= QUEEN; ++pt) {
+        Bitboard pieces = pos.pieces(pt);
+        activity += popcount(pieces) * 10;
+    }
+    return activity;
+}
+
+} // namespace Stockfish
