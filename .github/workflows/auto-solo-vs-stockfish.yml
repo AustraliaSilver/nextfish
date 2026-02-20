@@ -1,13 +1,18 @@
-name: Auto Solo Latest vs Stockfish
+name: Auto Elo Nextfish vs Stockfish
 
 on:
   push:
+    branches: [main, master]
+    paths:
+      - "nextfish-dev/Stockfish-master/src/**"
+      - "Stockfish-master/Stockfish-master/src/**"
+      - ".github/workflows/auto-solo-vs-stockfish.yml"
   workflow_dispatch:
     inputs:
       games:
         description: "Number of games"
         required: false
-        default: "200"
+        default: "500"
       tc:
         description: "Time control"
         required: false
@@ -24,66 +29,24 @@ on:
         description: "Hash MB per engine"
         required: false
         default: "128"
-      mcts_enabled:
-        description: "Enable MCTS for Nextfish"
-        required: false
-        default: "true"
-      mcts_iterations:
-        description: "MCTS Iterations"
-        required: false
-        default: "300"
-      mcts_root_percent:
-        description: "MCTS Root Node Percent"
-        required: false
-        default: "9"
-      mcts_deep_enabled:
-        description: "Enable deep MCTS guidance"
-        required: false
-        default: "true"
-      mcts_deep_max_ply:
-        description: "MCTS Deep Max Ply"
-        required: false
-        default: "3"
-      mcts_deep_topk:
-        description: "MCTS Deep TopK"
-        required: false
-        default: "2"
-      mcts_deep_child_iterations:
-        description: "MCTS Deep Child Iterations"
-        required: false
-        default: "32"
-      mcts_deep_bonus:
-        description: "MCTS Deep Bonus"
-        required: false
-        default: "480"
 
 permissions:
   contents: read
 
 concurrency:
-  group: auto-solo-${{ github.ref }}
+  group: elo-solo-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  solo:
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip-solo]')
+  elo:
     runs-on: [self-hosted, windows]
-    timeout-minutes: 240
+    timeout-minutes: 360
     env:
-      CAI_ROOT: ${{ github.workspace }}
-      GAMES: ${{ github.event.inputs.games || '200' }}
+      GAMES: ${{ github.event_name == 'push' && '500' || (github.event.inputs.games || '500') }}
       TC: ${{ github.event.inputs.tc || '10+0.1' }}
       CONCURRENCY: ${{ github.event.inputs.concurrency || '4' }}
       THREADS: ${{ github.event.inputs.threads || '1' }}
       HASH: ${{ github.event.inputs.hash || '128' }}
-      MCTS_ENABLED: ${{ github.event.inputs.mcts_enabled || 'true' }}
-      MCTS_ITERATIONS: ${{ github.event.inputs.mcts_iterations || '300' }}
-      MCTS_ROOT_PERCENT: ${{ github.event.inputs.mcts_root_percent || '9' }}
-      MCTS_DEEP_ENABLED: ${{ github.event.inputs.mcts_deep_enabled || 'true' }}
-      MCTS_DEEP_MAX_PLY: ${{ github.event.inputs.mcts_deep_max_ply || '3' }}
-      MCTS_DEEP_TOPK: ${{ github.event.inputs.mcts_deep_topk || '2' }}
-      MCTS_DEEP_CHILD_ITERATIONS: ${{ github.event.inputs.mcts_deep_child_iterations || '32' }}
-      MCTS_DEEP_BONUS: ${{ github.event.inputs.mcts_deep_bonus || '480' }}
 
     steps:
       - name: Checkout
@@ -91,58 +54,66 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Prepare directories
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force builds | Out-Null
           New-Item -ItemType Directory -Force matches | Out-Null
 
-      - name: Verify tools
+      - name: Verify toolchain
         shell: pwsh
         run: |
           if (-not (Test-Path ".\cutechess-cli.exe") -and -not (Test-Path ".\cutechess-cli")) {
-            throw "cutechess-cli not found in repo root."
+            throw "cutechess-cli not found in repo root"
           }
-          if (-not (Get-Command g++ -ErrorAction SilentlyContinue)) {
-            throw "g++ not found in PATH."
+          if (-not (Test-Path "C:\msys64\usr\bin\bash.exe")) {
+            throw "MSYS2 bash not found at C:\msys64\usr\bin\bash.exe"
           }
 
-      - name: Build latest Nextfish
+      - name: Build Nextfish (PGO + O3 + LTO)
         shell: pwsh
         run: |
-          python .\build_windows.py
+          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
+          $ws = $ws -replace '^([A-Za-z]):','/$1'
+          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:\$PATH; cd $ws/nextfish-dev/Stockfish-master/src && make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
 
-      - name: Build latest Stockfish
+      - name: Build Stockfish (PGO + O3 + LTO)
         shell: pwsh
         run: |
-          python .\build_stockfish.py
+          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
+          $ws = $ws -replace '^([A-Za-z]):','/$1'
+          C:\msys64\usr\bin\bash -lc "export PATH=/mingw64/bin:/usr/bin:/bin:\$PATH; cd $ws/Stockfish-master/Stockfish-master/src && make -j4 profile-build ARCH=native COMP=gcc && make strip ARCH=native COMP=gcc"
 
-      - name: Resolve latest binaries
-        id: resolve_binaries
+      - name: Normalize shared NNUE nets
         shell: pwsh
         run: |
-          $nextfish = Get-ChildItem .\builds\nextfish_shashin_*.exe -ErrorAction SilentlyContinue `
-            | Sort-Object LastWriteTime -Descending `
-            | Select-Object -First 1
-          if (-not $nextfish) { throw "No nextfish_shashin_*.exe found in builds/" }
+          $nextSrc = "nextfish-dev/Stockfish-master/src"
+          $stockSrc = "Stockfish-master/Stockfish-master/src"
+          $netFiles = Get-ChildItem "$nextSrc/nn-*.nnue" -File -ErrorAction SilentlyContinue
+          if (-not $netFiles) {
+            throw "No nn-*.nnue found in $nextSrc"
+          }
+          foreach ($f in $netFiles) {
+            Copy-Item $f.FullName (Join-Path $stockSrc $f.Name) -Force
+          }
+          Write-Host "Shared nets:" ($netFiles.Name -join ', ')
 
-          $stockfish = Get-ChildItem .\builds\stockfish_orig_*.exe -ErrorAction SilentlyContinue `
-            | Sort-Object LastWriteTime -Descending `
-            | Select-Object -First 1
-          if (-not $stockfish) { throw "No stockfish_orig_*.exe found in builds/" }
+      - name: Save built binaries
+        id: save_bin
+        shell: pwsh
+        run: |
+          $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+          $next = "builds/nextfish_pgo_native_$stamp.exe"
+          $stock = "builds/stockfish_orig_pgo_native_$stamp.exe"
 
-          "NEXTFISH_EXE=$($nextfish.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "STOCKFISH_EXE=$($stockfish.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Nextfish: $($nextfish.FullName)"
-          Write-Host "Stockfish: $($stockfish.FullName)"
+          Copy-Item "nextfish-dev/Stockfish-master/src/stockfish.exe" $next -Force
+          Copy-Item "Stockfish-master/Stockfish-master/src/stockfish.exe" $stock -Force
 
-      - name: Run Nextfish vs Stockfish solo
-        id: run_match
+          "NEXTFISH_EXE=$next" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "STOCKFISH_EXE=$stock" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run Elo match (500 games on push)
+        id: match
         shell: pwsh
         run: |
           $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
@@ -152,19 +123,23 @@ jobs:
 
           $args = @(
             '-engine', "cmd=$env:NEXTFISH_EXE", 'name=Nextfish', 'proto=uci',
-            "option.`"MCTS Enabled`"=$env:MCTS_ENABLED",
-            "option.`"MCTS Iterations`"=$env:MCTS_ITERATIONS",
-            "option.`"MCTS Root Node Percent`"=$env:MCTS_ROOT_PERCENT",
-            "option.`"MCTS Deep Enabled`"=$env:MCTS_DEEP_ENABLED",
-            "option.`"MCTS Deep Max Ply`"=$env:MCTS_DEEP_MAX_PLY",
-            "option.`"MCTS Deep TopK`"=$env:MCTS_DEEP_TOPK",
-            "option.`"MCTS Deep Child Iterations`"=$env:MCTS_DEEP_CHILD_ITERATIONS",
-            "option.`"MCTS Deep Bonus`"=$env:MCTS_DEEP_BONUS",
+            'option."MCTS Enabled"=true',
+            'option."MCTS Iterations"=300',
+            'option."MCTS Root Node Percent"=9',
+            'option."MCTS Deep Enabled"=false',
+            'option."AAW Enabled"=true',
+            'option."AAW Base Delta"=8',
+            'option."AAW Volatility Weight"=8',
+            'option."AAW Trend Asymmetry"=8',
+            'option."AAW Recenter Weight"=10',
+            'option."AAW Directional Clamp"=false',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH",
+
             '-engine', "cmd=$env:STOCKFISH_EXE", 'name=Stockfish', 'proto=uci',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH",
+
             '-each', "tc=$env:TC",
             '-games', "$env:GAMES",
             '-pgnout', $pgn,
@@ -176,22 +151,18 @@ jobs:
 
           if (Test-Path ".\UHO_2022_8mvs_+110_+119.pgn") {
             $args += @('-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random')
-          } else {
-            Write-Warning "Opening book not found, running without -openings."
           }
 
           $cutechess = if (Test-Path ".\cutechess-cli.exe") { ".\cutechess-cli.exe" } else { ".\cutechess-cli" }
 
           & $cutechess @args 2>&1 | Tee-Object -FilePath $log
-          if ($LASTEXITCODE -ne 0) {
-            throw "cutechess-cli exited with code $LASTEXITCODE"
-          }
+          if ($LASTEXITCODE -ne 0) { throw "cutechess-cli exited with code $LASTEXITCODE" }
 
           $scoreLine = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
           $eloLine = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
           $whiteLine = Select-String -Path $log -Pattern 'playing White:' | Select-Object -Last 1
           $blackLine = Select-String -Path $log -Pattern 'playing Black:' | Select-Object -Last 1
-          $drawLine = Select-String -Path $log -Pattern '^SPRT:' | Select-Object -Last 1
+          $sprtLine = Select-String -Path $log -Pattern '^SPRT:' | Select-Object -Last 1
 
           @(
             "Nextfish exe: $env:NEXTFISH_EXE"
@@ -201,24 +172,23 @@ jobs:
             ($eloLine.Line)
             ($whiteLine.Line)
             ($blackLine.Line)
-            ($drawLine.Line)
+            ($sprtLine.Line)
           ) | Where-Object { $_ } | Set-Content $summary
 
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Nextfish vs Stockfish"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Nextfish vs Stockfish (PGO, same NNUE files)"
           Get-Content $summary | ForEach-Object { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- " + $_) }
 
           "pgn_path=$pgn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "log_path=$log" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "summary_path=$summary" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Upload match artifacts
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: solo-nextfish-vs-stockfish-${{ github.run_id }}
+          name: elo-nextfish-vs-stockfish-${{ github.run_id }}
           path: |
-            ${{ steps.run_match.outputs.pgn_path }}
-            ${{ steps.run_match.outputs.log_path }}
-            ${{ steps.run_match.outputs.summary_path }}
+            ${{ steps.match.outputs.pgn_path }}
+            ${{ steps.match.outputs.log_path }}
+            ${{ steps.match.outputs.summary_path }}
           if-no-files-found: warn
