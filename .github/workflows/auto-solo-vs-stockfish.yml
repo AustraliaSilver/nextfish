@@ -226,13 +226,13 @@ jobs:
           }
           function Add-NextOption([string]$name, [string]$value) {
             if ($nextOptions.Contains($name)) {
-              $script:args += "option.`"$name`"=$value"
+              $script:cuteArgs += "option.`"$name`"=$value"
             } else {
               Write-Host "Skip unsupported Nextfish option: $name"
             }
           }
 
-          $args = @(
+          $cuteArgs = @(
             '-engine', "cmd=$nextExe", 'name=Nextfish', 'proto=uci',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH"
@@ -248,7 +248,7 @@ jobs:
           Add-NextOption "AAW Recenter Weight" "10"
           Add-NextOption "AAW Directional Clamp" "false"
 
-          $args += @(
+          $cuteArgs += @(
             '-engine', "cmd=$stockExe", 'name=Stockfish', 'proto=uci',
             "option.Threads=$env:THREADS",
             "option.Hash=$env:HASH",
@@ -264,10 +264,10 @@ jobs:
           )
 
           if (Test-Path ".\UHO_2022_8mvs_+110_+119.pgn") {
-            $args += @('-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random')
+            $cuteArgs += @('-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random')
           }
 
-            & $cutechess @args 2>&1 | Tee-Object -FilePath $log
+            & $cutechess @cuteArgs 2>&1 | Tee-Object -FilePath $log
             if ($LASTEXITCODE -ne 0) {
               if (Test-Path $log) {
                 Write-Host "Last cutechess lines:"
