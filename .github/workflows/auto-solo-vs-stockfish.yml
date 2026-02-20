@@ -95,8 +95,12 @@ jobs:
             throw "Could not download cutechess zip from known URLs"
           }
           Expand-Archive -Path $zip -DestinationPath "." -Force
-          if (-not (Test-Path ".\cutechess-cli.exe")) {
+          $cli = Get-ChildItem -Path . -Recurse -Filter "cutechess-cli.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $cli) {
             throw "cutechess-cli.exe not found after download/extract"
+          }
+          if ($cli.FullName -ne (Join-Path (Get-Location) "cutechess-cli.exe")) {
+            Copy-Item $cli.FullName ".\\cutechess-cli.exe" -Force
           }
 
       - name: Verify toolchain
