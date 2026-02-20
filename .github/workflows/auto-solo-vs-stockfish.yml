@@ -101,8 +101,16 @@ jobs:
           if (-not $cli) {
             throw "cutechess-cli.exe not found after download/extract"
           }
+          $cliDir = Split-Path -Path $cli.FullName -Parent
           if ($cli.FullName -ne (Join-Path (Get-Location) "cutechess-cli.exe")) {
             Copy-Item $cli.FullName ".\\cutechess-cli.exe" -Force
+          }
+          Get-ChildItem -Path $cliDir -Filter "*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path (Get-Location) $_.Name) -Force
+          }
+          $platformsDir = Join-Path $cliDir "platforms"
+          if (Test-Path $platformsDir) {
+            Copy-Item $platformsDir (Join-Path (Get-Location) "platforms") -Recurse -Force
           }
 
       - name: Verify toolchain
