@@ -177,8 +177,8 @@ jobs:
           Copy-Item "nextfish-dev/Stockfish-master/src/stockfish.exe" $next -Force
           Copy-Item "src/stockfish.exe" $stock -Force
 
-          "NEXTFISH_EXE=$next" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "STOCKFISH_EXE=$stock" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Add-Content -Path $env:GITHUB_ENV -Value "NEXTFISH_EXE=$next"
+          Add-Content -Path $env:GITHUB_ENV -Value "STOCKFISH_EXE=$stock"
 
       - name: Run Elo match (500 games on push)
         id: match
@@ -189,9 +189,9 @@ jobs:
           $pgn = "matches/nextfish_vs_stockfish_${stamp}.pgn"
           $log = "matches/nextfish_vs_stockfish_${stamp}.log"
           $summary = "matches/nextfish_vs_stockfish_${stamp}.summary.txt"
-          "pgn_path=$pgn" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "log_path=$log" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "summary_path=$summary" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "pgn_path=$pgn"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "log_path=$log"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "summary_path=$summary"
 
           $nextExe = (Resolve-Path $env:NEXTFISH_EXE).Path
           $stockExe = (Resolve-Path $env:STOCKFISH_EXE).Path
