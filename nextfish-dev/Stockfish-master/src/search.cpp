@@ -451,6 +451,11 @@ void Search::Worker::iterative_deepening() {
     const int aawConfidenceWeight = int(options["AAW Confidence Weight"]);
     const int aawOscillationGuard = int(options["AAW Oscillation Guard"]);
     const int aawFastPathDepth = int(options["AAW FastPath Depth"]);
+    const bool aawAdaptiveExpansion = bool(options["AAW Adaptive Expansion"]);
+    const int aawExpansionMinor = int(options["AAW Expansion Minor"]);
+    const int aawExpansionMajor = int(options["AAW Expansion Major"]);
+    const int aawExpansionExtreme = int(options["AAW Expansion Extreme"]);
+    const int aawLowTimeFullWindow = int(options["AAW LowTime FullWindow"]);
     const bool deeXEnabled = bool(options["DEE-X Enabled"]);
     const int deeXRootMinDepth = int(options["DEE-X Root Min Depth"]);
     const int deeXRootTopK = int(options["DEE-X Root TopK"]);
@@ -699,6 +704,7 @@ void Search::Worker::iterative_deepening() {
             int tacticalCount = 0;
             int trend = 0;
             int aawConfidence = 50;
+            int aawPressure = 0;
             const bool pvStable = rootMoves[0].pv[0] == lastBestPV[0];
 
             if (useAAW)
@@ -738,7 +744,7 @@ void Search::Worker::iterative_deepening() {
                     if (opt > 0)
                     {
                         const TimePoint used = elapsed();
-                        const int aawPressure = int((used * 100) / std::max<TimePoint>(1, opt));
+                        aawPressure = int((used * 100) / std::max<TimePoint>(1, opt));
                         if (aawPressure > 90)
                         {
                             deltaLo += aawTimePressure;
@@ -864,6 +870,15 @@ void Search::Worker::iterative_deepening() {
 
                 if (useAAW && (bestValue <= alpha || bestValue >= beta))
                 {
+                    if (aawPressure >= aawLowTimeFullWindow && aspirationAttempts >= 2
+                        && !aawFullWindowFallback)
+                    {
+                        alpha = -VALUE_INFINITE;
+                        beta = VALUE_INFINITE;
+                        aawFullWindowFallback = true;
+                        continue;
+                    }
+
                     // Safety guard: avoid endless re-search loops under tight/unstable windows.
                     if (aspirationAttempts >= localFullWindowAttempt && !aawFullWindowFallback)
                     {
@@ -902,17 +917,30 @@ void Search::Worker::iterative_deepening() {
                         int recenterBase = aawRecenterWeight;
                         if (avg < -20)
                             recenterBase = std::max(8, recenterBase - aawDefenseBoost / 2);
-                        const int dynamicRecentering =
-                          std::clamp(recenterBase + miss / 8 + aspirationAttempts * 3, 0, 85);
+                        const int recenterCap = pvStable ? 70 : 50;
+                        const int dynamicRecentering = std::clamp(
+                          recenterBase + miss / 8 + aspirationAttempts * 3, 0, recenterCap);
                         avg = Value((int(avg) * (100 - dynamicRecentering) + int(bestValue) * dynamicRecentering)
                                     / 100);
                         int factor = 120;
-                        if (miss > 100)
-                            factor = 260;
-                        else if (miss > 30)
-                            factor = 185;
-                        else if (miss > 5)
-                            factor = 145;
+                        if (aawAdaptiveExpansion)
+                        {
+                            if (miss > 100)
+                                factor = aawExpansionExtreme;
+                            else if (miss > 30)
+                                factor = aawExpansionMajor;
+                            else if (miss > 5)
+                                factor = aawExpansionMinor;
+                        }
+                        else
+                        {
+                            if (miss > 100)
+                                factor = 260;
+                            else if (miss > 30)
+                                factor = 185;
+                            else if (miss > 5)
+                                factor = 145;
+                        }
                         factor += aawExpansionBias / 4 + aspirationAttempts * 6;
                         deltaLo = std::clamp(deltaLo * factor / 100, aawMinDelta, aawMaxDelta);
                         deltaHi = std::clamp(deltaHi * 110 / 100, aawMinDelta, aawMaxDelta);
@@ -967,17 +995,30 @@ void Search::Worker::iterative_deepening() {
                         int recenterBase = aawRecenterWeight;
                         if (avg < -20)
                             recenterBase = std::max(8, recenterBase - aawDefenseBoost / 2);
-                        const int dynamicRecentering =
-                          std::clamp(recenterBase + miss / 8 + aspirationAttempts * 3, 0, 85);
+                        const int recenterCap = pvStable ? 70 : 50;
+                        const int dynamicRecentering = std::clamp(
+                          recenterBase + miss / 8 + aspirationAttempts * 3, 0, recenterCap);
                         avg = Value((int(avg) * (100 - dynamicRecentering) + int(bestValue) * dynamicRecentering)
                                     / 100);
                         int factor = 120;
-                        if (miss > 100)
-                            factor = 260;
-                        else if (miss > 30)
-                            factor = 185;
-                        else if (miss > 5)
-                            factor = 145;
+                        if (aawAdaptiveExpansion)
+                        {
+                            if (miss > 100)
+                                factor = aawExpansionExtreme;
+                            else if (miss > 30)
+                                factor = aawExpansionMajor;
+                            else if (miss > 5)
+                                factor = aawExpansionMinor;
+                        }
+                        else
+                        {
+                            if (miss > 100)
+                                factor = 260;
+                            else if (miss > 30)
+                                factor = 185;
+                            else if (miss > 5)
+                                factor = 145;
+                        }
                         factor += aawExpansionBias / 4 + aspirationAttempts * 6;
                         deltaHi = std::clamp(deltaHi * factor / 100, aawMinDelta, aawMaxDelta);
                         deltaLo = std::clamp(deltaLo * 110 / 100, aawMinDelta, aawMaxDelta);

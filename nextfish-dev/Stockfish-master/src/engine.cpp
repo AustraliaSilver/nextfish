@@ -165,6 +165,11 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("AAW Confidence Weight", Option(12, 0, 80));
     options.add("AAW Oscillation Guard", Option(2, 0, 6));
     options.add("AAW FastPath Depth", Option(10, 6, 32));
+    options.add("AAW Adaptive Expansion", Option(true));
+    options.add("AAW Expansion Minor", Option(118, 100, 180));
+    options.add("AAW Expansion Major", Option(155, 120, 240));
+    options.add("AAW Expansion Extreme", Option(220, 150, 320));
+    options.add("AAW LowTime FullWindow", Option(105, 85, 140));
     options.add("DEE-X Enabled", Option(false));
     options.add("DEE-X Root Min Depth", Option(9, 1, 24));
     options.add("DEE-X Root TopK", Option(2, 1, 8));
