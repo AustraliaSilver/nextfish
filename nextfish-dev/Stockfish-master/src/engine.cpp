@@ -124,7 +124,7 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("UCI_ShowWDL", Option(false));
 
     // MCTS (Monte Carlo Tree Search) options for complex positions
-    options.add("Shashin Enabled", Option(true));
+    options.add("Shashin Enabled", Option(false));
     options.add("Shashin Root White Scale", Option(100, 50, 200));
     options.add("Shashin Root Black Scale", Option(100, 50, 200));
     options.add("Shashin Root Capture Bonus", Option(180, 0, 400));
@@ -134,19 +134,19 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Shashin Root BadCapture Penalty", Option(140, 0, 300));
     options.add("Shashin Root BadCheck Penalty", Option(90, 0, 250));
     options.add("Shashin Root OppKingAttack Bonus", Option(40, 0, 200));
-    options.add("Shashin Root Black Risk Penalty", Option(35, 0, 200));
-    options.add("Shashin Root Black Capture Bonus", Option(10, -50, 100));
+    options.add("Shashin Root Black Risk Penalty", Option(0, 0, 200));
+    options.add("Shashin Root Black Capture Bonus", Option(35, -50, 100));
     options.add("Shashin Root Quiet Bonus", Option(35, 0, 120));
 
     options.add("MCTS Enabled", Option(false));
-    options.add("MCTS Root Node Percent", Option(0, 0, 20));
+    options.add("MCTS Root Node Percent", Option(9, 0, 20));
     options.add("MCTS Root Min Depth", Option(8, 1, 32));
     options.add("MCTS Root Min Iterations", Option(40, 1, 1000));
     options.add("MCTS Root Max Iterations", Option(300, 10, 2000));
     options.add("MCTS Root Nodes Per Iteration", Option(3000, 500, 20000));
     options.add("MCTS Root Reorder TopK", Option(2, 1, 8));
     
-    options.add("MCTS Iterations", Option(1000, 100, 10000));
+    options.add("MCTS Iterations", Option(300, 100, 10000));
     options.add("AAW Enabled", Option(false));
     options.add("AAW Base Delta", Option(8, 2, 64));
     options.add("AAW Min Delta", Option(5, 2, 40));
@@ -162,6 +162,9 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("AAW Directional Clamp", Option(false));
     options.add("AAW Opposite Margin", Option(12, 4, 64));
     options.add("AAW Defense Boost", Option(0, 0, 40));
+    options.add("AAW Confidence Weight", Option(12, 0, 80));
+    options.add("AAW Oscillation Guard", Option(2, 0, 6));
+    options.add("AAW FastPath Depth", Option(10, 6, 32));
     options.add("DEE-X Enabled", Option(false));
     options.add("DEE-X Root Min Depth", Option(9, 1, 24));
     options.add("DEE-X Root TopK", Option(2, 1, 8));
@@ -170,6 +173,13 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("DEE-X Black TopK", Option(1, 1, 8));
     options.add("DEE-X Black Risk Penalty", Option(28, 0, 120));
     options.add("DEE-X Black Castle Bonus", Option(24, 0, 120));
+    options.add("DEE-X Min Reorder Score", Option(90, 0, 400));
+    options.add("DEE-X Tactical Weight", Option(8, 0, 24));
+    options.add("DEE-X Dynamic TopK", Option(true));
+    options.add("DEE-X Black Extra Margin", Option(20, 0, 120));
+    options.add("DEE-X Reorder PrevScore Guard", Option(30, 0, 120));
+    options.add("DEE-X Black Safe Enabled", Option(true));
+    options.add("DEE-X Black Safe MaxAbsEval", Option(80, 20, 300));
 
     options.add(  //
       "SyzygyPath", Option("", [](const Option& o) {

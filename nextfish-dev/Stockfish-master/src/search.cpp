@@ -387,16 +387,13 @@ void Search::Worker::iterative_deepening() {
                 if (oppKingExposed && (isCheck || isPromotion) && neutralSee)
                     priority += oppKingAttackBonus;
 
-                // Black-side stability: prefer robust moves a bit more.
-                if (!usWhiteRoot)
-                {
-                    if (!neutralSee)
-                        priority -= blackRiskPenalty;
-                    if (isCapture && neutralSee)
-                        priority += blackCaptureBonus;
-                    if (isCastle)
-                        priority += 25;
-                }
+                // Keep root ordering color-neutral to avoid systematic side bias.
+                if (!neutralSee)
+                    priority -= blackRiskPenalty;
+                if (isCapture && neutralSee)
+                    priority += blackCaptureBonus;
+                if (!usWhiteRoot && isCastle)
+                    priority += 25;
 
                 const int sideScale = usWhiteRoot ? whiteScale : blackScale;
                 return (priority * sideScale) / 100;
@@ -405,7 +402,6 @@ void Search::Worker::iterative_deepening() {
             std::stable_sort(rootMoves.begin(), rootMoves.end(), [&](const RootMove& a, const RootMove& b) {
                 return shashinRootPriority(a.pv[0]) > shashinRootPriority(b.pv[0]);
             });
-
             sync_cout << "info string Shashin root ordering applied"
                       << " [aggressive=" << (aggressiveStyle ? 1 : 0)
                       << " strategic=" << (strategicStyle ? 1 : 0) << "]" << sync_endl;
@@ -452,14 +448,24 @@ void Search::Worker::iterative_deepening() {
     const bool aawDirectionalClamp = bool(options["AAW Directional Clamp"]);
     const int aawOppositeMargin = int(options["AAW Opposite Margin"]);
     const int aawDefenseBoost = int(options["AAW Defense Boost"]);
+    const int aawConfidenceWeight = int(options["AAW Confidence Weight"]);
+    const int aawOscillationGuard = int(options["AAW Oscillation Guard"]);
+    const int aawFastPathDepth = int(options["AAW FastPath Depth"]);
     const bool deeXEnabled = bool(options["DEE-X Enabled"]);
     const int deeXRootMinDepth = int(options["DEE-X Root Min Depth"]);
     const int deeXRootTopK = int(options["DEE-X Root TopK"]);
     const int deeXRootBonus = int(options["DEE-X Root Bonus"]);
     const int deeXSeeMargin = int(options["DEE-X SEE Margin"]);
-    const int deeXBlackTopK = int(options["DEE-X Black TopK"]);
     const int deeXBlackRiskPenalty = int(options["DEE-X Black Risk Penalty"]);
     const int deeXBlackCastleBonus = int(options["DEE-X Black Castle Bonus"]);
+    const int deeXMinReorderScore = int(options["DEE-X Min Reorder Score"]);
+    const int deeXTacticalWeight = int(options["DEE-X Tactical Weight"]);
+    const bool deeXDynamicTopK = bool(options["DEE-X Dynamic TopK"]);
+    const int deeXBlackTopK = int(options["DEE-X Black TopK"]);
+    const int deeXBlackExtraMargin = int(options["DEE-X Black Extra Margin"]);
+    const int deeXReorderPrevScoreGuard = int(options["DEE-X Reorder PrevScore Guard"]);
+    const bool deeXBlackSafeEnabled = bool(options["DEE-X Black Safe Enabled"]);
+    const int deeXBlackSafeMaxAbsEval = int(options["DEE-X Black Safe MaxAbsEval"]);
     int lastMctsRootDepth = 0;
 
     lowPlyHistory.fill(97);
@@ -485,101 +491,124 @@ void Search::Worker::iterative_deepening() {
         // DEE-X (safe integration): root ordering only, no pruning override.
         if (mainThread && deeXEnabled && rootDepth >= deeXRootMinDepth && !rootMoves.empty())
         {
-            const Color them = ~us;
-            std::vector<std::pair<Move, int>> deexOrder;
-            deexOrder.reserve(rootMoves.size());
+            const bool blackSafeSkip =
+              (us == BLACK && deeXBlackSafeEnabled
+               && std::abs(int(rootMoves[0].previousScore)) > deeXBlackSafeMaxAbsEval);
 
-            for (const RootMove& rm : rootMoves)
+            if (!blackSafeSkip)
             {
-                const Move m = rm.pv[0];
-                if (m == Move::none())
-                    continue;
+                const Color them = ~us;
+                std::vector<std::pair<Move, int>> deexOrder;
+                deexOrder.reserve(rootMoves.size());
 
-                int score = 0;
-                const bool cap = rootPos.capture_stage(m);
-                const bool chk = rootPos.gives_check(m);
-                const bool prm = m.type_of() == PROMOTION;
-                const bool csl = m.type_of() == CASTLING;
-
-                if (cap)
-                    score += 60;
-                if (chk)
-                    score += 50;
-                if (prm)
-                    score += 90;
-                if (csl)
-                    score += 16;
-
-                const bool seeGood = rootPos.see_ge(m, 0);
-                const bool seeNear = rootPos.see_ge(m, -deeXSeeMargin);
-                if (seeGood)
-                    score += 70;
-                else if (seeNear)
-                    score += 20;
-                else
-                    score -= 110;
-
-                // Lightweight aftermath probe.
-                StateInfo st;
-                rootPos.do_move(m, st);
-                const Square oppK = rootPos.square<KING>(them);
-                const Square ourK = rootPos.square<KING>(us);
-                const int kingDelta =
-                  popcount(rootPos.attackers_to(oppK) & rootPos.pieces(us))
-                  - popcount(rootPos.attackers_to(ourK) & rootPos.pieces(them));
-                rootPos.undo_move(m);
-                score += kingDelta * 8;
-
-                if (us == BLACK)
+                for (const RootMove& rm : rootMoves)
                 {
-                    // Black-side stability policy: prioritize robust lines.
-                    if (!seeGood)
-                        score -= deeXBlackRiskPenalty;
-                    if ((cap || chk) && !seeGood)
-                        score -= deeXBlackRiskPenalty / 2;
+                    const Move m = rm.pv[0];
+                    if (m == Move::none())
+                        continue;
+
+                    int score = 0;
+                    const bool cap = rootPos.capture_stage(m);
+                    const bool chk = rootPos.gives_check(m);
+                    const bool prm = m.type_of() == PROMOTION;
+                    const bool csl = m.type_of() == CASTLING;
+
+                    if (cap)
+                        score += 60;
+                    if (chk)
+                        score += 50;
+                    if (prm)
+                        score += 90;
                     if (csl)
+                        score += 16;
+
+                    const bool seeGood = rootPos.see_ge(m, 0);
+                    const bool seeNear = rootPos.see_ge(m, -deeXSeeMargin);
+                    if (seeGood)
+                        score += 70;
+                    else if (seeNear)
+                        score += 20;
+                    else
+                        score -= 110;
+
+                    // Lightweight aftermath probe.
+                    StateInfo st;
+                    rootPos.do_move(m, st);
+                    const Square oppK = rootPos.square<KING>(them);
+                    const Square ourK = rootPos.square<KING>(us);
+                    const int kingDelta =
+                      popcount(rootPos.attackers_to(oppK) & rootPos.pieces(us))
+                      - popcount(rootPos.attackers_to(ourK) & rootPos.pieces(them));
+                    rootPos.undo_move(m);
+                    score += kingDelta * deeXTacticalWeight;
+
+                    // Keep DEE-X root scoring color-neutral to prevent black-only suppression.
+                    if (!seeNear)
+                        score -= deeXBlackRiskPenalty;
+                    if ((cap || chk) && !seeNear && kingDelta < 0)
+                        score -= deeXBlackRiskPenalty / 2;
+                    if (us == BLACK && csl)
                         score += deeXBlackCastleBonus;
                     if (kingDelta < 0)
-                        score += kingDelta * 2;  // extra penalty when own king gets weaker
+                        score += kingDelta * 2;
+
+                    score += deeXRootBonus / 20;
+                    deexOrder.emplace_back(m, score);
                 }
 
-                score += deeXRootBonus / 20;
-                deexOrder.emplace_back(m, score);
-            }
+                std::stable_sort(
+                  deexOrder.begin(), deexOrder.end(), [](const auto& a, const auto& b) {
+                      return a.second > b.second;
+                  });
 
-            std::stable_sort(
-              deexOrder.begin(), deexOrder.end(), [](const auto& a, const auto& b) {
-                  return a.second > b.second;
-              });
-
-            const int localTopK = (us == BLACK) ? std::min(deeXRootTopK, deeXBlackTopK) : deeXRootTopK;
-            const int topK = std::min<int>(localTopK, int(deexOrder.size()));
-            int reordered = 0;
-            for (int i = 0; i < topK; ++i)
-            {
-                auto it = std::find(rootMoves.begin(), rootMoves.end(), deexOrder[size_t(i)].first);
-                if (it == rootMoves.end())
-                    continue;
-                const size_t fromIndex = size_t(it - rootMoves.begin());
-                const size_t toIndex = size_t(i);
-                if (fromIndex > toIndex)
+                int topK = std::min<int>(deeXRootTopK, int(deexOrder.size()));
+                if (deeXDynamicTopK)
                 {
-                    std::rotate(rootMoves.begin() + toIndex, rootMoves.begin() + fromIndex,
-                                rootMoves.begin() + fromIndex + 1);
-                    ++reordered;
+                    if (rootDepth <= deeXRootMinDepth + 1)
+                        topK = std::min(topK, 1);
+                    if (us == BLACK)
+                        topK = std::min(topK, deeXBlackTopK);
+                    if (rootMoves.size() <= 3)
+                        topK = std::min(topK, 1);
                 }
-            }
+                int reordered = 0;
+                for (int i = 0; i < topK; ++i)
+                {
+                    const int requiredScore =
+                      deeXMinReorderScore + ((us == BLACK) ? deeXBlackExtraMargin : 0);
+                    if (deexOrder[size_t(i)].second < requiredScore)
+                        continue;
+                    if (i > 0 && deexOrder[size_t(i - 1)].second - deexOrder[size_t(i)].second < 6)
+                        continue;
+                    auto it = std::find(rootMoves.begin(), rootMoves.end(), deexOrder[size_t(i)].first);
+                    if (it == rootMoves.end())
+                        continue;
+                    const Value bestPrevScore = rootMoves[0].previousScore;
+                    const int prevGuard = deeXReorderPrevScoreGuard + ((us == BLACK) ? 8 : 0);
+                    if (rootDepth >= deeXRootMinDepth + 2
+                        && it->previousScore + prevGuard < bestPrevScore)
+                        continue;
+                    const size_t fromIndex = size_t(it - rootMoves.begin());
+                    const size_t toIndex = size_t(i);
+                    if (fromIndex > toIndex)
+                    {
+                        std::rotate(rootMoves.begin() + toIndex, rootMoves.begin() + fromIndex,
+                                    rootMoves.begin() + fromIndex + 1);
+                        ++reordered;
+                    }
+                }
 
-            if (reordered > 0)
-                sync_cout << "info string DEE-X root ordering applied: topK=" << topK
-                          << " reordered=" << reordered << sync_endl;
+                if (reordered > 0)
+                    sync_cout << "info string DEE-X root ordering applied: topK=" << topK
+                              << " reordered=" << reordered
+                              << " minScore=" << deeXMinReorderScore << sync_endl;
+            }
         }
 
         // Root MCTS guidance budgeted by searched nodes to reduce pruning misses at root.
         if (mainThread && mctsEnabled && mctsRootNodePercent > 0 && rootDepth >= mctsRootMinDepth
             && rootDepth >= lastMctsRootDepth + 2 && shashinManager->isMCTSApplicableByValue())
         {
-            const bool usWhite = rootPos.side_to_move() == WHITE;
             const uint64_t searchedNodes = std::max(uint64_t(1), threads.nodes_searched());
             const uint64_t mctsNodeBudget = (searchedNodes * uint64_t(mctsRootNodePercent)) / 100ULL;
             const uint64_t roughIterations = mctsNodeBudget / uint64_t(std::max(1, mctsRootNodesPerIteration));
@@ -596,10 +625,9 @@ void Search::Worker::iterative_deepening() {
 
             if (!mctsRootStats.empty() && mctsMove != Move::none())
             {
-                const int minVisits = std::max(usWhite ? 20 : 28, mctsIterations / (usWhite ? 10 : 8));
-                const double requiredWinRate = usWhite ? 0.525 : 0.54;
-                const double requiredVisitShare =
-                  usWhite ? 0.10 : 0.13;
+                const int minVisits = std::max(20, mctsIterations / 10);
+                const double requiredWinRate = 0.525;
+                const double requiredVisitShare = 0.10;
                 const double bestVisitShare =
                   mctsRootVisits > 0 ? double(mctsVisits) / mctsRootVisits : 0.0;
                 const bool gatePass =
@@ -667,17 +695,22 @@ void Search::Worker::iterative_deepening() {
             delta       = deltaLo;
 
             const bool useAAW = aawEnabled && rootDepth >= 6;
+            int scoreDrift = 0;
+            int tacticalCount = 0;
+            int trend = 0;
+            int aawConfidence = 50;
+            const bool pvStable = rootMoves[0].pv[0] == lastBestPV[0];
 
             if (useAAW)
             {
                 deltaLo = aawBaseDelta + int(threadIdx % 4);
                 deltaHi = deltaLo;
 
-                const int scoreDrift = std::abs(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
+                scoreDrift = std::abs(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
                 deltaLo += (scoreDrift * aawVolatilityWeight) / 100;
                 deltaHi += (scoreDrift * aawVolatilityWeight) / 100;
 
-                if (rootMoves[0].pv[0] == lastBestPV[0])
+                if (pvStable)
                 {
                     deltaLo = std::max(aawMinDelta, deltaLo - aawStabilityBonus / 2);
                     deltaHi = std::max(aawMinDelta, deltaHi - aawStabilityBonus / 2);
@@ -688,7 +721,6 @@ void Search::Worker::iterative_deepening() {
                     deltaHi += aawStabilityBonus / 2;
                 }
 
-                int tacticalCount = 0;
                 const int tacticalProbe = std::min<int>(8, int(rootMoves.size()));
                 for (int i = 0; i < tacticalProbe; ++i)
                 {
@@ -706,13 +738,13 @@ void Search::Worker::iterative_deepening() {
                     if (opt > 0)
                     {
                         const TimePoint used = elapsed();
-                        const int pressure = int((used * 100) / std::max<TimePoint>(1, opt));
-                        if (pressure > 90)
+                        const int aawPressure = int((used * 100) / std::max<TimePoint>(1, opt));
+                        if (aawPressure > 90)
                         {
                             deltaLo += aawTimePressure;
                             deltaHi += aawTimePressure;
                         }
-                        else if (pressure < 45)
+                        else if (aawPressure < 45)
                         {
                             deltaLo = std::max(aawMinDelta, deltaLo - aawTimePressure / 3);
                             deltaHi = std::max(aawMinDelta, deltaHi - aawTimePressure / 3);
@@ -720,7 +752,7 @@ void Search::Worker::iterative_deepening() {
                     }
                 }
 
-                const int trend = int(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
+                trend = int(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
                 if (trend > 8)
                 {
                     deltaHi += aawTrendAsymmetry;
@@ -736,6 +768,40 @@ void Search::Worker::iterative_deepening() {
                 {
                     deltaLo += aawDefenseBoost;
                     deltaHi += aawDefenseBoost;
+                }
+
+                // Confidence-aware window sizing:
+                // stable PV + deeper iteration => narrower; volatile/tactical => wider.
+                aawConfidence = 55;
+                if (pvStable)
+                    aawConfidence += 20;
+                else
+                    aawConfidence -= 10;
+                aawConfidence += std::clamp(int(rootDepth) - 8, 0, 18);
+                aawConfidence -= std::min(35, (scoreDrift * aawConfidenceWeight) / 16);
+                aawConfidence -= tacticalCount * 3;
+                aawConfidence = std::clamp(aawConfidence, 15, 95);
+
+                if (aawConfidence < 50)
+                {
+                    const int widen = (50 - aawConfidence) / 2;
+                    deltaLo += widen;
+                    deltaHi += widen;
+                }
+                else
+                {
+                    const int shrink = (aawConfidence - 50) / 3;
+                    deltaLo = std::max(aawMinDelta, deltaLo - shrink);
+                    deltaHi = std::max(aawMinDelta, deltaHi - shrink);
+                }
+
+                // Fast-path for very stable root positions: tighter window and fewer retries.
+                const bool aawFastPath = rootDepth >= aawFastPathDepth && pvStable && scoreDrift <= 12
+                                      && tacticalCount <= 1;
+                if (aawFastPath)
+                {
+                    deltaLo = std::max(aawMinDelta, deltaLo - std::max(2, aawConfidenceWeight / 6));
+                    deltaHi = std::max(aawMinDelta, deltaHi - std::max(2, aawConfidenceWeight / 6));
                 }
 
                 deltaLo = std::clamp(deltaLo, aawMinDelta, aawMaxDelta);
@@ -756,6 +822,15 @@ void Search::Worker::iterative_deepening() {
             int failedHighCnt = 0;
             int aspirationAttempts = 0;
             bool aawFullWindowFallback = false;
+            int lastFailDir = 0;  // -1 fail-low, +1 fail-high
+            int oscillationCount = 0;
+            int localFullWindowAttempt = aawFullWindowAttempt;
+            int localMaxAttempts = aawMaxAttempts;
+            if (useAAW && rootDepth >= aawFastPathDepth && pvStable && scoreDrift <= 12 && tacticalCount <= 1)
+            {
+                localFullWindowAttempt = std::max(2, aawFullWindowAttempt - 1);
+                localMaxAttempts = std::max(4, aawMaxAttempts - 1);
+            }
             while (true)
             {
                 ++aspirationAttempts;
@@ -790,21 +865,36 @@ void Search::Worker::iterative_deepening() {
                 if (useAAW && (bestValue <= alpha || bestValue >= beta))
                 {
                     // Safety guard: avoid endless re-search loops under tight/unstable windows.
-                    if (aspirationAttempts >= aawFullWindowAttempt && !aawFullWindowFallback)
+                    if (aspirationAttempts >= localFullWindowAttempt && !aawFullWindowFallback)
                     {
                         alpha = -VALUE_INFINITE;
                         beta = VALUE_INFINITE;
                         aawFullWindowFallback = true;
                         continue;
                     }
-                    if (aspirationAttempts >= aawMaxAttempts)
+                    if (aspirationAttempts >= localMaxAttempts)
+                    {
+                        if (!aawFullWindowFallback)
+                        {
+                            alpha = -VALUE_INFINITE;
+                            beta = VALUE_INFINITE;
+                            aawFullWindowFallback = true;
+                            continue;
+                        }
                         break;
+                    }
                 }
 
                 // In case of failing low/high increase aspiration window and re-search,
                 // otherwise exit the loop.
                 if (bestValue <= alpha)
                 {
+                    if (lastFailDir == 1)
+                        ++oscillationCount;
+                    else if (oscillationCount > 0)
+                        --oscillationCount;
+                    lastFailDir = -1;
+
                     if (useAAW)
                     {
                         const Value prevAlpha = alpha;
@@ -844,6 +934,13 @@ void Search::Worker::iterative_deepening() {
                             beta = VALUE_INFINITE;
                             aawFullWindowFallback = true;
                         }
+                        if (!aawFullWindowFallback && aawOscillationGuard > 0
+                            && oscillationCount >= aawOscillationGuard)
+                        {
+                            alpha = -VALUE_INFINITE;
+                            beta = VALUE_INFINITE;
+                            aawFullWindowFallback = true;
+                        }
                     }
                     else
                     {
@@ -857,6 +954,12 @@ void Search::Worker::iterative_deepening() {
                 }
                 else if (bestValue >= beta)
                 {
+                    if (lastFailDir == -1)
+                        ++oscillationCount;
+                    else if (oscillationCount > 0)
+                        --oscillationCount;
+                    lastFailDir = 1;
+
                     if (useAAW)
                     {
                         const Value prevBeta = beta;
@@ -891,6 +994,13 @@ void Search::Worker::iterative_deepening() {
                         if (beta <= alpha)
                             alpha = std::max(beta - std::max(8, aawOppositeMargin), -VALUE_INFINITE);
                         if (!aawFullWindowFallback && aspirationAttempts >= 3 && miss > 220)
+                        {
+                            alpha = -VALUE_INFINITE;
+                            beta = VALUE_INFINITE;
+                            aawFullWindowFallback = true;
+                        }
+                        if (!aawFullWindowFallback && aawOscillationGuard > 0
+                            && oscillationCount >= aawOscillationGuard)
                         {
                             alpha = -VALUE_INFINITE;
                             beta = VALUE_INFINITE;
