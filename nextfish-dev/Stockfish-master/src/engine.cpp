@@ -170,6 +170,37 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("AAW Expansion Major", Option(155, 120, 240));
     options.add("AAW Expansion Extreme", Option(220, 150, 320));
     options.add("AAW LowTime FullWindow", Option(105, 85, 140));
+    options.add("AAW-X Phase1 Enabled", Option(true));
+    options.add("AAW-X Target Confidence", Option(80, 60, 95));
+    options.add("AAW-X Posterior Blend", Option(35, 0, 100));
+    options.add("AAW-X Bimodal Gap", Option(34, 10, 120));
+    options.add("AAW-X Oscillation Boost", Option(10, 0, 40));
+    options.add("AAW-X ReSearch Max Reduction", Option(2, 0, 4));
+    options.add("AAW-X Phase2 Enabled", Option(true));
+    options.add("AAW-X Causal PV Divergence", Option(8, 0, 40));
+    options.add("AAW-X Causal MoveChange Boost", Option(10, 0, 50));
+    options.add("AAW-X Causal Tactical Resolve", Option(6, 0, 30));
+    options.add("AAW-X Synergy Risk Weight", Option(12, 0, 60));
+    options.add("AAW-X Synergy Stable Bonus", Option(8, 0, 40));
+    options.add("AAW-X Verify Margin", Option(6, 0, 30));
+    options.add("AAW-X Phase3 Enabled", Option(false));
+    options.add("AAW-X Phase3 Black Enabled", Option(false));
+    options.add("AAW-X Phase3 Black Scale", Option(110, 100, 180));
+    options.add("AAW-X Phase3 Black Trigger Bonus", Option(12, 0, 60));
+    options.add("AAW-X Phase3 Require StablePV", Option(false));
+    options.add("AAW-X Phase3 Eval Floor", Option(0, 0, 120));
+    options.add("AAW-X Phase3 Max Drift", Option(160, 16, 160));
+    options.add("AAW-X Phase3 RootPV Only", Option(false));
+    options.add("AAW-X Phase3 MinDepth", Option(10, 8, 28));
+    options.add("AAW-X Portfolio Medium", Option(132, 110, 260));
+    options.add("AAW-X Portfolio Wide", Option(182, 140, 340));
+    options.add("AAW-X Portfolio Trigger", Option(28, 8, 120));
+    options.add("AAW-X Portfolio DepthCut", Option(1, 0, 3));
+    options.add("AAW Black Widen", Option(2, 0, 16));
+    options.add("AAW Unstable FullWindow Attempt", Option(3, 2, 8));
+    options.add("AAW Black Conservative", Option(true));
+    options.add("AAW Black Max Attempts", Option(5, 3, 10));
+    options.add("AAW Black Recenter Cap", Option(40, 20, 70));
     options.add("DEE-X Enabled", Option(false));
     options.add("DEE-X Root Min Depth", Option(9, 1, 24));
     options.add("DEE-X Root TopK", Option(2, 1, 8));
@@ -185,6 +216,9 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("DEE-X Reorder PrevScore Guard", Option(30, 0, 120));
     options.add("DEE-X Black Safe Enabled", Option(true));
     options.add("DEE-X Black Safe MaxAbsEval", Option(80, 20, 300));
+    options.add("DEE-X Min Score Gap", Option(8, 2, 32));
+    options.add("DEE-X Black Skip Unstable PV", Option(false));
+    options.add("DEE-X Black Require SEEGood", Option(true));
 
     options.add(  //
       "SyzygyPath", Option("", [](const Option& o) {

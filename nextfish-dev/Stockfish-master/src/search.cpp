@@ -153,6 +153,36 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
         && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
 }
 
+int aawx_z_per_mille_from_conf(int conf) {
+    // Approximate z-score * 1000 for central confidence intervals.
+    if (conf >= 94)
+        return 1960;
+    if (conf >= 89)
+        return 1640;
+    if (conf >= 84)
+        return 1440;
+    if (conf >= 79)
+        return 1280;
+    if (conf >= 69)
+        return 1040;
+    return 900;
+}
+
+int aawx_pv_prefix_match(const RootMove& a, const std::vector<Move>& lastPv, int maxPly) {
+    if (a.pv.empty() || lastPv.empty())
+        return 0;
+
+    int matches = 0;
+    for (int i = 0; i < maxPly; ++i)
+    {
+        if (i >= int(a.pv.size()) || i >= int(lastPv.size()) || lastPv[size_t(i)] == Move::none()
+            || a.pv[size_t(i)] != lastPv[size_t(i)])
+            break;
+        ++matches;
+    }
+    return matches;
+}
+
 }  // namespace
 
 Search::Worker::Worker(SharedState&                    sharedState,
@@ -456,6 +486,37 @@ void Search::Worker::iterative_deepening() {
     const int aawExpansionMajor = int(options["AAW Expansion Major"]);
     const int aawExpansionExtreme = int(options["AAW Expansion Extreme"]);
     const int aawLowTimeFullWindow = int(options["AAW LowTime FullWindow"]);
+    const bool aawxPhase1Enabled = bool(options["AAW-X Phase1 Enabled"]);
+    const int aawxTargetConfidence = int(options["AAW-X Target Confidence"]);
+    const int aawxPosteriorBlend = int(options["AAW-X Posterior Blend"]);
+    const int aawxBimodalGap = int(options["AAW-X Bimodal Gap"]);
+    const int aawxOscillationBoost = int(options["AAW-X Oscillation Boost"]);
+    const int aawxReSearchMaxReduction = int(options["AAW-X ReSearch Max Reduction"]);
+    const bool aawxPhase2Enabled = bool(options["AAW-X Phase2 Enabled"]);
+    const int aawxCausalPVDivergence = int(options["AAW-X Causal PV Divergence"]);
+    const int aawxCausalMoveChangeBoost = int(options["AAW-X Causal MoveChange Boost"]);
+    const int aawxCausalTacticalResolve = int(options["AAW-X Causal Tactical Resolve"]);
+    const int aawxSynergyRiskWeight = int(options["AAW-X Synergy Risk Weight"]);
+    const int aawxSynergyStableBonus = int(options["AAW-X Synergy Stable Bonus"]);
+    const int aawxVerifyMargin = int(options["AAW-X Verify Margin"]);
+    const bool aawxPhase3Enabled = bool(options["AAW-X Phase3 Enabled"]);
+    const bool aawxPhase3BlackEnabled = bool(options["AAW-X Phase3 Black Enabled"]);
+    const int aawxPhase3BlackScale = int(options["AAW-X Phase3 Black Scale"]);
+    const int aawxPhase3BlackTriggerBonus = int(options["AAW-X Phase3 Black Trigger Bonus"]);
+    const bool aawxPhase3RequireStablePV = bool(options["AAW-X Phase3 Require StablePV"]);
+    const int aawxPhase3EvalFloor = int(options["AAW-X Phase3 Eval Floor"]);
+    const int aawxPhase3MaxDrift = int(options["AAW-X Phase3 Max Drift"]);
+    const bool aawxPhase3RootPVOnly = bool(options["AAW-X Phase3 RootPV Only"]);
+    const int aawxPhase3MinDepth = int(options["AAW-X Phase3 MinDepth"]);
+    const int aawxPortfolioMedium = int(options["AAW-X Portfolio Medium"]);
+    const int aawxPortfolioWide = int(options["AAW-X Portfolio Wide"]);
+    const int aawxPortfolioTrigger = int(options["AAW-X Portfolio Trigger"]);
+    const int aawxPortfolioDepthCut = int(options["AAW-X Portfolio DepthCut"]);
+    const int aawBlackWiden = int(options["AAW Black Widen"]);
+    const int aawUnstableFullWindowAttempt = int(options["AAW Unstable FullWindow Attempt"]);
+    const bool aawBlackConservative = bool(options["AAW Black Conservative"]);
+    const int aawBlackMaxAttempts = int(options["AAW Black Max Attempts"]);
+    const int aawBlackRecenterCap = int(options["AAW Black Recenter Cap"]);
     const bool deeXEnabled = bool(options["DEE-X Enabled"]);
     const int deeXRootMinDepth = int(options["DEE-X Root Min Depth"]);
     const int deeXRootTopK = int(options["DEE-X Root TopK"]);
@@ -471,6 +532,9 @@ void Search::Worker::iterative_deepening() {
     const int deeXReorderPrevScoreGuard = int(options["DEE-X Reorder PrevScore Guard"]);
     const bool deeXBlackSafeEnabled = bool(options["DEE-X Black Safe Enabled"]);
     const int deeXBlackSafeMaxAbsEval = int(options["DEE-X Black Safe MaxAbsEval"]);
+    const int deeXMinScoreGap = int(options["DEE-X Min Score Gap"]);
+    const bool deeXBlackSkipUnstablePV = bool(options["DEE-X Black Skip Unstable PV"]);
+    const bool deeXBlackRequireSEEGood = bool(options["DEE-X Black Require SEEGood"]);
     int lastMctsRootDepth = 0;
 
     lowPlyHistory.fill(97);
@@ -496,9 +560,12 @@ void Search::Worker::iterative_deepening() {
         // DEE-X (safe integration): root ordering only, no pruning override.
         if (mainThread && deeXEnabled && rootDepth >= deeXRootMinDepth && !rootMoves.empty())
         {
+            const bool deexPvStable = rootMoves[0].pv[0] == lastBestPV[0];
             const bool blackSafeSkip =
               (us == BLACK && deeXBlackSafeEnabled
-               && std::abs(int(rootMoves[0].previousScore)) > deeXBlackSafeMaxAbsEval);
+               && std::abs(int(rootMoves[0].previousScore)) > deeXBlackSafeMaxAbsEval)
+              || (us == BLACK && deeXBlackSkipUnstablePV && !deexPvStable
+                  && rootDepth >= deeXRootMinDepth + 1);
 
             if (!blackSafeSkip)
             {
@@ -529,6 +596,8 @@ void Search::Worker::iterative_deepening() {
 
                     const bool seeGood = rootPos.see_ge(m, 0);
                     const bool seeNear = rootPos.see_ge(m, -deeXSeeMargin);
+                    if (us == BLACK && deeXBlackRequireSEEGood && !seeGood)
+                        continue;
                     if (seeGood)
                         score += 70;
                     else if (seeNear)
@@ -583,7 +652,7 @@ void Search::Worker::iterative_deepening() {
                       deeXMinReorderScore + ((us == BLACK) ? deeXBlackExtraMargin : 0);
                     if (deexOrder[size_t(i)].second < requiredScore)
                         continue;
-                    if (i > 0 && deexOrder[size_t(i - 1)].second - deexOrder[size_t(i)].second < 6)
+                    if (i > 0 && deexOrder[size_t(i - 1)].second - deexOrder[size_t(i)].second < deeXMinScoreGap)
                         continue;
                     auto it = std::find(rootMoves.begin(), rootMoves.end(), deexOrder[size_t(i)].first);
                     if (it == rootMoves.end())
@@ -700,17 +769,35 @@ void Search::Worker::iterative_deepening() {
             delta       = deltaLo;
 
             const bool useAAW = aawEnabled && rootDepth >= 6;
+            const bool useAAWXPhase1 = useAAW && aawxPhase1Enabled;
+            const bool useAAWXPhase2 = useAAWXPhase1 && aawxPhase2Enabled;
+            const bool phase3RootGate = !aawxPhase3RootPVOnly || pvIdx == 0;
+            const bool useAAWXPhase3 =
+              useAAWXPhase2 && aawxPhase3Enabled && rootDepth >= aawxPhase3MinDepth && phase3RootGate
+              && (us == WHITE || aawxPhase3BlackEnabled);
             int scoreDrift = 0;
             int tacticalCount = 0;
             int trend = 0;
             int aawConfidence = 50;
             int aawPressure = 0;
+            int posteriorStdCp = 0;
+            int aawxSkewCp = 0;
+            bool aawxBimodalRisk = false;
+            int aawxCausalRisk = 0;
+            bool aawxMajorMoveChange = false;
+            bool aawxTacticalResolved = false;
+            bool aawxOscillationCausal = false;
             const bool pvStable = rootMoves[0].pv[0] == lastBestPV[0];
 
             if (useAAW)
             {
                 deltaLo = aawBaseDelta + int(threadIdx % 4);
                 deltaHi = deltaLo;
+                if (us == BLACK)
+                {
+                    deltaLo += aawBlackWiden;
+                    deltaHi += aawBlackWiden;
+                }
 
                 scoreDrift = std::abs(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
                 deltaLo += (scoreDrift * aawVolatilityWeight) / 100;
@@ -810,6 +897,96 @@ void Search::Worker::iterative_deepening() {
                     deltaHi = std::max(aawMinDelta, deltaHi - std::max(2, aawConfidenceWeight / 6));
                 }
 
+                if (useAAWXPhase1)
+                {
+                    const int s0 = int(rootMoves[pvIdx].averageScore);
+                    const int s1 = int(rootMoves[pvIdx].previousScore);
+                    const int s2 = int(rootMoves[pvIdx].score);
+                    const int drift01 = s0 - s1;
+                    const int drift12 = s1 - s2;
+                    const int absDrift01 = std::abs(drift01);
+                    const int absDrift12 = std::abs(drift12);
+                    const int localVol = (absDrift01 + absDrift12 + scoreDrift) / 3;
+                    const int driftGap = std::abs(drift01 - drift12);
+
+                    aawxBimodalRisk = (drift01 * drift12 < 0) && (driftGap >= aawxBimodalGap);
+                    aawxSkewCp = std::clamp((2 * drift01 - drift12) / 2, -80, 80);
+                    posteriorStdCp = std::clamp(
+                      6 + localVol / 2 + tacticalCount * 2 + (pvStable ? 0 : 3), 6, 90);
+
+                    const int zPerMille = aawx_z_per_mille_from_conf(aawxTargetConfidence);
+                    const int posteriorDelta = std::clamp(
+                      (posteriorStdCp * zPerMille + 500) / 1000, aawMinDelta, aawMaxDelta);
+                    const int blend = std::clamp(aawxPosteriorBlend, 0, 100);
+
+                    deltaLo = (deltaLo * (100 - blend) + posteriorDelta * blend) / 100;
+                    deltaHi = (deltaHi * (100 - blend) + posteriorDelta * blend) / 100;
+
+                    if (aawxSkewCp > 8)
+                    {
+                        deltaHi += std::min(20, aawTrendAsymmetry + aawxSkewCp / 10);
+                        deltaLo = std::max(aawMinDelta, deltaLo - std::max(1, aawxSkewCp / 16));
+                    }
+                    else if (aawxSkewCp < -8)
+                    {
+                        deltaLo += std::min(20, aawTrendAsymmetry + (-aawxSkewCp) / 10);
+                        deltaHi = std::max(aawMinDelta, deltaHi - std::max(1, (-aawxSkewCp) / 16));
+                    }
+
+                    if (aawxBimodalRisk)
+                    {
+                        const int widen = std::min(24, aawxOscillationBoost + driftGap / 8);
+                        deltaLo += widen;
+                        deltaHi += widen;
+                    }
+                }
+
+                if (useAAWXPhase2)
+                {
+                    const int s0 = int(rootMoves[pvIdx].averageScore);
+                    const int s1 = int(rootMoves[pvIdx].previousScore);
+                    const int s2 = int(rootMoves[pvIdx].score);
+                    const int d01 = s0 - s1;
+                    const int d12 = s1 - s2;
+                    const int pvPrefix = aawx_pv_prefix_match(rootMoves[pvIdx], lastBestPV, 4);
+                    const bool pvDiverged = pvPrefix <= 1;
+
+                    aawxMajorMoveChange = (rootMoves[pvIdx].pv[0] != Move::none()
+                                           && lastBestPV[0] != Move::none()
+                                           && rootMoves[pvIdx].pv[0] != lastBestPV[0] && scoreDrift >= 18);
+                    aawxTacticalResolved = !aawxMajorMoveChange && scoreDrift >= 18 && pvPrefix >= 2
+                                        && tacticalCount <= 1;
+                    aawxOscillationCausal = (d01 * d12 < 0) && (std::abs(d01) + std::abs(d12) >= 28);
+
+                    if (aawxMajorMoveChange)
+                    {
+                        deltaLo += aawxCausalMoveChangeBoost;
+                        deltaHi += aawxCausalMoveChangeBoost;
+                        aawxCausalRisk += 3;
+                    }
+                    else if (aawxTacticalResolved)
+                    {
+                        deltaLo = std::max(aawMinDelta, deltaLo - aawxCausalTacticalResolve);
+                        deltaHi = std::max(aawMinDelta, deltaHi - aawxCausalTacticalResolve);
+                        aawxCausalRisk = std::max(0, aawxCausalRisk - 2);
+                    }
+
+                    if (aawxOscillationCausal)
+                    {
+                        const int w = std::max(2, aawxOscillationBoost / 2);
+                        deltaLo += w;
+                        deltaHi += w;
+                        aawxCausalRisk += 2;
+                    }
+
+                    if (pvDiverged)
+                    {
+                        deltaLo += aawxCausalPVDivergence / 2;
+                        deltaHi += aawxCausalPVDivergence / 2;
+                        aawxCausalRisk += 1;
+                    }
+                }
+
                 deltaLo = std::clamp(deltaLo, aawMinDelta, aawMaxDelta);
                 deltaHi = std::clamp(deltaHi, aawMinDelta, aawMaxDelta);
                 delta   = std::max(deltaLo, deltaHi);
@@ -832,10 +1009,61 @@ void Search::Worker::iterative_deepening() {
             int oscillationCount = 0;
             int localFullWindowAttempt = aawFullWindowAttempt;
             int localMaxAttempts = aawMaxAttempts;
+            int dynamicResearchReduction = 0;
+            int synergyRisk = 0;
+            int portfolioStep = 0;
+            int portfolioScale = 100;
+            bool portfolioArmed = false;
+            bool portfolioUsed = false;
             if (useAAW && rootDepth >= aawFastPathDepth && pvStable && scoreDrift <= 12 && tacticalCount <= 1)
             {
                 localFullWindowAttempt = std::max(2, aawFullWindowAttempt - 1);
                 localMaxAttempts = std::max(4, aawMaxAttempts - 1);
+            }
+            if (useAAW && !pvStable && scoreDrift >= 24)
+                localFullWindowAttempt = std::min(localFullWindowAttempt, aawUnstableFullWindowAttempt);
+            if (useAAW && us == BLACK && aawBlackConservative)
+            {
+                localFullWindowAttempt = std::min(localFullWindowAttempt, aawUnstableFullWindowAttempt);
+                localMaxAttempts = std::min(localMaxAttempts, aawBlackMaxAttempts);
+            }
+            if (useAAWXPhase2)
+            {
+                synergyRisk = 0;
+                synergyRisk += std::max(0, (50 - aawConfidence) / 8);
+                synergyRisk += tacticalCount;
+                synergyRisk += std::abs(trend) / 14;
+                synergyRisk += aawxCausalRisk;
+                synergyRisk = std::clamp((synergyRisk * aawxSynergyRiskWeight) / 12, 0, 8);
+                if (pvStable && scoreDrift <= 10)
+                    synergyRisk = std::max(0, synergyRisk - std::max(1, aawxSynergyStableBonus / 8));
+
+                if (synergyRisk >= 6)
+                {
+                    localFullWindowAttempt = std::max(2, localFullWindowAttempt - 1);
+                    localMaxAttempts = std::min(localMaxAttempts + 1, aawMaxAttempts + 1);
+                }
+                else if (synergyRisk <= 2)
+                {
+                    localMaxAttempts = std::max(4, localMaxAttempts - 1);
+                }
+            }
+            if (useAAWXPhase3)
+            {
+                const int localPortfolioTrigger =
+                  aawxPortfolioTrigger + (us == BLACK ? aawxPhase3BlackTriggerBonus : 0);
+                const bool uncertain = scoreDrift >= localPortfolioTrigger || aawxBimodalRisk
+                                    || aawxOscillationCausal || synergyRisk >= 4;
+                const bool blackGuard = (us == BLACK && aawBlackConservative);
+                const bool lowTimeGuard = aawPressure >= 95;
+                const bool stableGate = !aawxPhase3RequireStablePV || pvStable;
+                const bool evalGate = int(avg) >= -aawxPhase3EvalFloor;
+                const bool driftGate = scoreDrift <= aawxPhase3MaxDrift;
+                if (uncertain && !blackGuard && !lowTimeGuard && stableGate && evalGate && driftGate)
+                {
+                    portfolioArmed = true;
+                    portfolioScale = 100;
+                }
             }
             while (true)
             {
@@ -843,7 +1071,10 @@ void Search::Worker::iterative_deepening() {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
                 Depth adjustedDepth =
-                  std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
+                  std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4
+                                 - dynamicResearchReduction);
+                if (useAAWXPhase2 && synergyRisk >= 6)
+                    adjustedDepth = std::max(1, adjustedDepth - 1);
                 rootDelta = beta - alpha;
                 bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
@@ -917,7 +1148,9 @@ void Search::Worker::iterative_deepening() {
                         int recenterBase = aawRecenterWeight;
                         if (avg < -20)
                             recenterBase = std::max(8, recenterBase - aawDefenseBoost / 2);
-                        const int recenterCap = pvStable ? 70 : 50;
+                        int recenterCap = pvStable ? 70 : 50;
+                        if (us == BLACK && aawBlackConservative)
+                            recenterCap = std::min(recenterCap, aawBlackRecenterCap);
                         const int dynamicRecentering = std::clamp(
                           recenterBase + miss / 8 + aspirationAttempts * 3, 0, recenterCap);
                         avg = Value((int(avg) * (100 - dynamicRecentering) + int(bestValue) * dynamicRecentering)
@@ -969,6 +1202,49 @@ void Search::Worker::iterative_deepening() {
                             beta = VALUE_INFINITE;
                             aawFullWindowFallback = true;
                         }
+
+                        if (useAAWXPhase3 && portfolioArmed && !portfolioUsed && !aawFullWindowFallback
+                            && aspirationAttempts >= 2 && miss >= aawxPortfolioTrigger && miss <= 220)
+                        {
+                            ++portfolioStep;
+                            if (portfolioStep == 1)
+                                portfolioScale = aawxPortfolioMedium;
+                            else
+                                portfolioScale = aawxPortfolioWide;
+
+                            int scaledPortfolio = portfolioScale;
+                            if (us == BLACK)
+                                scaledPortfolio =
+                                  100 + (portfolioScale - 100) * aawxPhase3BlackScale / 100;
+                            deltaLo = std::clamp(deltaLo * scaledPortfolio / 100, aawMinDelta, aawMaxDelta);
+                            deltaHi = std::clamp(deltaHi * scaledPortfolio / 100, aawMinDelta, aawMaxDelta);
+                            alpha = std::max(avg - deltaLo, -VALUE_INFINITE);
+                            beta = std::min(avg + deltaHi, VALUE_INFINITE);
+                            portfolioUsed = true;
+                        }
+
+                        if (useAAWXPhase1)
+                        {
+                            int reduction = 0;
+                            if (miss > 12)
+                                ++reduction;
+                            if (miss > 40)
+                                ++reduction;
+                            if (aspirationAttempts >= 2)
+                                ++reduction;
+                            if (aawPressure >= 100)
+                                ++reduction;
+                            if (aawConfidence < 45 && reduction > 0)
+                                --reduction;
+                            if (rootDepth <= 10)
+                                reduction = std::min(reduction, 1);
+                            if (useAAWXPhase2 && synergyRisk >= 5)
+                                reduction = std::max(0, reduction - 1);
+                            if (useAAWXPhase3 && portfolioUsed)
+                                reduction = std::max(0, reduction - aawxPortfolioDepthCut);
+                            dynamicResearchReduction =
+                              std::clamp(reduction, 0, aawxReSearchMaxReduction);
+                        }
                     }
                     else
                     {
@@ -995,7 +1271,9 @@ void Search::Worker::iterative_deepening() {
                         int recenterBase = aawRecenterWeight;
                         if (avg < -20)
                             recenterBase = std::max(8, recenterBase - aawDefenseBoost / 2);
-                        const int recenterCap = pvStable ? 70 : 50;
+                        int recenterCap = pvStable ? 70 : 50;
+                        if (us == BLACK && aawBlackConservative)
+                            recenterCap = std::min(recenterCap, aawBlackRecenterCap);
                         const int dynamicRecentering = std::clamp(
                           recenterBase + miss / 8 + aspirationAttempts * 3, 0, recenterCap);
                         avg = Value((int(avg) * (100 - dynamicRecentering) + int(bestValue) * dynamicRecentering)
@@ -1047,6 +1325,49 @@ void Search::Worker::iterative_deepening() {
                             beta = VALUE_INFINITE;
                             aawFullWindowFallback = true;
                         }
+
+                        if (useAAWXPhase3 && portfolioArmed && !portfolioUsed && !aawFullWindowFallback
+                            && aspirationAttempts >= 2 && miss >= aawxPortfolioTrigger && miss <= 220)
+                        {
+                            ++portfolioStep;
+                            if (portfolioStep == 1)
+                                portfolioScale = aawxPortfolioMedium;
+                            else
+                                portfolioScale = aawxPortfolioWide;
+
+                            int scaledPortfolio = portfolioScale;
+                            if (us == BLACK)
+                                scaledPortfolio =
+                                  100 + (portfolioScale - 100) * aawxPhase3BlackScale / 100;
+                            deltaLo = std::clamp(deltaLo * scaledPortfolio / 100, aawMinDelta, aawMaxDelta);
+                            deltaHi = std::clamp(deltaHi * scaledPortfolio / 100, aawMinDelta, aawMaxDelta);
+                            alpha = std::max(avg - deltaLo, -VALUE_INFINITE);
+                            beta = std::min(avg + deltaHi, VALUE_INFINITE);
+                            portfolioUsed = true;
+                        }
+
+                        if (useAAWXPhase1)
+                        {
+                            int reduction = 0;
+                            if (miss > 12)
+                                ++reduction;
+                            if (miss > 40)
+                                ++reduction;
+                            if (aspirationAttempts >= 2)
+                                ++reduction;
+                            if (aawPressure >= 100)
+                                ++reduction;
+                            if (aawConfidence < 45 && reduction > 0)
+                                --reduction;
+                            if (rootDepth <= 10)
+                                reduction = std::min(reduction, 1);
+                            if (useAAWXPhase2 && synergyRisk >= 5)
+                                reduction = std::max(0, reduction - 1);
+                            if (useAAWXPhase3 && portfolioUsed)
+                                reduction = std::max(0, reduction - aawxPortfolioDepthCut);
+                            dynamicResearchReduction =
+                              std::clamp(reduction, 0, aawxReSearchMaxReduction);
+                        }
                     }
                     else
                     {
@@ -1056,7 +1377,17 @@ void Search::Worker::iterative_deepening() {
                     ++failedHighCnt;
                 }
                 else
+                {
+                    if (useAAWXPhase2 && dynamicResearchReduction >= 2 && aawxVerifyMargin > 0)
+                    {
+                        const Value lo = std::max(alpha, Value(bestValue - aawxVerifyMargin));
+                        const Value hi = std::min(beta, Value(bestValue + aawxVerifyMargin));
+                        if (hi > lo)
+                            bestValue = search<Root>(rootPos, ss, lo, hi, rootDepth, false);
+                    }
+                    dynamicResearchReduction = 0;
                     break;
+                }
 
                 if (!useAAW)
                     delta += delta / 3;
