@@ -5,7 +5,6 @@ on:
     branches: [main, master]
     paths:
       - "nextfish-dev/Stockfish-master/src/**"
-      - "src/**"
       - ".github/workflows/auto-solo-vs-stockfish.yml"
   workflow_dispatch:
     inputs:
@@ -53,6 +52,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Checkout official Stockfish 18
+        uses: actions/checkout@v4
+        with:
+          repository: official-stockfish/Stockfish
+          ref: sf_18
+          path: stockfish18
+          fetch-depth: 1
 
       - name: Setup MSYS2 toolchain
         uses: msys2/setup-msys2@v2
@@ -132,7 +139,7 @@ jobs:
           )
           $dirs = @(
             "nextfish-dev/Stockfish-master/src",
-            "src"
+            "stockfish18/src"
           )
           foreach ($name in $nnueFiles) {
             $tmp = Join-Path $env:RUNNER_TEMP $name
@@ -155,7 +162,7 @@ jobs:
 
       - name: Build Stockfish (PGO + O3 + LTO)
         shell: msys2 {0}
-        working-directory: src
+        working-directory: stockfish18/src
         run: |
           make -j4 profile-build ARCH=native COMP=gcc
           make strip ARCH=native COMP=gcc
@@ -164,7 +171,7 @@ jobs:
         shell: pwsh
         run: |
           $nextSrc = "nextfish-dev/Stockfish-master/src"
-          $stockSrc = "src"
+          $stockSrc = "stockfish18/src"
           $netFiles = Get-ChildItem "$nextSrc/nn-*.nnue" -File -ErrorAction SilentlyContinue
           if (-not $netFiles) {
             throw "No nn-*.nnue found in $nextSrc"
@@ -183,10 +190,24 @@ jobs:
           $stock = "builds/stockfish_orig_pgo_native_$stamp.exe"
 
           Copy-Item "nextfish-dev/Stockfish-master/src/stockfish.exe" $next -Force
-          Copy-Item "src/stockfish.exe" $stock -Force
+          Copy-Item "stockfish18/src/stockfish.exe" $stock -Force
 
           Add-Content -Path $env:GITHUB_OUTPUT -Value "nextfish_exe=$next"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "stockfish_exe=$stock"
+
+      - name: Verify opponent is Stockfish 18
+        shell: pwsh
+        env:
+          STOCKFISH_EXE: ${{ steps.save_bin.outputs.stockfish_exe }}
+        run: |
+          $stockExe = (Resolve-Path "$env:STOCKFISH_EXE").Path
+          $uciDump = "uci`nquit`n" | & $stockExe
+          $nameLine = ($uciDump | Select-String '^id name ' | Select-Object -First 1).Line
+          if (-not $nameLine) { throw "Cannot read id name from stockfish binary" }
+          Write-Host "Detected: $nameLine"
+          if ($nameLine -notmatch 'Stockfish 18') {
+            throw "Opponent is not Stockfish 18: $nameLine"
+          }
 
       - name: Run Elo match (500 games on push)
         id: match
