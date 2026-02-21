@@ -887,6 +887,18 @@ void Search::Worker::iterative_deepening() {
                     deltaLo = std::max(aawMinDelta, deltaLo - shrink);
                     deltaHi = std::max(aawMinDelta, deltaHi - shrink);
                 }
+                if (us == BLACK && aawBlackConservative)
+                {
+                    // Keep Black windows a bit wider to reduce tactical misses and fail-loop instability.
+                    int blackSafety = 2;
+                    if (!pvStable)
+                        blackSafety += 3;
+                    blackSafety += std::min(4, std::abs(trend) / 8);
+                    if (aawPressure >= 95)
+                        blackSafety += 2;
+                    deltaLo += blackSafety;
+                    deltaHi += blackSafety;
+                }
 
                 // Fast-path for very stable root positions: tighter window and fewer retries.
                 const bool aawFastPath = rootDepth >= aawFastPathDepth && pvStable && scoreDrift <= 12
@@ -1026,6 +1038,8 @@ void Search::Worker::iterative_deepening() {
             {
                 localFullWindowAttempt = std::min(localFullWindowAttempt, aawUnstableFullWindowAttempt);
                 localMaxAttempts = std::min(localMaxAttempts, aawBlackMaxAttempts);
+                if (!pvStable || scoreDrift >= 18 || aawPressure >= 95)
+                    localFullWindowAttempt = std::min(localFullWindowAttempt, 2);
             }
             if (useAAWXPhase2)
             {
@@ -1179,7 +1193,8 @@ void Search::Worker::iterative_deepening() {
                         deltaHi = std::clamp(deltaHi * 110 / 100, aawMinDelta, aawMaxDelta);
                         alpha = std::max(avg - deltaLo, -VALUE_INFINITE);
                         const Value symmetricBeta = std::min(avg + deltaHi, VALUE_INFINITE);
-                        if (aawDirectionalClamp && !aawFullWindowFallback)
+                        if (aawDirectionalClamp && !aawFullWindowFallback
+                            && !(us == BLACK && aawBlackConservative))
                         {
                             const Value directionalBeta =
                               std::min(prevAlpha + std::max(aawOppositeMargin, miss / 6), VALUE_INFINITE);
@@ -1197,6 +1212,13 @@ void Search::Worker::iterative_deepening() {
                         }
                         if (!aawFullWindowFallback && aawOscillationGuard > 0
                             && oscillationCount >= aawOscillationGuard)
+                        {
+                            alpha = -VALUE_INFINITE;
+                            beta = VALUE_INFINITE;
+                            aawFullWindowFallback = true;
+                        }
+                        if (!aawFullWindowFallback && us == BLACK && aawBlackConservative
+                            && aspirationAttempts >= 2 && oscillationCount >= 1)
                         {
                             alpha = -VALUE_INFINITE;
                             beta = VALUE_INFINITE;
@@ -1244,6 +1266,8 @@ void Search::Worker::iterative_deepening() {
                                 reduction = std::max(0, reduction - aawxPortfolioDepthCut);
                             dynamicResearchReduction =
                               std::clamp(reduction, 0, aawxReSearchMaxReduction);
+                            if (us == BLACK && aawBlackConservative)
+                                dynamicResearchReduction = 0;
                         }
                     }
                     else
@@ -1302,7 +1326,8 @@ void Search::Worker::iterative_deepening() {
                         deltaLo = std::clamp(deltaLo * 110 / 100, aawMinDelta, aawMaxDelta);
                         const Value symmetricAlpha = std::max(avg - deltaLo, -VALUE_INFINITE);
                         beta = std::min(avg + deltaHi, VALUE_INFINITE);
-                        if (aawDirectionalClamp && !aawFullWindowFallback)
+                        if (aawDirectionalClamp && !aawFullWindowFallback
+                            && !(us == BLACK && aawBlackConservative))
                         {
                             const Value directionalAlpha =
                               std::max(prevBeta - std::max(aawOppositeMargin, miss / 6), -VALUE_INFINITE);
@@ -1320,6 +1345,13 @@ void Search::Worker::iterative_deepening() {
                         }
                         if (!aawFullWindowFallback && aawOscillationGuard > 0
                             && oscillationCount >= aawOscillationGuard)
+                        {
+                            alpha = -VALUE_INFINITE;
+                            beta = VALUE_INFINITE;
+                            aawFullWindowFallback = true;
+                        }
+                        if (!aawFullWindowFallback && us == BLACK && aawBlackConservative
+                            && aspirationAttempts >= 2 && oscillationCount >= 1)
                         {
                             alpha = -VALUE_INFINITE;
                             beta = VALUE_INFINITE;
@@ -1367,6 +1399,8 @@ void Search::Worker::iterative_deepening() {
                                 reduction = std::max(0, reduction - aawxPortfolioDepthCut);
                             dynamicResearchReduction =
                               std::clamp(reduction, 0, aawxReSearchMaxReduction);
+                            if (us == BLACK && aawBlackConservative)
+                                dynamicResearchReduction = 0;
                         }
                     }
                     else
