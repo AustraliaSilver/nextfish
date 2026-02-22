@@ -148,7 +148,7 @@ Engine::Engine(std::optional<std::string> path) :
     
     options.add("MCTS Iterations", Option(300, 100, 10000));
     options.add("AAW Enabled", Option(true));
-    options.add("AAW Base Delta", Option(8, 2, 64));
+    options.add("AAW Base Delta", Option(16, 2, 64));
     options.add("AAW Min Delta", Option(5, 2, 40));
     options.add("AAW Max Delta", Option(80, 16, 320));
     options.add("AAW Volatility Weight", Option(8, 0, 80));
