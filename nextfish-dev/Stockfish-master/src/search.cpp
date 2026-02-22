@@ -1004,11 +1004,17 @@ void Search::Worker::iterative_deepening() {
                 delta   = std::max(deltaLo, deltaHi);
             }
 
-            alpha = std::max(avg - deltaLo, -VALUE_INFINITE);
-            beta  = std::min(avg + deltaHi, VALUE_INFINITE);
+            // Proactive widening for complex positions or Black safety
+            delta = 5 + int(threadIdx % 8) + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            if (us == BLACK) delta += 8;
+            if (std::abs(avg) > 100) delta += delta / 4; 
 
-            // Adjust optimism based on root move's averageScore
-            optimism[us]  = 142 * avg / (std::abs(avg) + 91);
+            alpha = std::max(avg - delta, -VALUE_INFINITE);
+            beta  = std::min(avg + delta, VALUE_INFINITE);
+
+            // Adjust optimism based on side to move
+            int baseOptimism = (us == WHITE) ? 45 : 12;
+            optimism[us]  = baseOptimism * avg / (std::abs(avg) + 91);
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail
@@ -2334,6 +2340,14 @@ moves_loop:  // When in check, search starts here
 
         // Decrease/increase reduction for moves with a good/bad history
         r -= ss->statScore * 850 / 8192;
+
+        // Side-specific LMR adjustment for Black safety
+        if (us == BLACK)
+        {
+            // If slightly worse or in a tactical position, reduce pruning
+            if (ss->staticEval < -20 || givesCheck || (ss->ply < 16 && ss->statScore > 0))
+                r -= 512;
+        }
 
         // Scale up reductions for expected ALL nodes
         if (allNode)

@@ -147,7 +147,7 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("MCTS Root Reorder TopK", Option(2, 1, 8));
     
     options.add("MCTS Iterations", Option(300, 100, 10000));
-    options.add("AAW Enabled", Option(false));
+    options.add("AAW Enabled", Option(true));
     options.add("AAW Base Delta", Option(8, 2, 64));
     options.add("AAW Min Delta", Option(5, 2, 40));
     options.add("AAW Max Delta", Option(80, 16, 320));
