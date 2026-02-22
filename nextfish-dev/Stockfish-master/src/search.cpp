@@ -1012,8 +1012,16 @@ void Search::Worker::iterative_deepening() {
             alpha = std::max(avg - delta, -VALUE_INFINITE);
             beta  = std::min(avg + delta, VALUE_INFINITE);
 
+            // Proactive widening for complex positions or Black safety
+            delta = 5 + int(threadIdx % 8) + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            if (us == BLACK) delta += (int(rootDepth) / 4) + 3;
+            if (std::abs(avg) > 100) delta += delta / 4; 
+
+            alpha = std::max(avg - delta, -VALUE_INFINITE);
+            beta  = std::min(avg + delta, VALUE_INFINITE);
+
             // Adjust optimism based on side to move
-            int baseOptimism = (us == WHITE) ? 42 : 8;
+            int baseOptimism = (us == WHITE) ? 45 : 5;
             optimism[us]  = baseOptimism * avg / (std::abs(avg) + 91);
             optimism[~us] = -optimism[us];
 
@@ -2340,6 +2348,8 @@ moves_loop:  // When in check, search starts here
 
         // Decrease/increase reduction for moves with a good/bad history
         r -= ss->statScore * 850 / 8192;
+
+        if (ss->statScore > 4000) r = -512;
 
         // Side-specific LMR adjustment for Black safety
         if (us == BLACK)
