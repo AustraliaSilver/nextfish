@@ -34,6 +34,7 @@
 #include <utility>
 
 #include "bitboard.h"
+#include "aawx_phase1.h"
 #include "evaluate.h"
 #include "history.h"
 #include "misc.h"
@@ -437,7 +438,54 @@ void Search::Worker::iterative_deepening() {
     const int mctsRootMaxIterations = int(options["MCTS Root Max Iterations"]);
     const int mctsRootNodesPerIteration = int(options["MCTS Root Nodes Per Iteration"]);
     const int mctsRootReorderTopK = int(options["MCTS Root Reorder TopK"]);
+    const bool aawEnabled = bool(options["AAW Enabled"]);
+    const int aawBaseDelta = int(options["AAW Base Delta"]);
+    const int aawMinDelta = int(options["AAW Min Delta"]);
+    const int aawMaxDelta = int(options["AAW Max Delta"]);
+    const int aawVolatilityWeight = int(options["AAW Volatility Weight"]);
+    const int aawStabilityBonus = int(options["AAW Stability Bonus"]);
+    const int aawTimePressure = int(options["AAW Time Pressure"]);
+    const int aawTrendAsymmetry = int(options["AAW Trend Asymmetry"]);
+    const int aawExpansionBias = int(options["AAW Expansion Bias"]);
+    const int aawFullWindowAttempt = int(options["AAW Full Window Attempt"]);
+    const int aawMaxAttempts = int(options["AAW Max Attempts"]);
+    const bool aawDirectionalClamp = bool(options["AAW Directional Clamp"]);
+    const int aawOppositeMargin = int(options["AAW Opposite Margin"]);
+    const int aawDefenseBoost = int(options["AAW Defense Boost"]);
+    const bool aawWhiteEnabled = bool(options["AAW White Enabled"]);
+    const bool aawBlackEnabled = bool(options["AAW Black Enabled"]);
+    const bool aawBlackConservative = bool(options["AAW Black Conservative"]);
+    const int aawBlackMaxAttempts = int(options["AAW Black Max Attempts"]);
+    const int aawBlackMinDepth = int(options["AAW Black Min Depth"]);
+    const int aawBlackExtraWarmup = int(options["AAW Black Extra Warmup"]);
+    const int aawBlackExtraHitRate = int(options["AAW Black Extra Hit Rate"]);
+    const int aawBlackExtraConfidence = int(options["AAW Black Extra Confidence"]);
+    const int aawCooldownFailStreak = int(options["AAW Cooldown Fail Streak"]);
+    const int aawCooldownDepth = int(options["AAW Cooldown Depth"]);
+    const int aawMaxSafeAttempts = int(options["AAW Max Safe Attempts"]);
+    const int aawConfidenceMin = int(options["AAW Confidence Min"]);
+    const int aawWarmupSamples = int(options["AAW Warmup Samples"]);
+    const int aawMinHitRate = int(options["AAW Min Hit Rate"]);
+    const bool aawShadowMode = bool(options["AAW Shadow Mode"]);
+    const int aawShadowLogInterval = int(options["AAW Shadow Log Interval"]);
+    const bool aawxEnabled = bool(options["AAW-X Enabled"]);
+    const bool aawxPhase1Enabled = bool(options["AAW-X Phase1 Enabled"]);
+    const int aawxConfidence = int(options["AAW-X Confidence"]);
+    const int aawxSigmaBlend = int(options["AAW-X Sigma Blend"]);
+    const int aawxTrendCap = int(options["AAW-X Trend Cap"]);
     int lastMctsRootDepth = 0;
+    int aawFailStreakWhite = 0;
+    int aawFailStreakBlack = 0;
+    int aawCooldownUntilDepthWhite = 0;
+    int aawCooldownUntilDepthBlack = 0;
+    int aawConfidenceWhite = 50;
+    int aawConfidenceBlack = 50;
+    int aawSamplesWhite = 0;
+    int aawSamplesBlack = 0;
+    int aawHitsWhite = 0;
+    int aawHitsBlack = 0;
+    int aawShadowSamples = 0;
+    int aawShadowHits = 0;
 
     lowPlyHistory.fill(97);
 
@@ -533,6 +581,42 @@ void Search::Worker::iterative_deepening() {
         // MultiPV loop. We perform a full root search for each PV line
         for (pvIdx = 0; pvIdx < multiPV; ++pvIdx)
         {
+            const bool usWhiteRoot = rootPos.side_to_move() == WHITE;
+            const bool aawSideEnabled = usWhiteRoot ? aawWhiteEnabled : aawBlackEnabled;
+            const bool aawConservativeSide = !usWhiteRoot && aawBlackConservative;
+            const bool aawBlackHardGate = !usWhiteRoot && aawBlackConservative;
+            const int aawSideMaxAttempts = usWhiteRoot ? aawMaxAttempts : aawBlackMaxAttempts;
+            int& aawSideConfidence = usWhiteRoot ? aawConfidenceWhite : aawConfidenceBlack;
+            int& aawSideSamples = usWhiteRoot ? aawSamplesWhite : aawSamplesBlack;
+            int& aawSideHits = usWhiteRoot ? aawHitsWhite : aawHitsBlack;
+            int& aawSideFailStreak = usWhiteRoot ? aawFailStreakWhite : aawFailStreakBlack;
+            int& aawSideCooldownUntilDepth =
+              usWhiteRoot ? aawCooldownUntilDepthWhite : aawCooldownUntilDepthBlack;
+            int aawDynamicMaxAttempts = aawSideMaxAttempts;
+            const bool aawCooldownActive = rootDepth <= aawSideCooldownUntilDepth;
+            const bool bestMoveStable = rootDepth - lastBestMoveDepth >= 2;
+            const int aawSideWarmupReq =
+              usWhiteRoot ? aawWarmupSamples : std::min(96, aawWarmupSamples + aawBlackExtraWarmup);
+            const int aawSideMinHitRate =
+              usWhiteRoot ? aawMinHitRate : std::min(95, aawMinHitRate + aawBlackExtraHitRate);
+            const int aawSideMinConfidence = usWhiteRoot
+                                           ? aawConfidenceMin
+                                           : std::min(100, aawConfidenceMin + aawBlackExtraConfidence);
+            const int aawSideHardWarmup = aawBlackHardGate ? std::max(32, aawSideWarmupReq) : aawSideWarmupReq;
+            const int aawSideHardHitRate = aawBlackHardGate ? std::max(85, aawSideMinHitRate) : aawSideMinHitRate;
+            const int aawSideHardConfidence =
+              aawBlackHardGate ? std::max(90, aawSideMinConfidence) : aawSideMinConfidence;
+            const int aawSideMinDepth = usWhiteRoot ? 16 : std::max(16, aawBlackMinDepth);
+            const bool aawCandidateBase =
+              aawEnabled && aawSideEnabled && multiPV == 1 && rootDepth >= aawSideMinDepth
+              && bestMoveStable;
+            const int aawSideHitRate = (100 * aawSideHits) / std::max(1, aawSideSamples);
+            const bool aawWarmupReady = aawSideSamples >= aawSideHardWarmup;
+            const bool aawHitRateReady = aawSideHitRate >= aawSideHardHitRate;
+            const bool aawQualityReady = aawWarmupReady && aawHitRateReady;
+            const bool aawActiveBase =
+              aawCandidateBase && !aawCooldownActive && aawSideConfidence >= aawSideHardConfidence
+              && aawQualityReady;
             if (pvIdx == pvLast)
             {
                 pvFirst = pvLast;
@@ -546,9 +630,89 @@ void Search::Worker::iterative_deepening() {
 
             // Reset aspiration window starting size
             delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            const int baselineDelta = delta;
             Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
+            const int trendCp = int(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
+            const int volatilityCp = std::abs(trendCp);
+            const bool pvStable = std::abs(int(rootMoves[pvIdx].meanSquaredScore)) < 2500;
+            const bool aawWindowGuard =
+              pvStable && std::abs(int(avg)) <= (aawConservativeSide ? 130 : 220)
+              && volatilityCp <= (aawConservativeSide ? 40 : 85)
+              && std::abs(int(rootMoves[pvIdx].previousScore)) <= (aawConservativeSide ? 220 : 260)
+              // For black conservative mode, avoid narrow aspiration while defending clearly worse positions.
+              && (usWhiteRoot || int(avg) >= -70);
+            const bool aawEligible = aawCandidateBase && aawWindowGuard;
+            const bool aawActive = aawActiveBase && aawWindowGuard && !aawShadowMode;
+            bool aawShadowTracked = false;
+            Value aawShadowAlpha = -VALUE_INFINITE;
+            Value aawShadowBeta = VALUE_INFINITE;
+
+            if (aawEligible)
+            {
+                const int stabilityAdjust = pvStable ? aawStabilityBonus : 0;
+                const double pressure = mainThread
+                                          ? std::clamp(double(elapsed()) / std::max(1.0, double(mainThread->tm.optimum())),
+                                                       0.6, 2.0)
+                                          : 1.0;
+                const int trendAsymmetry = aawConservativeSide ? (aawTrendAsymmetry * 60) / 100 : aawTrendAsymmetry;
+
+                int base = aawBaseDelta + (volatilityCp * aawVolatilityWeight) / 40 - stabilityAdjust;
+                base += int((pressure - 1.0) * aawTimePressure);
+                delta = std::clamp((baselineDelta * 90 + std::clamp(base, aawMinDelta, aawMaxDelta) * 10) / 100,
+                                   aawMinDelta, aawMaxDelta);
+
+                int lo = delta;
+                int hi = delta;
+                const int asym = (std::abs(trendCp) * trendAsymmetry) / 256;
+                if (rootDepth >= 18 && std::abs(trendCp) >= 40)
+                {
+                    if (trendCp > 0)
+                        hi += asym;
+                    else if (trendCp < 0)
+                        lo += asym;
+                }
+                if (aawDirectionalClamp)
+                {
+                    lo = std::max(lo, aawMinDelta);
+                    hi = std::max(hi, aawMinDelta);
+                }
+
+                if (aawxEnabled && aawxPhase1Enabled)
+                {
+                    const auto out = AAWX::compute_phase1(AAWX::Phase1Input{
+                      delta,                 aawMinDelta,          aawMaxDelta,
+                      int(avg),              int(rootMoves[pvIdx].previousScore),
+                      int(rootMoves[pvIdx].meanSquaredScore),
+                      trendAsymmetry,        aawSideMaxAttempts,   aawConservativeSide,
+                      pressure,              aawxConfidence,        aawxSigmaBlend,
+                      aawxTrendCap});
+
+                    delta = out.delta;
+                    lo = std::max(aawMinDelta, out.lo);
+                    hi = std::max(aawMinDelta, out.hi);
+                    aawDynamicMaxAttempts = std::min(aawSideMaxAttempts, out.maxAttempts);
+                }
+
+                aawShadowAlpha = std::max(avg - lo, -VALUE_INFINITE);
+                aawShadowBeta = std::min(avg + hi, VALUE_INFINITE);
+                aawShadowTracked = true;
+
+                if (aawActive)
+                {
+                    alpha = aawShadowAlpha;
+                    beta = aawShadowBeta;
+                }
+                else
+                {
+                    alpha = std::max(avg - delta, -VALUE_INFINITE);
+                    beta = std::min(avg + delta, VALUE_INFINITE);
+                }
+            }
+            else
+            {
+                alpha = std::max(avg - delta, -VALUE_INFINITE);
+                beta  = std::min(avg + delta, VALUE_INFINITE);
+            }
 
             // Adjust optimism based on root move's averageScore
             optimism[us]  = 142 * avg / (std::abs(avg) + 91);
@@ -558,8 +722,11 @@ void Search::Worker::iterative_deepening() {
             // high/low, re-search with a bigger window until we don't fail
             // high/low anymore.
             int failedHighCnt = 0;
+            int aspirationAttempts = 0;
+            bool aawFullWindowFallback = false;
             while (true)
             {
+                ++aspirationAttempts;
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
                 Depth adjustedDepth =
@@ -592,8 +759,17 @@ void Search::Worker::iterative_deepening() {
                 // otherwise exit the loop.
                 if (bestValue <= alpha)
                 {
-                    beta  = alpha;
-                    alpha = std::max(bestValue - delta, -VALUE_INFINITE);
+                    if (aawActive)
+                    {
+                        beta  = alpha;
+                        const int defenseBoost = aawConservativeSide ? (aawDefenseBoost * 65) / 100 : aawDefenseBoost;
+                        alpha = std::max(bestValue - (delta + defenseBoost), -VALUE_INFINITE);
+                    }
+                    else
+                    {
+                        beta  = alpha;
+                        alpha = std::max(bestValue - delta, -VALUE_INFINITE);
+                    }
 
                     failedHighCnt = 0;
                     if (mainThread)
@@ -601,16 +777,114 @@ void Search::Worker::iterative_deepening() {
                 }
                 else if (bestValue >= beta)
                 {
-                    alpha = std::max(beta - delta, alpha);
-                    beta  = std::min(bestValue + delta, VALUE_INFINITE);
+                    if (aawActive)
+                    {
+                        alpha = std::max(beta - std::max(delta, aawOppositeMargin), alpha);
+                        beta  = std::min(bestValue + delta, VALUE_INFINITE);
+                    }
+                    else
+                    {
+                        alpha = std::max(beta - delta, alpha);
+                        beta  = std::min(bestValue + delta, VALUE_INFINITE);
+                    }
                     ++failedHighCnt;
                 }
                 else
                     break;
 
-                delta += delta / 3;
+                if (aawActive)
+                {
+                    const int expansionBias = aawConservativeSide ? (aawExpansionBias * 70) / 100 : aawExpansionBias;
+                    delta = std::min(aawMaxDelta, delta + std::max(1, delta / 3 + expansionBias / 8));
+                    if (aspirationAttempts >= aawFullWindowAttempt || aspirationAttempts >= aawDynamicMaxAttempts)
+                    {
+                        alpha = -VALUE_INFINITE;
+                        beta = VALUE_INFINITE;
+                        aawFullWindowFallback = true;
+                    }
+                }
+                else
+                    delta += delta / 3;
+
+                if (aawFullWindowFallback)
+                    break;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
+            }
+
+            if (aawEnabled && multiPV == 1 && pvIdx == 0)
+            {
+                const bool usedAAW = aawActive;
+                const bool healthyAAW =
+                  usedAAW && !aawFullWindowFallback && aspirationAttempts <= aawMaxSafeAttempts;
+                const bool shadowSample = aawShadowMode && aawShadowTracked;
+                const bool shadowHit =
+                  shadowSample && bestValue > aawShadowAlpha && bestValue < aawShadowBeta;
+                const bool sideSample = aawShadowTracked;
+                const bool sideHit =
+                  sideSample && bestValue > aawShadowAlpha && bestValue < aawShadowBeta;
+
+                if (sideSample)
+                {
+                    ++aawSideSamples;
+                    aawSideHits += sideHit ? 1 : 0;
+                }
+
+                if (shadowSample)
+                {
+                    ++aawShadowSamples;
+                    aawShadowHits += shadowHit ? 1 : 0;
+
+                    if (shadowHit)
+                        aawSideConfidence =
+                          std::min(100, aawSideConfidence + (usWhiteRoot ? 4 : 2));
+                    else
+                        aawSideConfidence =
+                          std::max(0, aawSideConfidence - (usWhiteRoot ? 8 : 10));
+
+                    if (mainThread && aawShadowLogInterval > 0
+                        && (aawShadowSamples % aawShadowLogInterval) == 0)
+                    {
+                        sync_cout << "info string AAW shadow samples=" << aawShadowSamples
+                                  << " hits=" << aawShadowHits
+                                  << " hitrate=" << (100 * aawShadowHits / std::max(1, aawShadowSamples))
+                                  << "% confW=" << aawConfidenceWhite
+                                  << " confB=" << aawConfidenceBlack << sync_endl;
+                    }
+                }
+
+                if (healthyAAW)
+                {
+                    aawSideFailStreak = std::max(0, aawSideFailStreak - 1);
+                    aawSideConfidence =
+                      std::min(100, aawSideConfidence + (usWhiteRoot ? 6 : 4));
+                }
+                else if (usedAAW)
+                {
+                    ++aawSideFailStreak;
+                    aawSideConfidence -= usWhiteRoot ? 12 : 18;
+                    if (aawSideFailStreak >= aawCooldownFailStreak)
+                    {
+                        const int cooldownDepth = usWhiteRoot ? aawCooldownDepth : std::max(6, aawCooldownDepth * 2);
+                        aawSideCooldownUntilDepth = rootDepth + cooldownDepth;
+                        aawSideFailStreak = std::max(0, aawSideFailStreak - 1);
+                    }
+                }
+                else
+                    aawSideConfidence =
+                      std::max(usWhiteRoot ? 35 : 20, aawSideConfidence - (aawShadowMode ? 0 : 1));
+
+                if (sideSample && !usedAAW)
+                {
+                    if (sideHit)
+                        aawSideConfidence =
+                          std::min(100, aawSideConfidence + (usWhiteRoot ? 2 : 1));
+                    else
+                        aawSideConfidence =
+                          std::max(0, aawSideConfidence - (usWhiteRoot ? 3 : 4));
+                }
+
+                aawSideConfidence = std::clamp(aawSideConfidence, 0, 100);
             }
 
             // Sort the PV lines searched so far and update the GUI
@@ -887,9 +1161,12 @@ Value Search::Worker::search(
     Square prevSq  = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
     bestMove       = Move::none();
     priorReduction = (ss - 1)->reduction;
+    const int parentCumReduction = std::max(0, (ss - 1)->hareCumReduction);
     (ss - 1)->reduction = 0;
+    ss->hareCumReduction = parentCumReduction;
     ss->statScore       = 0;
     (ss + 2)->cutoffCnt = 0;
+    (ss + 2)->hareCumReduction = 0;
 
     // Step 4. Transposition table lookup
     excludedMove                   = ss->excludedMove;
@@ -1526,6 +1803,9 @@ moves_loop:  // When in check, search starts here
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > 1)
         {
+            const bool harePhase1Active = bool(options["HARE Enabled"]) && bool(options["HARE Phase1 Enabled"])
+                                       && depth >= int(options["HARE Depth Min"]);
+            const int hareCascadeLimit = int(options["HARE Cascade Limit"]);
             // In general we want to cap the LMR depth search at newDepth, but when
             // reduction is negative, we allow this move a limited search extension
             // beyond the first move depth.
@@ -1533,9 +1813,22 @@ moves_loop:  // When in check, search starts here
             // std::clamp has been replaced by a more robust implementation.
             Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
 
-            ss->reduction = newDepth - d;
+            if (harePhase1Active)
+            {
+                const int reducedBy = int(newDepth - d);
+                if (reducedBy > 0)
+                {
+                    const int remainingBudget = std::max(0, hareCascadeLimit - parentCumReduction);
+                    const int cappedReduction = std::min(reducedBy, remainingBudget);
+                    d = std::max(1, Depth(newDepth - cappedReduction));
+                }
+            }
+
+            ss->reduction = int(newDepth - d);
+            ss->hareCumReduction = parentCumReduction + ss->reduction;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
+            ss->hareCumReduction = parentCumReduction;
 
             // Do a full-depth search when reduced LMR search fails high
             // (*Scaler) Shallower searches here don't scale well
@@ -1552,13 +1845,17 @@ moves_loop:  // When in check, search starts here
                 {
                     // Crystal-style deeper research for aggressive positions
                     Depth extDepth = newDepth + 2;
+                    ss->hareCumReduction = parentCumReduction;
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, extDepth, !cutNode);
                 }
                 else
                 {
                     newDepth += doDeeperSearch - doShallowerSearch;
                     if (newDepth > d)
+                    {
+                        ss->hareCumReduction = parentCumReduction;
                         value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
+                    }
                 }
 
                 // Post LMR continuation history updates with Shashin adjustment
@@ -1582,6 +1879,7 @@ moves_loop:  // When in check, search starts here
                 r += 1140;
 
             // Note that if expected reduction is high, we reduce search depth here
+            ss->hareCumReduction = parentCumReduction;
             value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
                                    newDepth - (r > 3957) - (r > 5654 && newDepth > 2), !cutNode);
         }
@@ -1600,6 +1898,7 @@ moves_loop:  // When in check, search starts here
                     || ttData.depth > 1))
                 newDepth = std::max(newDepth, 1);
 
+            ss->hareCumReduction = parentCumReduction;
             value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
         }
 

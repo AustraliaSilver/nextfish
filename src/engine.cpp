@@ -109,7 +109,7 @@ Engine::Engine(std::optional<std::string> path) :
 
     options.add("Skill Level", Option(20, 0, 20));
 
-    options.add("Move Overhead", Option(10, 0, 5000));
+    options.add("Move Overhead", Option(30, 0, 5000));
 
     options.add("nodestime", Option(0, 0, 10000));
 
@@ -124,7 +124,7 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("UCI_ShowWDL", Option(false));
 
     // MCTS (Monte Carlo Tree Search) options for complex positions
-    options.add("Shashin Enabled", Option(true));
+    options.add("Shashin Enabled", Option(false));
     options.add("Shashin Root White Scale", Option(100, 50, 200));
     options.add("Shashin Root Black Scale", Option(100, 50, 200));
     options.add("Shashin Root Capture Bonus", Option(180, 0, 400));
@@ -147,6 +147,46 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("MCTS Root Reorder TopK", Option(2, 1, 8));
     
     options.add("MCTS Iterations", Option(1000, 100, 10000));
+    options.add("AAW Enabled", Option(false));
+    options.add("AAW Base Delta", Option(8, 2, 64));
+    options.add("AAW Min Delta", Option(5, 2, 40));
+    options.add("AAW Max Delta", Option(80, 16, 320));
+    options.add("AAW Volatility Weight", Option(8, 0, 80));
+    options.add("AAW Stability Bonus", Option(10, 0, 40));
+    options.add("AAW Time Pressure", Option(15, 0, 60));
+    options.add("AAW Trend Asymmetry", Option(8, 0, 80));
+    options.add("AAW Expansion Bias", Option(4, 0, 80));
+    options.add("AAW Recenter Weight", Option(10, 0, 100));
+    options.add("AAW Full Window Attempt", Option(4, 2, 10));
+    options.add("AAW Max Attempts", Option(7, 3, 12));
+    options.add("AAW Directional Clamp", Option(false));
+    options.add("AAW Opposite Margin", Option(12, 4, 64));
+    options.add("AAW Defense Boost", Option(0, 0, 40));
+    options.add("AAW White Enabled", Option(false));
+    options.add("AAW Black Enabled", Option(false));
+    options.add("AAW Black Conservative", Option(true));
+    options.add("AAW Black Max Attempts", Option(5, 3, 10));
+    options.add("AAW Black Min Depth", Option(20, 16, 32));
+    options.add("AAW Black Extra Warmup", Option(8, 0, 48));
+    options.add("AAW Black Extra Hit Rate", Option(6, 0, 20));
+    options.add("AAW Black Extra Confidence", Option(8, 0, 25));
+    options.add("AAW Cooldown Fail Streak", Option(2, 1, 6));
+    options.add("AAW Cooldown Depth", Option(2, 1, 6));
+    options.add("AAW Max Safe Attempts", Option(2, 1, 6));
+    options.add("AAW Confidence Min", Option(70, 30, 95));
+    options.add("AAW Warmup Samples", Option(8, 0, 64));
+    options.add("AAW Min Hit Rate", Option(65, 40, 95));
+    options.add("AAW Shadow Mode", Option(false));
+    options.add("AAW Shadow Log Interval", Option(6, 1, 32));
+    options.add("AAW-X Enabled", Option(false));
+    options.add("AAW-X Phase1 Enabled", Option(false));
+    options.add("AAW-X Confidence", Option(80, 60, 95));
+    options.add("AAW-X Sigma Blend", Option(12, 0, 40));
+    options.add("AAW-X Trend Cap", Option(18, 0, 80));
+    options.add("HARE Enabled", Option(false));
+    options.add("HARE Phase1 Enabled", Option(true));
+    options.add("HARE Depth Min", Option(12, 4, 24));
+    options.add("HARE Cascade Limit", Option(12, 2, 24));
 
     options.add(  //
       "SyzygyPath", Option("", [](const Option& o) {
