@@ -176,7 +176,7 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("AAW-X Bimodal Gap", Option(34, 10, 120));
     options.add("AAW-X Oscillation Boost", Option(10, 0, 40));
     options.add("AAW-X ReSearch Max Reduction", Option(2, 0, 4));
-    options.add("AAW-X Phase2 Enabled", Option(true));
+    options.add("AAW-X Phase2 Enabled", Option(false));
     options.add("AAW-X Causal PV Divergence", Option(8, 0, 40));
     options.add("AAW-X Causal MoveChange Boost", Option(10, 0, 50));
     options.add("AAW-X Causal Tactical Resolve", Option(6, 0, 30));
@@ -196,11 +196,12 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("AAW-X Portfolio Wide", Option(182, 140, 340));
     options.add("AAW-X Portfolio Trigger", Option(28, 8, 120));
     options.add("AAW-X Portfolio DepthCut", Option(1, 0, 3));
-    options.add("AAW Black Widen", Option(2, 0, 16));
-    options.add("AAW Unstable FullWindow Attempt", Option(3, 2, 8));
+    options.add("AAW Black Widen", Option(4, 0, 16));
+    options.add("AAW Unstable FullWindow Attempt", Option(2, 2, 8));
     options.add("AAW Black Conservative", Option(true));
     options.add("AAW Black Max Attempts", Option(5, 3, 10));
     options.add("AAW Black Recenter Cap", Option(40, 20, 70));
+    options.add("AAW Black Drift Disable", Option(40, 16, 96));
     options.add("DEE-X Enabled", Option(false));
     options.add("DEE-X Root Min Depth", Option(9, 1, 24));
     options.add("DEE-X Root TopK", Option(2, 1, 8));
