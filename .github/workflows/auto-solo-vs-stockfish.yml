@@ -19,15 +19,15 @@ on:
       concurrency:
         description: "Cutechess concurrency"
         required: false
-        default: "4"
+        default: "2"
       threads:
         description: "Threads per engine"
         required: false
-        default: "1"
+        default: "2"
       hash:
         description: "Hash MB per engine"
         required: false
-        default: "128"
+        default: "2048"
 
 permissions:
   contents: read
@@ -43,9 +43,9 @@ jobs:
     env:
       GAMES: ${{ github.event_name == 'push' && '500' || (github.event.inputs.games || '500') }}
       TC: ${{ github.event.inputs.tc || '10+0.1' }}
-      CONCURRENCY: ${{ github.event.inputs.concurrency || '4' }}
-      THREADS: ${{ github.event.inputs.threads || '1' }}
-      HASH: ${{ github.event.inputs.hash || '128' }}
+      CONCURRENCY: ${{ github.event.inputs.concurrency || '2' }}
+      THREADS: ${{ github.event.inputs.threads || '2' }}
+      HASH: ${{ github.event.inputs.hash || '2048' }}
 
     steps:
       - name: Checkout
@@ -157,15 +157,15 @@ jobs:
         shell: msys2 {0}
         working-directory: nextfish-dev/Stockfish-master/src
         run: |
-          make -j4 profile-build ARCH=native COMP=gcc
-          make strip ARCH=native COMP=gcc
+          make -j4 profile-build ARCH=x86-64-avx2 COMP=gcc
+          make strip ARCH=x86-64-avx2 COMP=gcc
 
       - name: Build Stockfish (PGO + O3 + LTO)
         shell: msys2 {0}
         working-directory: stockfish18/src
         run: |
-          make -j4 profile-build ARCH=native COMP=gcc
-          make strip ARCH=native COMP=gcc
+          make -j4 profile-build ARCH=x86-64-avx2 COMP=gcc
+          make strip ARCH=x86-64-avx2 COMP=gcc
 
       - name: Normalize shared NNUE nets
         shell: pwsh
@@ -186,8 +186,8 @@ jobs:
         shell: pwsh
         run: |
           $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-          $next = "builds/nextfish_pgo_native_$stamp.exe"
-          $stock = "builds/stockfish_orig_pgo_native_$stamp.exe"
+          $next = "builds/nextfish_pgo_avx2_$stamp.exe"
+          $stock = "builds/stockfish_orig_pgo_avx2_$stamp.exe"
 
           Copy-Item "nextfish-dev/Stockfish-master/src/stockfish.exe" $next -Force
           Copy-Item "stockfish18/src/stockfish.exe" $stock -Force
@@ -250,6 +250,7 @@ jobs:
             "option.Hash=$env:HASH",
 
             '-each', "tc=$env:TC",
+            'timemargin=200',
             '-games', "$env:GAMES",
             '-pgnout', $pgn,
             '-concurrency', "$env:CONCURRENCY",
@@ -259,7 +260,10 @@ jobs:
           )
 
           if (Test-Path ".\UHO_2022_8mvs_+110_+119.pgn") {
-            $cuteArgs += @('-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random')
+            $cuteArgs += @(
+              '-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random',
+              '-srand', '20260224'
+            )
           }
 
             & $cutechess @cuteArgs 2>&1 | Tee-Object -FilePath $log
