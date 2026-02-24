@@ -19,7 +19,7 @@ on:
       concurrency:
         description: "Cutechess concurrency"
         required: false
-        default: "2"
+        default: "1"
       threads:
         description: "Threads per engine"
         required: false
@@ -27,7 +27,7 @@ on:
       hash:
         description: "Hash MB per engine"
         required: false
-        default: "2048"
+        default: "512"
 
 permissions:
   contents: read
@@ -43,9 +43,9 @@ jobs:
     env:
       GAMES: ${{ github.event_name == 'push' && '500' || (github.event.inputs.games || '500') }}
       TC: ${{ github.event.inputs.tc || '10+0.1' }}
-      CONCURRENCY: ${{ github.event.inputs.concurrency || '2' }}
+      CONCURRENCY: ${{ github.event.inputs.concurrency || '1' }}
       THREADS: ${{ github.event.inputs.threads || '2' }}
-      HASH: ${{ github.event.inputs.hash || '2048' }}
+      HASH: ${{ github.event.inputs.hash || '512' }}
 
     steps:
       - name: Checkout
@@ -209,7 +209,7 @@ jobs:
             throw "Opponent is not Stockfish 18: $nameLine"
           }
 
-      - name: Run Elo match (500 games on push)
+      - name: Run Elo match
         id: match
         shell: pwsh
         env:
@@ -254,14 +254,12 @@ jobs:
             '-games', "$env:GAMES",
             '-pgnout', $pgn,
             '-concurrency', "$env:CONCURRENCY",
-            '-repeat',
-            '-draw', 'movenumber=40', 'movecount=8', 'score=10',
-            '-resign', 'movecount=3', 'score=500'
+            '-repeat'
           )
 
           if (Test-Path ".\UHO_2022_8mvs_+110_+119.pgn") {
             $cuteArgs += @(
-              '-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random',
+              '-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random', 'plies=8',
               '-srand', '20260224'
             )
           }

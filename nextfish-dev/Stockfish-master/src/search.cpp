@@ -216,6 +216,7 @@ void Search::Worker::ensure_network_replicated() {
 void Search::Worker::start_searching() {
 
     accumulatorStack.reset();
+    refresh_hare_config();
 
     // Non-main threads go directly to iterative_deepening()
     if (!is_mainthread())
@@ -1579,6 +1580,24 @@ void Search::Worker::do_move(Position& pos, const Move move, StateInfo& st, Stac
     do_move(pos, move, st, pos.gives_check(move), ss);
 }
 
+void Search::Worker::refresh_hare_config() {
+    hareConfig.enabled = bool(options["HARE Enabled"]);
+    hareConfig.minDepth = int(options["HARE Min Depth"]);
+    hareConfig.windowMarginCp = int(options["HARE Window Margin"]);
+    hareConfig.tacticalScale = int(options["HARE Tactical Scale"]);
+    hareConfig.quietBonus = int(options["HARE Quiet Bonus"]);
+    hareConfig.kingDangerScale = int(options["HARE King Danger Scale"]);
+    hareConfig.criticalityScale = int(options["HARE Criticality Scale"]);
+    hareConfig.horizonRiskScale = int(options["HARE Horizon Risk Scale"]);
+    hareConfig.checkBonus = int(options["HARE Check Bonus"]);
+    hareConfig.cascadeBudgetPct = int(options["HARE Cascade Budget"]);
+    hareConfig.maxDeltaPly = int(options["HARE Max Delta Ply"]);
+    hareConfig.failLowVerifyEnabled = bool(options["HARE FailLow Verify Enabled"]);
+    hareConfig.failLowWindowCp = int(options["HARE FailLow Window"]);
+    hareConfig.failLowMinReductionPly = int(options["HARE FailLow Min Reduction"]);
+    hareConfig.failLowVerifyDepthGain = int(options["HARE FailLow Depth Gain"]);
+}
+
 void Search::Worker::do_move(
   Position& pos, const Move move, StateInfo& st, const bool givesCheck, Stack* const ss) {
     bool capture = pos.capture_stage(move);
@@ -2359,6 +2378,15 @@ moves_loop:  // When in check, search starts here
 
         if (ss->statScore > 4000) r = -512;
 
+        // Window-sensitive LMR guard:
+        // Near alpha/beta boundary we avoid over-reducing quiet moves because
+        // small score errors there can flip node decisions.
+        const int distAlpha = std::abs(int(ss->staticEval - alpha));
+        const int distBeta  = std::abs(int(ss->staticEval - beta));
+        const int windowDist = std::min(distAlpha, distBeta);
+        if (!capture && !givesCheck && depth >= 8 && moveCount > 2 && windowDist <= 24)
+            r -= 256;
+
         // Side-specific LMR adjustment for Black safety
         if (us == BLACK)
         {
@@ -2368,6 +2396,50 @@ moves_loop:  // When in check, search starts here
                 r -= 768;
             else if (ss->staticEval < -10 || givesCheck || (ss->ply < 16 && ss->statScore > 0))
                 r -= 384;
+
+            // Black-only reinforcement in the boundary zone where recent tests
+            // show larger instability.
+            if (!capture && depth >= 8 && windowDist <= 32)
+                r -= 128;
+        }
+
+        if (hareConfig.enabled && !rootNode && depth >= hareConfig.minDepth && moveCount > 1)
+        {
+            HARE::NodeSnapshot nodeSnapshot{};
+            nodeSnapshot.depth = depth;
+            nodeSnapshot.rootDepth = rootDepth;
+            nodeSnapshot.ply = ss->ply;
+            nodeSnapshot.alpha = alpha;
+            nodeSnapshot.beta = beta;
+            nodeSnapshot.staticEval = ss->staticEval;
+            nodeSnapshot.us = us;
+            nodeSnapshot.inCheck = ss->inCheck;
+            nodeSnapshot.cutNode = cutNode;
+            nodeSnapshot.pvNode = PvNode;
+            nodeSnapshot.improving = improving;
+
+            HARE::MoveSnapshot moveSnapshot{};
+            moveSnapshot.moveCount = moveCount;
+            moveSnapshot.statScore = ss->statScore;
+            moveSnapshot.capture = capture;
+            moveSnapshot.givesCheck = givesCheck;
+            moveSnapshot.promotion = move.type_of() == PROMOTION;
+
+            int cumulativeReductionPly = 0;
+            const int maxLookback = std::min(ss->ply, 6);
+            for (int back = 1; back <= maxLookback; ++back)
+                cumulativeReductionPly += std::max(0, (ss - back)->reduction);
+
+            const HARE::Guidance hareGuidanceHint =
+              hareGuidance->query(pos, move, nodeSnapshot, moveSnapshot);
+            const HARE::ReductionDecision hareDecision = HARE::compute_reduction_adjustment(
+              hareConfig, pos, move, nodeSnapshot, moveSnapshot, int(r), cumulativeReductionPly,
+              hareGuidanceHint);
+
+            int adjustedReduction = int(r) + hareDecision.fixedDelta;
+            if (hareDecision.capFixed >= 0)
+                adjustedReduction = std::min(adjustedReduction, hareDecision.capFixed);
+            r = Depth(std::clamp(adjustedReduction, -1024, 8192));
         }
 
         // Scale up reductions for expected ALL nodes
@@ -2422,6 +2494,21 @@ moves_loop:  // When in check, search starts here
                     bonus += 200;
                     
                 update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
+            }
+            else if (hareConfig.failLowVerifyEnabled && depth >= hareConfig.minDepth
+                     && !capture && !givesCheck
+                     && r >= hareConfig.failLowMinReductionPly * 1024
+                     && windowDist <= hareConfig.failLowWindowCp)
+            {
+                const Depth verifyDepth =
+                  std::min(newDepth, Depth(d + hareConfig.failLowVerifyDepthGain));
+                if (verifyDepth > d)
+                {
+                    const Value verifyValue =
+                      -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, verifyDepth, true);
+                    if (verifyValue > value)
+                        value = verifyValue;
+                }
             }
         }
 

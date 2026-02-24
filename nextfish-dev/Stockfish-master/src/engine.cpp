@@ -147,6 +147,21 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("MCTS Root Reorder TopK", Option(2, 1, 8));
     
     options.add("MCTS Iterations", Option(300, 100, 10000));
+    options.add("HARE Enabled", Option(false));
+    options.add("HARE Min Depth", Option(8, 4, 20));
+    options.add("HARE Window Margin", Option(24, 8, 96));
+    options.add("HARE Tactical Scale", Option(10, 0, 40));
+    options.add("HARE Quiet Bonus", Option(4, 0, 24));
+    options.add("HARE King Danger Scale", Option(10, 0, 40));
+    options.add("HARE Criticality Scale", Option(8, 0, 40));
+    options.add("HARE Horizon Risk Scale", Option(8, 0, 40));
+    options.add("HARE Check Bonus", Option(8, 0, 32));
+    options.add("HARE Cascade Budget", Option(60, 30, 90));
+    options.add("HARE Max Delta Ply", Option(2, 1, 4));
+    options.add("HARE FailLow Verify Enabled", Option(true));
+    options.add("HARE FailLow Window", Option(18, 8, 48));
+    options.add("HARE FailLow Min Reduction", Option(2, 1, 4));
+    options.add("HARE FailLow Depth Gain", Option(1, 1, 2));
     options.add("AAW Enabled", Option(true));
     options.add("AAW Base Delta", Option(16, 2, 64));
     options.add("AAW Min Delta", Option(5, 2, 40));

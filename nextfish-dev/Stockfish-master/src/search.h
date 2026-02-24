@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "history.h"
+#include "hare.h"
 #include "misc.h"
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
@@ -400,6 +401,11 @@ class Worker {
                                    int                       childIterations,
                                    int                       baseBonus);
     int mcts_deep_guidance_bonus(const Stack* ss, Move move) const;
+    void refresh_hare_config();
+
+    HARE::Config                    hareConfig{};
+    HARE::NullGuidanceProvider      hareNullGuidance{};
+    const HARE::GuidanceProvider*   hareGuidance = &hareNullGuidance;
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;
