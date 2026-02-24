@@ -517,6 +517,8 @@ void Search::Worker::iterative_deepening() {
     const bool aawBlackConservative = bool(options["AAW Black Conservative"]);
     const int aawBlackMaxAttempts = int(options["AAW Black Max Attempts"]);
     const int aawBlackRecenterCap = int(options["AAW Black Recenter Cap"]);
+    const int aawBlackDriftDisable = int(options["AAW Black Drift Disable"]);
+    const int aawBlackEvalDisable = int(options["AAW Black Eval Disable"]);
     const bool deeXEnabled = bool(options["DEE-X Enabled"]);
     const int deeXRootMinDepth = int(options["DEE-X Root Min Depth"]);
     const int deeXRootTopK = int(options["DEE-X Root TopK"]);
@@ -768,7 +770,13 @@ void Search::Worker::iterative_deepening() {
             int deltaHi = deltaLo;
             delta       = deltaLo;
 
-            const bool useAAW = aawEnabled && rootDepth >= 6;
+            const int initialScoreDrift =
+              std::abs(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
+            const bool blackDriftGate =
+              !(us == BLACK && aawBlackConservative && initialScoreDrift >= aawBlackDriftDisable);
+            const bool blackEvalGate =
+              !(us == BLACK && aawBlackConservative && int(avg) <= -aawBlackEvalDisable);
+            const bool useAAW = aawEnabled && rootDepth >= 6 && blackDriftGate && blackEvalGate;
             const bool useAAWXPhase1 = useAAW && aawxPhase1Enabled;
             const bool useAAWXPhase2 = useAAWXPhase1 && aawxPhase2Enabled;
             const bool phase3RootGate = !aawxPhase3RootPVOnly || pvIdx == 0;
@@ -799,7 +807,7 @@ void Search::Worker::iterative_deepening() {
                     deltaHi += aawBlackWiden;
                 }
 
-                scoreDrift = std::abs(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
+                scoreDrift = initialScoreDrift;
                 deltaLo += (scoreDrift * aawVolatilityWeight) / 100;
                 deltaHi += (scoreDrift * aawVolatilityWeight) / 100;
 

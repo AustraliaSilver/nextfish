@@ -201,6 +201,8 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("AAW Black Conservative", Option(true));
     options.add("AAW Black Max Attempts", Option(5, 3, 10));
     options.add("AAW Black Recenter Cap", Option(40, 20, 70));
+    options.add("AAW Black Drift Disable", Option(40, 16, 96));
+    options.add("AAW Black Eval Disable", Option(24, 0, 200));
     options.add("DEE-X Enabled", Option(false));
     options.add("DEE-X Root Min Depth", Option(9, 1, 24));
     options.add("DEE-X Root TopK", Option(2, 1, 8));
