@@ -32,6 +32,9 @@
 #include <string_view>
 #include <vector>
 
+#include "dee.h"
+#include "dqrs.h"
+#include "harenn.h"
 #include "history.h"
 #include "misc.h"
 #include "nnue/network.h"
@@ -39,10 +42,12 @@
 #include "numa.h"
 #include "position.h"
 #include "score.h"
-#include "shashin.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
+
+namespace HARENN { struct EvalResult; }
+namespace DEE { struct DEE_Result; }
 
 namespace Stockfish {
 
@@ -77,7 +82,9 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
-    int                         hareCumReduction;
+    DQRS::TrajectoryPredictor   trajectory;
+    HARENN::EvalResult          harenn;
+    DEE::DEE_Result             dee;
 };
 
 
@@ -363,9 +370,6 @@ class Worker {
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;
-    
-    // Shashin position classification manager
-    std::unique_ptr<ShashinManager> shashinManager;
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;

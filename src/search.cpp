@@ -34,8 +34,9 @@
 #include <utility>
 
 #include "bitboard.h"
-#include "aawx_phase1.h"
+#include "dee.h"
 #include "evaluate.h"
+#include "harenn.h"
 #include "history.h"
 #include "misc.h"
 #include "movegen.h"
@@ -43,7 +44,6 @@
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "position.h"
-#include "shashin.h"
 #include "syzygy/tbprobe.h"
 #include "thread.h"
 #include "timeman.h"
@@ -173,8 +173,7 @@ Search::Worker::Worker(SharedState&                    sharedState,
     threads(sharedState.threads),
     tt(sharedState.tt),
     networks(sharedState.networks),
-    refreshTable(networks[token]),
-    shashinManager(std::make_unique<ShashinManager>()) {
+    refreshTable(networks[token]) {
     clear();
 }
 
@@ -193,11 +192,6 @@ void Search::Worker::start_searching() {
     {
         iterative_deepening();
         return;
-    }
-    else
-    {
-        // Initialize Shashin state for main thread
-        shashinManager->setStaticState(rootPos);
     }
 
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
@@ -306,119 +300,7 @@ void Search::Worker::iterative_deepening() {
             mainThread->iterValue.fill(VALUE_ZERO);
         else
             mainThread->iterValue.fill(mainThread->bestPreviousScore);
-            
-        // Output Shashin style info at search start
-        sync_cout << "info string Nextfish Shashin Style: " << shashinManager->getStyleName() 
-                  << " " << shashinManager->getStyleEmoji() << sync_endl;
-
-        if (bool(options["Shashin Enabled"]) && !rootMoves.empty())
-        {
-            const bool usWhiteRoot = rootPos.side_to_move() == WHITE;
-            const bool aggressiveStyle = shashinManager->isAggressive() || shashinManager->isTal();
-            const bool strategicStyle = shashinManager->isStrategical() || shashinManager->isPetrosian();
-            const auto& shashinState = shashinManager->getState();
-            const bool stmKingExposed = shashinState.staticState.stmKingExposed;
-            const bool oppKingExposed = shashinState.staticState.opponentKingExposed;
-            const int whiteScale = int(options["Shashin Root White Scale"]);
-            const int blackScale = int(options["Shashin Root Black Scale"]);
-            const int captureBonus = int(options["Shashin Root Capture Bonus"]);
-            const int checkBonus = int(options["Shashin Root Check Bonus"]);
-            const int promotionBonus = int(options["Shashin Root Promotion Bonus"]);
-            const int castleBonus = int(options["Shashin Root Castle Bonus"]);
-            const int badCapturePenalty = int(options["Shashin Root BadCapture Penalty"]);
-            const int badCheckPenalty = int(options["Shashin Root BadCheck Penalty"]);
-            const int oppKingAttackBonus = int(options["Shashin Root OppKingAttack Bonus"]);
-            const int blackRiskPenalty = int(options["Shashin Root Black Risk Penalty"]);
-            const int blackCaptureBonus = int(options["Shashin Root Black Capture Bonus"]);
-            const int quietBonus = int(options["Shashin Root Quiet Bonus"]);
-
-            auto shashinRootPriority = [&](Move m) -> int {
-                int priority = 0;
-                const bool isCapture = rootPos.capture_stage(m);
-                const bool isCheck = rootPos.gives_check(m);
-                const bool isPromotion = m.type_of() == PROMOTION;
-                const bool isCastle = m.type_of() == CASTLING;
-                const bool winningSee = rootPos.see_ge(m, Value(-20));
-                const bool neutralSee = rootPos.see_ge(m, VALUE_ZERO);
-
-                if (aggressiveStyle)
-                {
-                    if (isCapture)
-                        priority += captureBonus;
-                    if (isCheck)
-                        priority += checkBonus;
-                    if (isPromotion)
-                        priority += promotionBonus;
-                    if (isCastle)
-                        priority -= 25;
-                }
-                else if (strategicStyle)
-                {
-                    if (isCastle)
-                        priority += castleBonus;
-                    if (!isCapture && !isCheck)
-                        priority += quietBonus;
-                    if (isPromotion)
-                        priority += (promotionBonus * 3) / 5;
-                }
-                else
-                {
-                    if (isPromotion)
-                        priority += (promotionBonus * 3) / 5;
-                    if (isCheck)
-                        priority += checkBonus / 2;
-                }
-
-                // Safety filters to avoid tactical overreach at root.
-                if (isCapture && !winningSee)
-                    priority -= badCapturePenalty;
-                if (isCheck && !neutralSee)
-                    priority -= badCheckPenalty;
-
-                // Encourage king safety when side to move king is exposed.
-                if (stmKingExposed)
-                {
-                    if (isCastle)
-                        priority += castleBonus + 20;
-                    if (isCheck && !neutralSee)
-                        priority -= 60;
-                }
-
-                // If opponent king is exposed, reward forcing but sound moves.
-                if (oppKingExposed && (isCheck || isPromotion) && neutralSee)
-                    priority += oppKingAttackBonus;
-
-                // Black-side stability: prefer robust moves a bit more.
-                if (!usWhiteRoot)
-                {
-                    if (!neutralSee)
-                        priority -= blackRiskPenalty;
-                    if (isCapture && neutralSee)
-                        priority += blackCaptureBonus;
-                    if (isCastle)
-                        priority += 25;
-                }
-
-                const int sideScale = usWhiteRoot ? whiteScale : blackScale;
-                return (priority * sideScale) / 100;
-            };
-
-            std::stable_sort(rootMoves.begin(), rootMoves.end(), [&](const RootMove& a, const RootMove& b) {
-                return shashinRootPriority(a.pv[0]) > shashinRootPriority(b.pv[0]);
-            });
-
-            sync_cout << "info string Shashin root ordering applied"
-                      << " [aggressive=" << (aggressiveStyle ? 1 : 0)
-                      << " strategic=" << (strategicStyle ? 1 : 0) << "]" << sync_endl;
-        }
-                  
-        shashinManager->syncMCTSOptions(bool(options["MCTS Enabled"]), int(options["MCTS Iterations"]));
-        if (options["MCTS Enabled"] && int(options["MCTS Root Node Percent"]) > 0)
-            sync_cout << "info string MCTS root-percent mode enabled: "
-                      << int(options["MCTS Root Node Percent"]) << "% nodes" << sync_endl;
-
     }
-
 
     size_t multiPV = size_t(options["MultiPV"]);
     Skill skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
@@ -431,61 +313,6 @@ void Search::Worker::iterative_deepening() {
     multiPV = std::min(multiPV, rootMoves.size());
 
     int searchAgainCounter = 0;
-    const bool mctsEnabled = bool(options["MCTS Enabled"]);
-    const int mctsRootNodePercent = int(options["MCTS Root Node Percent"]);
-    const int mctsRootMinDepth = int(options["MCTS Root Min Depth"]);
-    const int mctsRootMinIterations = int(options["MCTS Root Min Iterations"]);
-    const int mctsRootMaxIterations = int(options["MCTS Root Max Iterations"]);
-    const int mctsRootNodesPerIteration = int(options["MCTS Root Nodes Per Iteration"]);
-    const int mctsRootReorderTopK = int(options["MCTS Root Reorder TopK"]);
-    const bool aawEnabled = bool(options["AAW Enabled"]);
-    const int aawBaseDelta = int(options["AAW Base Delta"]);
-    const int aawMinDelta = int(options["AAW Min Delta"]);
-    const int aawMaxDelta = int(options["AAW Max Delta"]);
-    const int aawVolatilityWeight = int(options["AAW Volatility Weight"]);
-    const int aawStabilityBonus = int(options["AAW Stability Bonus"]);
-    const int aawTimePressure = int(options["AAW Time Pressure"]);
-    const int aawTrendAsymmetry = int(options["AAW Trend Asymmetry"]);
-    const int aawExpansionBias = int(options["AAW Expansion Bias"]);
-    const int aawFullWindowAttempt = int(options["AAW Full Window Attempt"]);
-    const int aawMaxAttempts = int(options["AAW Max Attempts"]);
-    const bool aawDirectionalClamp = bool(options["AAW Directional Clamp"]);
-    const int aawOppositeMargin = int(options["AAW Opposite Margin"]);
-    const int aawDefenseBoost = int(options["AAW Defense Boost"]);
-    const bool aawWhiteEnabled = bool(options["AAW White Enabled"]);
-    const bool aawBlackEnabled = bool(options["AAW Black Enabled"]);
-    const bool aawBlackConservative = bool(options["AAW Black Conservative"]);
-    const int aawBlackMaxAttempts = int(options["AAW Black Max Attempts"]);
-    const int aawBlackMinDepth = int(options["AAW Black Min Depth"]);
-    const int aawBlackExtraWarmup = int(options["AAW Black Extra Warmup"]);
-    const int aawBlackExtraHitRate = int(options["AAW Black Extra Hit Rate"]);
-    const int aawBlackExtraConfidence = int(options["AAW Black Extra Confidence"]);
-    const int aawCooldownFailStreak = int(options["AAW Cooldown Fail Streak"]);
-    const int aawCooldownDepth = int(options["AAW Cooldown Depth"]);
-    const int aawMaxSafeAttempts = int(options["AAW Max Safe Attempts"]);
-    const int aawConfidenceMin = int(options["AAW Confidence Min"]);
-    const int aawWarmupSamples = int(options["AAW Warmup Samples"]);
-    const int aawMinHitRate = int(options["AAW Min Hit Rate"]);
-    const bool aawShadowMode = bool(options["AAW Shadow Mode"]);
-    const int aawShadowLogInterval = int(options["AAW Shadow Log Interval"]);
-    const bool aawxEnabled = bool(options["AAW-X Enabled"]);
-    const bool aawxPhase1Enabled = bool(options["AAW-X Phase1 Enabled"]);
-    const int aawxConfidence = int(options["AAW-X Confidence"]);
-    const int aawxSigmaBlend = int(options["AAW-X Sigma Blend"]);
-    const int aawxTrendCap = int(options["AAW-X Trend Cap"]);
-    int lastMctsRootDepth = 0;
-    int aawFailStreakWhite = 0;
-    int aawFailStreakBlack = 0;
-    int aawCooldownUntilDepthWhite = 0;
-    int aawCooldownUntilDepthBlack = 0;
-    int aawConfidenceWhite = 50;
-    int aawConfidenceBlack = 50;
-    int aawSamplesWhite = 0;
-    int aawSamplesBlack = 0;
-    int aawHitsWhite = 0;
-    int aawHitsBlack = 0;
-    int aawShadowSamples = 0;
-    int aawShadowHits = 0;
 
     lowPlyHistory.fill(97);
 
@@ -507,71 +334,6 @@ void Search::Worker::iterative_deepening() {
         for (RootMove& rm : rootMoves)
             rm.previousScore = rm.score;
 
-        // Root MCTS guidance budgeted by searched nodes to reduce pruning misses at root.
-        if (mainThread && mctsEnabled && mctsRootNodePercent > 0 && rootDepth >= mctsRootMinDepth
-            && rootDepth >= lastMctsRootDepth + 2 && shashinManager->isMCTSApplicableByValue())
-        {
-            const bool usWhite = rootPos.side_to_move() == WHITE;
-            const uint64_t searchedNodes = std::max(uint64_t(1), threads.nodes_searched());
-            const uint64_t mctsNodeBudget = (searchedNodes * uint64_t(mctsRootNodePercent)) / 100ULL;
-            const uint64_t roughIterations = mctsNodeBudget / uint64_t(std::max(1, mctsRootNodesPerIteration));
-            const int mctsIterations = int(std::clamp<uint64_t>(
-              roughIterations, uint64_t(mctsRootMinIterations), uint64_t(mctsRootMaxIterations)));
-
-            double mctsWinRate = 0.5;
-            int mctsVisits = 0;
-            int mctsRootVisits = 0;
-            std::vector<MCTSRootStat> mctsRootStats;
-            Move mctsMove = shashinManager->runMCTSSearch(
-              rootPos, networks[numaAccessToken], mctsIterations, &mctsWinRate, &mctsVisits, &mctsRootVisits,
-              &mctsRootStats);
-
-            if (!mctsRootStats.empty() && mctsMove != Move::none())
-            {
-                const int minVisits = std::max(usWhite ? 20 : 28, mctsIterations / (usWhite ? 10 : 8));
-                const double requiredWinRate = usWhite ? 0.525 : 0.54;
-                const double requiredVisitShare =
-                  usWhite ? 0.10 : 0.13;
-                const double bestVisitShare =
-                  mctsRootVisits > 0 ? double(mctsVisits) / mctsRootVisits : 0.0;
-                const bool gatePass =
-                  mctsVisits >= minVisits && mctsWinRate >= requiredWinRate
-                  && bestVisitShare >= requiredVisitShare;
-
-                if (gatePass)
-                {
-                    int reordered = 0;
-                    const int topK = std::min<int>(mctsRootReorderTopK, int(mctsRootStats.size()));
-                    for (int i = 0; i < topK; ++i)
-                    {
-                        const MCTSRootStat& stat = mctsRootStats[size_t(i)];
-                        if (stat.visits < std::max(8, minVisits / 2) || stat.winRate <= 0.5)
-                            continue;
-                        auto it = std::find(rootMoves.begin(), rootMoves.end(), stat.move);
-                        if (it == rootMoves.end())
-                            continue;
-                        const size_t fromIndex = size_t(it - rootMoves.begin());
-                        const size_t toIndex = std::min<size_t>(size_t(i), rootMoves.size() - 1);
-                        if (fromIndex > toIndex)
-                        {
-                            std::rotate(rootMoves.begin() + toIndex, rootMoves.begin() + fromIndex,
-                                        rootMoves.begin() + fromIndex + 1);
-                            ++reordered;
-                        }
-                    }
-                    if (reordered > 0)
-                    {
-                        sync_cout << "info string MCTS root% applied: iters=" << mctsIterations
-                                  << " budgetNodes=" << mctsNodeBudget
-                                  << " top=" << UCIEngine::move(mctsMove, rootPos.is_chess960())
-                                  << " wr=" << int(mctsWinRate * 1000) / 10.0
-                                  << "% reordered=" << reordered << sync_endl;
-                    }
-                    lastMctsRootDepth = rootDepth;
-                }
-            }
-        }
-
         size_t pvFirst = 0;
         pvLast         = 0;
 
@@ -581,42 +343,6 @@ void Search::Worker::iterative_deepening() {
         // MultiPV loop. We perform a full root search for each PV line
         for (pvIdx = 0; pvIdx < multiPV; ++pvIdx)
         {
-            const bool usWhiteRoot = rootPos.side_to_move() == WHITE;
-            const bool aawSideEnabled = usWhiteRoot ? aawWhiteEnabled : aawBlackEnabled;
-            const bool aawConservativeSide = !usWhiteRoot && aawBlackConservative;
-            const bool aawBlackHardGate = !usWhiteRoot && aawBlackConservative;
-            const int aawSideMaxAttempts = usWhiteRoot ? aawMaxAttempts : aawBlackMaxAttempts;
-            int& aawSideConfidence = usWhiteRoot ? aawConfidenceWhite : aawConfidenceBlack;
-            int& aawSideSamples = usWhiteRoot ? aawSamplesWhite : aawSamplesBlack;
-            int& aawSideHits = usWhiteRoot ? aawHitsWhite : aawHitsBlack;
-            int& aawSideFailStreak = usWhiteRoot ? aawFailStreakWhite : aawFailStreakBlack;
-            int& aawSideCooldownUntilDepth =
-              usWhiteRoot ? aawCooldownUntilDepthWhite : aawCooldownUntilDepthBlack;
-            int aawDynamicMaxAttempts = aawSideMaxAttempts;
-            const bool aawCooldownActive = rootDepth <= aawSideCooldownUntilDepth;
-            const bool bestMoveStable = rootDepth - lastBestMoveDepth >= 2;
-            const int aawSideWarmupReq =
-              usWhiteRoot ? aawWarmupSamples : std::min(96, aawWarmupSamples + aawBlackExtraWarmup);
-            const int aawSideMinHitRate =
-              usWhiteRoot ? aawMinHitRate : std::min(95, aawMinHitRate + aawBlackExtraHitRate);
-            const int aawSideMinConfidence = usWhiteRoot
-                                           ? aawConfidenceMin
-                                           : std::min(100, aawConfidenceMin + aawBlackExtraConfidence);
-            const int aawSideHardWarmup = aawBlackHardGate ? std::max(32, aawSideWarmupReq) : aawSideWarmupReq;
-            const int aawSideHardHitRate = aawBlackHardGate ? std::max(85, aawSideMinHitRate) : aawSideMinHitRate;
-            const int aawSideHardConfidence =
-              aawBlackHardGate ? std::max(90, aawSideMinConfidence) : aawSideMinConfidence;
-            const int aawSideMinDepth = usWhiteRoot ? 16 : std::max(16, aawBlackMinDepth);
-            const bool aawCandidateBase =
-              aawEnabled && aawSideEnabled && multiPV == 1 && rootDepth >= aawSideMinDepth
-              && bestMoveStable;
-            const int aawSideHitRate = (100 * aawSideHits) / std::max(1, aawSideSamples);
-            const bool aawWarmupReady = aawSideSamples >= aawSideHardWarmup;
-            const bool aawHitRateReady = aawSideHitRate >= aawSideHardHitRate;
-            const bool aawQualityReady = aawWarmupReady && aawHitRateReady;
-            const bool aawActiveBase =
-              aawCandidateBase && !aawCooldownActive && aawSideConfidence >= aawSideHardConfidence
-              && aawQualityReady;
             if (pvIdx == pvLast)
             {
                 pvFirst = pvLast;
@@ -629,104 +355,25 @@ void Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
-            const int baselineDelta = delta;
+            // Hybrid Gambit: Start with a wider window to encourage tactical discovery
+            delta = 18 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 8000;
+            delta = HARENN::GuidanceProvider::compute_aspiration_delta(rootPos, rootDepth, delta);
+
             Value avg = rootMoves[pvIdx].averageScore;
-            const int trendCp = int(rootMoves[pvIdx].averageScore - rootMoves[pvIdx].previousScore);
-            const int volatilityCp = std::abs(trendCp);
-            const bool pvStable = std::abs(int(rootMoves[pvIdx].meanSquaredScore)) < 2500;
-            const bool aawWindowGuard =
-              pvStable && std::abs(int(avg)) <= (aawConservativeSide ? 130 : 220)
-              && volatilityCp <= (aawConservativeSide ? 40 : 85)
-              && std::abs(int(rootMoves[pvIdx].previousScore)) <= (aawConservativeSide ? 220 : 260)
-              // For black conservative mode, avoid narrow aspiration while defending clearly worse positions.
-              && (usWhiteRoot || int(avg) >= -70);
-            const bool aawEligible = aawCandidateBase && aawWindowGuard;
-            const bool aawActive = aawActiveBase && aawWindowGuard && !aawShadowMode;
-            bool aawShadowTracked = false;
-            Value aawShadowAlpha = -VALUE_INFINITE;
-            Value aawShadowBeta = VALUE_INFINITE;
-
-            if (aawEligible)
-            {
-                const int stabilityAdjust = pvStable ? aawStabilityBonus : 0;
-                const double pressure = mainThread
-                                          ? std::clamp(double(elapsed()) / std::max(1.0, double(mainThread->tm.optimum())),
-                                                       0.6, 2.0)
-                                          : 1.0;
-                const int trendAsymmetry = aawConservativeSide ? (aawTrendAsymmetry * 60) / 100 : aawTrendAsymmetry;
-
-                int base = aawBaseDelta + (volatilityCp * aawVolatilityWeight) / 40 - stabilityAdjust;
-                base += int((pressure - 1.0) * aawTimePressure);
-                delta = std::clamp((baselineDelta * 90 + std::clamp(base, aawMinDelta, aawMaxDelta) * 10) / 100,
-                                   aawMinDelta, aawMaxDelta);
-
-                int lo = delta;
-                int hi = delta;
-                const int asym = (std::abs(trendCp) * trendAsymmetry) / 256;
-                if (rootDepth >= 18 && std::abs(trendCp) >= 40)
-                {
-                    if (trendCp > 0)
-                        hi += asym;
-                    else if (trendCp < 0)
-                        lo += asym;
-                }
-                if (aawDirectionalClamp)
-                {
-                    lo = std::max(lo, aawMinDelta);
-                    hi = std::max(hi, aawMinDelta);
-                }
-
-                if (aawxEnabled && aawxPhase1Enabled)
-                {
-                    const auto out = AAWX::compute_phase1(AAWX::Phase1Input{
-                      delta,                 aawMinDelta,          aawMaxDelta,
-                      int(avg),              int(rootMoves[pvIdx].previousScore),
-                      int(rootMoves[pvIdx].meanSquaredScore),
-                      trendAsymmetry,        aawSideMaxAttempts,   aawConservativeSide,
-                      pressure,              aawxConfidence,        aawxSigmaBlend,
-                      aawxTrendCap});
-
-                    delta = out.delta;
-                    lo = std::max(aawMinDelta, out.lo);
-                    hi = std::max(aawMinDelta, out.hi);
-                    aawDynamicMaxAttempts = std::min(aawSideMaxAttempts, out.maxAttempts);
-                }
-
-                aawShadowAlpha = std::max(avg - lo, -VALUE_INFINITE);
-                aawShadowBeta = std::min(avg + hi, VALUE_INFINITE);
-                aawShadowTracked = true;
-
-                if (aawActive)
-                {
-                    alpha = aawShadowAlpha;
-                    beta = aawShadowBeta;
-                }
-                else
-                {
-                    alpha = std::max(avg - delta, -VALUE_INFINITE);
-                    beta = std::min(avg + delta, VALUE_INFINITE);
-                }
-            }
-            else
-            {
-                alpha = std::max(avg - delta, -VALUE_INFINITE);
-                beta  = std::min(avg + delta, VALUE_INFINITE);
-            }
+            alpha     = std::max(avg - delta, -VALUE_INFINITE);
+            beta      = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
-            optimism[us]  = 142 * avg / (std::abs(avg) + 91);
+            // Hybrid Gambit: Boost optimism to play for wins
+            optimism[us]  = 165 * avg / (std::abs(avg) + 80) + 15;
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail
             // high/low, re-search with a bigger window until we don't fail
             // high/low anymore.
             int failedHighCnt = 0;
-            int aspirationAttempts = 0;
-            bool aawFullWindowFallback = false;
             while (true)
             {
-                ++aspirationAttempts;
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
                 Depth adjustedDepth =
@@ -759,17 +406,8 @@ void Search::Worker::iterative_deepening() {
                 // otherwise exit the loop.
                 if (bestValue <= alpha)
                 {
-                    if (aawActive)
-                    {
-                        beta  = alpha;
-                        const int defenseBoost = aawConservativeSide ? (aawDefenseBoost * 65) / 100 : aawDefenseBoost;
-                        alpha = std::max(bestValue - (delta + defenseBoost), -VALUE_INFINITE);
-                    }
-                    else
-                    {
-                        beta  = alpha;
-                        alpha = std::max(bestValue - delta, -VALUE_INFINITE);
-                    }
+                    beta  = alpha;
+                    alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
                     failedHighCnt = 0;
                     if (mainThread)
@@ -777,114 +415,16 @@ void Search::Worker::iterative_deepening() {
                 }
                 else if (bestValue >= beta)
                 {
-                    if (aawActive)
-                    {
-                        alpha = std::max(beta - std::max(delta, aawOppositeMargin), alpha);
-                        beta  = std::min(bestValue + delta, VALUE_INFINITE);
-                    }
-                    else
-                    {
-                        alpha = std::max(beta - delta, alpha);
-                        beta  = std::min(bestValue + delta, VALUE_INFINITE);
-                    }
+                    alpha = std::max(beta - delta, alpha);
+                    beta  = std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
                 }
                 else
                     break;
 
-                if (aawActive)
-                {
-                    const int expansionBias = aawConservativeSide ? (aawExpansionBias * 70) / 100 : aawExpansionBias;
-                    delta = std::min(aawMaxDelta, delta + std::max(1, delta / 3 + expansionBias / 8));
-                    if (aspirationAttempts >= aawFullWindowAttempt || aspirationAttempts >= aawDynamicMaxAttempts)
-                    {
-                        alpha = -VALUE_INFINITE;
-                        beta = VALUE_INFINITE;
-                        aawFullWindowFallback = true;
-                    }
-                }
-                else
-                    delta += delta / 3;
-
-                if (aawFullWindowFallback)
-                    break;
+                delta += delta / 3;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
-            }
-
-            if (aawEnabled && multiPV == 1 && pvIdx == 0)
-            {
-                const bool usedAAW = aawActive;
-                const bool healthyAAW =
-                  usedAAW && !aawFullWindowFallback && aspirationAttempts <= aawMaxSafeAttempts;
-                const bool shadowSample = aawShadowMode && aawShadowTracked;
-                const bool shadowHit =
-                  shadowSample && bestValue > aawShadowAlpha && bestValue < aawShadowBeta;
-                const bool sideSample = aawShadowTracked;
-                const bool sideHit =
-                  sideSample && bestValue > aawShadowAlpha && bestValue < aawShadowBeta;
-
-                if (sideSample)
-                {
-                    ++aawSideSamples;
-                    aawSideHits += sideHit ? 1 : 0;
-                }
-
-                if (shadowSample)
-                {
-                    ++aawShadowSamples;
-                    aawShadowHits += shadowHit ? 1 : 0;
-
-                    if (shadowHit)
-                        aawSideConfidence =
-                          std::min(100, aawSideConfidence + (usWhiteRoot ? 4 : 2));
-                    else
-                        aawSideConfidence =
-                          std::max(0, aawSideConfidence - (usWhiteRoot ? 8 : 10));
-
-                    if (mainThread && aawShadowLogInterval > 0
-                        && (aawShadowSamples % aawShadowLogInterval) == 0)
-                    {
-                        sync_cout << "info string AAW shadow samples=" << aawShadowSamples
-                                  << " hits=" << aawShadowHits
-                                  << " hitrate=" << (100 * aawShadowHits / std::max(1, aawShadowSamples))
-                                  << "% confW=" << aawConfidenceWhite
-                                  << " confB=" << aawConfidenceBlack << sync_endl;
-                    }
-                }
-
-                if (healthyAAW)
-                {
-                    aawSideFailStreak = std::max(0, aawSideFailStreak - 1);
-                    aawSideConfidence =
-                      std::min(100, aawSideConfidence + (usWhiteRoot ? 6 : 4));
-                }
-                else if (usedAAW)
-                {
-                    ++aawSideFailStreak;
-                    aawSideConfidence -= usWhiteRoot ? 12 : 18;
-                    if (aawSideFailStreak >= aawCooldownFailStreak)
-                    {
-                        const int cooldownDepth = usWhiteRoot ? aawCooldownDepth : std::max(6, aawCooldownDepth * 2);
-                        aawSideCooldownUntilDepth = rootDepth + cooldownDepth;
-                        aawSideFailStreak = std::max(0, aawSideFailStreak - 1);
-                    }
-                }
-                else
-                    aawSideConfidence =
-                      std::max(usWhiteRoot ? 35 : 20, aawSideConfidence - (aawShadowMode ? 0 : 1));
-
-                if (sideSample && !usedAAW)
-                {
-                    if (sideHit)
-                        aawSideConfidence =
-                          std::min(100, aawSideConfidence + (usWhiteRoot ? 2 : 1));
-                    else
-                        aawSideConfidence =
-                          std::max(0, aawSideConfidence - (usWhiteRoot ? 3 : 4));
-                }
-
-                aawSideConfidence = std::clamp(aawSideConfidence, 0, 100);
             }
 
             // Sort the PV lines searched so far and update the GUI
@@ -1129,6 +669,15 @@ Value Search::Worker::search(
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
 
+    // HARENN & DEE: Compute only at significant depths to preserve NPS
+    if (depth > 8) {
+        ss->harenn = HARENN::GuidanceProvider::query(pos);
+        ss->dee    = DEE::Evaluator::evaluate(pos);
+    } else {
+        ss->harenn = {}; // Zeroed
+        ss->dee    = {};
+    }
+
     // Check for the available remaining time
     if (is_mainthread())
         main_manager()->check_time(*this);
@@ -1161,12 +710,9 @@ Value Search::Worker::search(
     Square prevSq  = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
     bestMove       = Move::none();
     priorReduction = (ss - 1)->reduction;
-    const int parentCumReduction = std::max(0, (ss - 1)->hareCumReduction);
     (ss - 1)->reduction = 0;
-    ss->hareCumReduction = parentCumReduction;
     ss->statScore       = 0;
     (ss + 2)->cutoffCnt = 0;
-    (ss + 2)->hareCumReduction = 0;
 
     // Step 4. Transposition table lookup
     excludedMove                   = ss->excludedMove;
@@ -1337,116 +883,72 @@ Value Search::Worker::search(
     }
 
 
-    // Step 7. Razoring with Shashin adjustment
+    // Step 7. Razoring
     // If eval is really low, skip search entirely and return the qsearch value.
     // For PvNodes, we must have a guard against mates being returned.
-    {
-        Value razorThreshold = alpha - 485 - 281 * depth * depth;
-        
-        // Shashin adjustment: less razoring in aggressive positions
-        if (MoveConfig::isAggressive)
-            razorThreshold -= 100;
-        else if (MoveConfig::isStrategical)
-            razorThreshold += 50;
-            
-        if (!PvNode && eval < razorThreshold)
-            return qsearch<NonPV>(pos, ss, alpha, beta);
-    }
+    if (!PvNode && eval < alpha - 485 - 281 * depth * depth)
+        return qsearch<NonPV>(pos, ss, alpha, beta);
 
-    // Step 8. Futility pruning: child node with Shashin adjustment
-    // The depth condition is important for mate finding.
-    {
-        auto futility_margin = [&](Depth d) {
-            Value futilityMult = 76 - 23 * !ss->ttHit;
-            
-            // Shashin adjustment to futility multiplier
-            if (MoveConfig::isAggressive)
-                futilityMult = futilityMult * 85 / 100;  // Less pruning
-            else if (MoveConfig::isStrategical)
-                futilityMult = futilityMult * 115 / 100;  // More pruning
-
-            return futilityMult * d
-                 - (2474 * improving + 331 * opponentWorsening) * futilityMult / 1024  //
-                 + std::abs(correctionValue) / 174665;
-        };
-
-        if (!ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta && eval >= beta
-            && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+        // Step 8. Futility pruning: child node
+        // The depth condition is important for mate finding.
         {
-            // Shashin adjustment to return value
-            Value returnValue;
-            if (MoveConfig::isAggressive)
-                returnValue = (3 * beta + eval) / 4;  // Less reduction
-            else if (MoveConfig::isStrategical)
-                returnValue = (beta + eval) / 2;  // More reduction
-            else
-                returnValue = (2 * beta + eval) / 3;  // Default
-                
-            return std::min(returnValue, beta + Value(150));
+            auto futility_margin = [&](Depth d) {
+                Value futilityMult = 76 - 23 * !ss->ttHit;
+
+                return futilityMult * d
+                     - (2474 * improving + 331 * opponentWorsening) * futilityMult / 1024  //
+                     + std::abs(correctionValue) / 174665;
+            };
+
+            if (!ss->ttPv && depth < 14 && eval - futility_margin(depth) >= beta && eval >= beta
+                && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+                return (2 * beta + eval) / 3;
         }
-    }
 
-    // Step 9. Null move search with verification search and Shashin adjustment
-    if (cutNode && ss->staticEval >= beta - 18 * depth + 350 && !excludedMove
-        && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
-    {
-        assert((ss - 1)->currentMove != Move::null());
-
-        // Null move dynamic reduction based on depth
-        Depth R = 7 + depth / 3;
-        
-        // Shashin adjustment to null move reduction
-        if (MoveConfig::isStrategical)
-            R = std::min(R + 1, 8);  // More reduction in strategical positions
-        else if (MoveConfig::isAggressive)
-            R = std::max(R - 1, 3);  // Less reduction in aggressive positions
-        do_null_move(pos, st, ss);
-
-        Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
-
-        undo_null_move(pos);
-
-        // Do not return unproven mate or TB scores
-        if (nullValue >= beta && !is_win(nullValue))
+        // Step 9. Null move search with verification search
+        if (cutNode && ss->staticEval >= beta - 18 * depth + 350 && !excludedMove
+            && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
         {
-            if (nmpMinPly || depth < 16)
-                return nullValue;
+            assert((ss - 1)->currentMove != Move::null());
 
-            assert(!nmpMinPly);  // Recursive verification is not allowed
+            // Null move dynamic reduction based on depth
+            Depth R = 7 + depth / 3;
+            do_null_move(pos, st, ss);
 
-            // Do verification search at high depths, with null move pruning disabled
-            // until ply exceeds nmpMinPly.
-            nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+            Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
 
-            Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+            undo_null_move(pos);
 
-            nmpMinPly = 0;
+            // Do not return unproven mate or TB scores
+            if (nullValue >= beta && !is_win(nullValue))
+            {
+                if (nmpMinPly || depth < 16)
+                    return nullValue;
 
-            if (v >= beta)
-                return nullValue;
+                assert(!nmpMinPly);  // Recursive verification is not allowed
+
+                // Do verification search at high depths, with null move pruning disabled
+                // until ply exceeds nmpMinPly.
+                nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+
+                Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+
+                nmpMinPly = 0;
+
+                if (v >= beta)
+                    return nullValue;
+            }
         }
-    }
 
     improving |= ss->staticEval >= beta;
 
-    // Step 10. Internal iterative reductions with Shashin adjustment
+    // Step 10. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Making IIR more aggressive scales poorly.
     if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
-    {
-        Depth originalDepth = depth;
         depth--;
-        
-        // Shashin adjustment: additional reduction in strategical positions
-        if (MoveConfig::isStrategical && originalDepth >= 6)
-        {
-            bool quietKingSafe = !MoveConfig::isAggressive && !ss->inCheck;
-            if (quietKingSafe && !MoveConfig::isFortress)
-                depth = std::max(depth - 1, 1);
-        }
-    }
 
-    // Step 11. ProbCut with Shashin adjustment
+    // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
     probCutBeta = beta + 235 - 63 * improving;
@@ -1460,12 +962,6 @@ Value Search::Worker::search(
 
         MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
         Depth      probCutDepth = std::clamp(depth - 5 - (ss->staticEval - beta) / 315, 0, depth);
-        
-        // Shashin adjustment to ProbCut depth
-        if (MoveConfig::isStrategical)
-            probCutDepth = std::clamp(probCutDepth - 1, 0, depth);  // Less aggressive
-        else if (MoveConfig::isAggressive)
-            probCutDepth = std::clamp(probCutDepth + 1, 0, depth);  // More aggressive
 
         while ((move = mp.next_move()) != Move::none())
         {
@@ -1559,27 +1055,20 @@ moves_loop:  // When in check, search starts here
 
         int delta = beta - alpha;
 
-        Depth r = reduction(improving, depth, moveCount, delta) + 1;
+        Depth r = reduction(improving, depth, moveCount, delta);
 
         // Increase reduction for ttPv nodes (*Scaler)
         // Larger values scale well
         if (ss->ttPv)
             r += 946;
 
-        // Step 14. Pruning at shallow depths with Shashin adjustment.
+        // Step 14. Pruning at shallow depths.
         // Depth conditions are important for mate finding.
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
-            // Calculate move count threshold with Shashin adjustment
-            int moveCountThreshold = (3 + depth * depth) / (2 - improving);
-            
-            if (MoveConfig::isStrategical)
-                moveCountThreshold = std::max(8, moveCountThreshold - 4);  // More pruning
-            else if (MoveConfig::isAggressive)
-                moveCountThreshold = std::min(30, moveCountThreshold + 6);  // Less pruning
-                
-            // Skip quiet moves if movecount exceeds our adapted threshold
-            if (moveCount >= moveCountThreshold)
+            // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
+            // Aggressive: Reduce threshold slightly to prune earlier
+            if (moveCount >= (3 + depth * depth) / (1.8 - improving))
                 mp.skip_quiet_moves();
 
             // Reduced depth of the next LMR search
@@ -1593,24 +1082,17 @@ moves_loop:  // When in check, search starts here
                 // Futility pruning for captures
                 if (!givesCheck && lmrDepth < 7)
                 {
-                    Value futilityValue = ss->staticEval + 232 + 217 * lmrDepth
+                    // Aggressive: Decrease margin
+                    Value futilityValue = ss->staticEval + 180 + 200 * lmrDepth
                                         + PieceValue[capturedPiece] + 131 * captHist / 1024;
 
                     if (futilityValue <= alpha)
                         continue;
                 }
 
-                // SEE based pruning for captures and checks with Shashin adjustment
+                // SEE based pruning for captures and checks
                 // Avoid pruning sacrifices of our last piece for stalemate
-                int marginBase = 166 * depth + captHist / 29;
-                int margin = std::max(marginBase, 0);
-                
-                // Shashin adjustment to SEE margin
-                if (MoveConfig::isStrategical)
-                    margin += 20;  // More conservative
-                else if (MoveConfig::isAggressive)
-                    margin = std::max(0, margin - 15);  // More aggressive
-                    
+                int margin = std::max(166 * depth + captHist / 29, 0);
                 if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
                     && !pos.see_ge(move, -margin))
                     continue;
@@ -1621,14 +1103,8 @@ moves_loop:  // When in check, search starts here
                             + (*contHist[1])[movedPiece][move.to_sq()]
                             + sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()];
 
-                // Continuation history based pruning with Shashin adjustment
-                int historyThreshold = -4083 * depth;
-                if (MoveConfig::isStrategical)
-                    historyThreshold -= 500;  // More aggressive pruning
-                else if (MoveConfig::isAggressive)
-                    historyThreshold += 500;  // Less aggressive pruning
-                    
-                if (history < historyThreshold)
+                // Continuation history based pruning
+                if (history < -4083 * depth)
                     continue;
 
                 history += 69 * mainHistory[us][move.raw()] / 32;
@@ -1639,7 +1115,7 @@ moves_loop:  // When in check, search starts here
                 Value futilityValue = ss->staticEval + 42 + 161 * !bestMove + 127 * lmrDepth
                                     + 85 * (ss->staticEval > alpha);
 
-                // Futility pruning: parent node with Shashin adjustment
+                // Futility pruning: parent node
                 // (*Scaler): Generally, more frequent futility pruning
                 // scales well
                 if (!ss->inCheck && lmrDepth < 13 && futilityValue <= alpha)
@@ -1652,19 +1128,13 @@ moves_loop:  // When in check, search starts here
 
                 lmrDepth = std::max(lmrDepth, 0);
 
-                // Prune moves with negative SEE with Shashin adjustment
-                int seeThreshold = -25 * lmrDepth * lmrDepth;
-                if (MoveConfig::isStrategical)
-                    seeThreshold -= 10;  // More pruning
-                else if (MoveConfig::isAggressive)
-                    seeThreshold += 10;  // Less pruning
-                    
-                if (!pos.see_ge(move, seeThreshold))
+                // Prune moves with negative SEE
+                if (!pos.see_ge(move, -25 * lmrDepth * lmrDepth))
                     continue;
             }
         }
 
-        // Step 15. Extensions with Shashin adjustment
+        // Step 15. Extensions
         // Singular extension search. If all moves but one
         // fail low on a search of (alpha-s, beta-s), and just one fails high on
         // (alpha, beta), then that move is singular and should be extended. To
@@ -1678,14 +1148,7 @@ moves_loop:  // When in check, search starts here
             && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos))
         {
-            // Shashin adjustment to singularBeta
-            int styleMarginAdjust = 0;
-            if (MoveConfig::isAggressive)
-                styleMarginAdjust = -12;  // More aggressive extension
-            else if (MoveConfig::isStrategical)
-                styleMarginAdjust = 8;   // More cautious
-                
-            Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode) + styleMarginAdjust) * depth / 60;
+            Value singularBeta  = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60;
             Depth singularDepth = newDepth / 2;
 
             ss->excludedMove = move;
@@ -1699,18 +1162,6 @@ moves_loop:  // When in check, search starts here
                                  - 897 * ttMoveHistory / 127649 - (ss->ply > rootDepth) * 42;
                 int tripleMargin = 73 + 302 * PvNode - 248 * !ttCapture + 90 * ss->ttPv - corrValAdj
                                  - (ss->ply * 2 > rootDepth * 3) * 50;
-                                 
-                // Shashin adjustment to extension margins
-                if (MoveConfig::isAggressive)
-                {
-                    doubleMargin -= 35;  // Extend more
-                    tripleMargin -= 50;
-                }
-                else if (MoveConfig::isStrategical)
-                {
-                    doubleMargin += 25;  // Extend less
-                    tripleMargin += 35;
-                }
 
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
@@ -1754,16 +1205,10 @@ moves_loop:  // When in check, search starts here
         newDepth += extension;
         uint64_t nodeCount = rootNode ? uint64_t(nodes) : 0;
 
-        // Decrease reduction for PvNodes (*Scaler) with Shashin adjustment
+        // Decrease reduction for PvNodes (*Scaler)
         if (ss->ttPv)
             r -= 2719 + PvNode * 983 + (ttData.value > alpha) * 922
                + (ttData.depth >= depth) * (934 + cutNode * 1011);
-               
-        // Shashin adjustment to reductions
-        if (MoveConfig::isAggressive && depth > 8)
-            r -= 256;  // Less reduction in aggressive positions
-        else if (MoveConfig::isStrategical && !ss->inCheck && depth > 6)
-            r += 256;  // More reduction in strategical positions
 
         r += 714;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 73;
@@ -1803,32 +1248,20 @@ moves_loop:  // When in check, search starts here
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > 1)
         {
-            const bool harePhase1Active = bool(options["HARE Enabled"]) && bool(options["HARE Phase1 Enabled"])
-                                       && depth >= int(options["HARE Depth Min"]);
-            const int hareCascadeLimit = int(options["HARE Cascade Limit"]);
+            // HARE: Horizon-Aware Reduction Engine adjustment
+            int adjustment = HARENN::GuidanceProvider::compute_reduction_adjustment(pos, depth, move, r / 1024);
+            int reducedR = std::max(0, r + adjustment * 1024);
+
             // In general we want to cap the LMR depth search at newDepth, but when
             // reduction is negative, we allow this move a limited search extension
             // beyond the first move depth.
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
-            Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+            Depth d = std::max(1, std::min(newDepth - reducedR / 1024, newDepth + 2)) + PvNode;
 
-            if (harePhase1Active)
-            {
-                const int reducedBy = int(newDepth - d);
-                if (reducedBy > 0)
-                {
-                    const int remainingBudget = std::max(0, hareCascadeLimit - parentCumReduction);
-                    const int cappedReduction = std::min(reducedBy, remainingBudget);
-                    d = std::max(1, Depth(newDepth - cappedReduction));
-                }
-            }
-
-            ss->reduction = int(newDepth - d);
-            ss->hareCumReduction = parentCumReduction + ss->reduction;
+            ss->reduction = newDepth - d;
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0;
-            ss->hareCumReduction = parentCumReduction;
 
             // Do a full-depth search when reduced LMR search fails high
             // (*Scaler) Shallower searches here don't scale well
@@ -1838,36 +1271,14 @@ moves_loop:  // When in check, search starts here
                 // good enough search deeper, if it was bad enough search shallower.
                 const bool doDeeperSearch    = d < newDepth && value > bestValue + 50;
                 const bool doShallowerSearch = value < bestValue + 9;
-                
-                // Shashin adjustment to re-search logic
-                bool useCrystalResearch = MoveConfig::isAggressive && doDeeperSearch;
-                if (useCrystalResearch && value > alpha + 150)
-                {
-                    // Crystal-style deeper research for aggressive positions
-                    Depth extDepth = newDepth + 2;
-                    ss->hareCumReduction = parentCumReduction;
-                    value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, extDepth, !cutNode);
-                }
-                else
-                {
-                    newDepth += doDeeperSearch - doShallowerSearch;
-                    if (newDepth > d)
-                    {
-                        ss->hareCumReduction = parentCumReduction;
-                        value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
-                    }
-                }
 
-                // Post LMR continuation history updates with Shashin adjustment
-                int bonus = 1365;
-                if (MoveConfig::isAggressive)
-                    bonus += 150;
-                else if (MoveConfig::isStrategical)
-                    bonus += 100;
-                else if (MoveConfig::isFortress)
-                    bonus += 200;
-                    
-                update_continuation_histories(ss, movedPiece, move.to_sq(), bonus);
+                newDepth += doDeeperSearch - doShallowerSearch;
+
+                if (newDepth > d)
+                    value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
+
+                // Post LMR continuation history updates
+                update_continuation_histories(ss, movedPiece, move.to_sq(), 1365);
             }
         }
 
@@ -1879,7 +1290,6 @@ moves_loop:  // When in check, search starts here
                 r += 1140;
 
             // Note that if expected reduction is high, we reduce search depth here
-            ss->hareCumReduction = parentCumReduction;
             value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
                                    newDepth - (r > 3957) - (r > 5654 && newDepth > 2), !cutNode);
         }
@@ -1898,7 +1308,6 @@ moves_loop:  // When in check, search starts here
                     || ttData.depth > 1))
                 newDepth = std::max(newDepth, 1);
 
-            ss->hareCumReduction = parentCumReduction;
             value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
         }
 
@@ -1989,6 +1398,9 @@ moves_loop:  // When in check, search starts here
                     break;
                 }
 
+                // Reduce other moves if we have found at least one score improvement
+                if (depth > 2 && depth < 14 && !is_decisive(value))
+                    depth -= 2;
 
                 assert(depth > 0);
                 alpha = value;  // Update alpha! Always alpha < beta
@@ -2282,6 +1694,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         value = -qsearch<nodeType>(pos, ss + 1, -beta, -alpha);
         undo_move(pos, move);
 
+        // DQRS-X: Record trajectory and check for early convergence
+        ss->trajectory.record(ss->ply, value);
+        if (ss->trajectory.should_stop(ss->ply, alpha, beta))
+            return value;
+
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
 
         // Step 8. Check for a new best move
@@ -2504,6 +1921,12 @@ void update_quiet_histories(
   const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
 
     Color us = pos.side_to_move();
+    
+    // HARENN: Boost/penalty based on move criticality
+    HARENN::EvalResult harenn = HARENN::GuidanceProvider::query(pos);
+    float criticality = harenn.moveCriticality[move.from_sq()][move.to_sq()];
+    if (criticality > 0.7f) bonus += (bonus > 0 ? 100 : -50);
+    
     workerThread.mainHistory[us][move.raw()] << bonus;  // Untuned to prevent duplicate effort
 
     if (ss->ply < LOW_PLY_HISTORY_SIZE)

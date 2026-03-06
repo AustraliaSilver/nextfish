@@ -20,6 +20,7 @@
 #include <memory>
 
 #include "bitboard.h"
+#include "harenn.h"
 #include "misc.h"
 #include "position.h"
 #include "tune.h"
@@ -32,6 +33,7 @@ int main(int argc, char* argv[]) {
 
     Bitboards::init();
     Position::init();
+    HARENN::GuidanceProvider::init();
 
     auto uci = std::make_unique<UCIEngine>(argc, argv);
 
