@@ -33,10 +33,6 @@ public:
 
     // Get adjusted SEE value with DEE principles
     static Value adjusted_see(const Position& pos, Move m);
-
-private:
-    static Value compute_structural_impact(const Position& pos, const ExchangeSequence& seq);
-    static Value compute_dynamic_impact(const Position& pos, const ExchangeSequence& seq);
 };
 
 } // namespace DEE

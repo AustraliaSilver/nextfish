@@ -23,7 +23,7 @@ from build_optimizations import (
 class StockfishBuilder:
     def __init__(self):
         self.base_dir = Path(os.environ.get("CAI_ROOT", str(Path(__file__).resolve().parent))).resolve()
-        self.src_dir = self.base_dir / "Stockfish-master" / "Stockfish-master" / "src"
+        self.src_dir = self.base_dir / "nextfish-dev" / "Stockfish-master" / "src"
         self.build_dir = self.base_dir / "builds"
         
         self.build_dir.mkdir(exist_ok=True)

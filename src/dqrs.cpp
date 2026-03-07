@@ -25,7 +25,7 @@ ESA_Result analyze_exchange(const Position& pos, Square target) {
 }
 
 void TrajectoryPredictor::record(int ply, Value v) {
-    if (ply < MAX_PLY) {
+    if (ply >= 0 && ply < MAX_PLY) {
         history[ply] = v;
         if (ply >= count) count = ply + 1;
     }
