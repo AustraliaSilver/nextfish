@@ -113,20 +113,20 @@ class Logger {
 }  // namespace
 
 
-// Returns the full name of the current Nextfish version.
+// Returns the full name of the current Stockfish version.
 //
 // For local dev compiles we try to append the commit SHA and
 // commit date from git. If that fails only the local compilation
 // date is set and "nogit" is specified:
-//      Nextfish dev-YYYYMMDD-SHA
+//      Stockfish dev-YYYYMMDD-SHA
 //      or
-//      Nextfish dev-YYYYMMDD-nogit
+//      Stockfish dev-YYYYMMDD-nogit
 //
 // For releases (non-dev builds) we only include the version number:
-//      Nextfish version
+//      Stockfish version
 std::string engine_version_info() {
     std::stringstream ss;
-    ss << "Nextfish " << version << std::setfill('0');
+    ss << "Stockfish " << version << std::setfill('0');
 
     if constexpr (version == "dev")
     {
@@ -158,7 +158,7 @@ std::string engine_version_info() {
 
 std::string engine_info(bool to_uci) {
     return engine_version_info() + (to_uci ? "\nid author " : " by ")
-         + "Nextfish Team (Shashin Theory Integration)";
+         + "the Stockfish developers (see AUTHORS file)";
 }
 
 

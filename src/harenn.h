@@ -17,7 +17,11 @@ struct EvalResult {
     float tau;               // Tactical complexity
     float horizonRisk;       // Probability of horizon effect
     float resolutionScore;   // Quietness/Resolution of position
-    float moveCriticality[64][64]; // Criticality map for move ordering
+    // moveCriticality is moved to a separate buffer to prevent stack overflow
+};
+
+struct DetailedEvalResult : public EvalResult {
+    float moveCriticality[64][64]; 
 };
 
 class Evaluator {

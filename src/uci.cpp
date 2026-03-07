@@ -164,12 +164,11 @@ void UCIEngine::loop() {
         }
         else if (token == "--help" || token == "help" || token == "--license" || token == "license")
             sync_cout
-              << "\nNextfish - A powerful chess engine with Shashin Theory integration."
-                 "\nDerived from Stockfish with advanced position classification (Tal/Capablanca/Petrosian)."
+              << "\nStockfish is a powerful chess engine for playing and analyzing."
                  "\nIt is released as free software licensed under the GNU GPLv3 License."
-                 "\nNextfish is normally used with a graphical user interface (GUI) and implements"
+                 "\nStockfish is normally used with a graphical user interface (GUI) and implements"
                  "\nthe Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc."
-                 "\nFor any further information, visit the Nextfish repository."
+                 "\nFor any further information, visit https://github.com/official-stockfish/Stockfish#readme"
                  "\nor read the corresponding README.md and Copying.txt files distributed along with this program.\n"
               << sync_endl;
         else if (!token.empty() && token[0] != '#')

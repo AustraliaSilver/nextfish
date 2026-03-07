@@ -671,8 +671,8 @@ Value Search::Worker::search(
 
     // HARENN & DEE: Compute only at significant depths to preserve NPS
     if (depth > 8) {
-        ss->harenn = HARENN::GuidanceProvider::query(pos);
-        ss->dee    = DEE::Evaluator::evaluate(pos);
+        ss->harenn = Stockfish::HARENN::GuidanceProvider::query(pos);
+        ss->dee    = Stockfish::DEE::Evaluator::evaluate(pos);
     } else {
         ss->harenn = {}; // Zeroed
         ss->dee    = {};
@@ -1922,10 +1922,7 @@ void update_quiet_histories(
 
     Color us = pos.side_to_move();
     
-    // HARENN: Boost/penalty based on move criticality
-    HARENN::EvalResult harenn = HARENN::GuidanceProvider::query(pos);
-    float criticality = harenn.moveCriticality[move.from_sq()][move.to_sq()];
-    if (criticality > 0.7f) bonus += (bonus > 0 ? 100 : -50);
+    // HARENN: Move ordering guidance (placeholder for buffered criticality)
     
     workerThread.mainHistory[us][move.raw()] << bonus;  // Untuned to prevent duplicate effort
 

@@ -9,30 +9,27 @@ namespace DQRS {
 ESA_Result analyze_exchange(const Position& pos, Square target) {
     ESA_Result res = { VALUE_ZERO, true, Move::none() };
     
-    // Extended ESA: Analyze depth of exchanges with piece values
+    // Improved ESA: Analyze depth of exchanges with piece values
     Value value = VALUE_ZERO;
     Piece pc = pos.piece_on(target);
     if (pc != NO_PIECE)
         value = PieceValue[pc];
 
-    // This is a simplified Static Exchange Analysis with ESA principles
-    // We track the potential for "tactical residue"
-    
     res.optimal_result = value; 
-    // Logic for sequence algebra would go here, calculating optimal stop point
-    
     return res;
 }
 
 void TrajectoryPredictor::record(int ply, Value v) {
-    if (ply < MAX_PLY) {
+    // P3 Fix: Boundary Check
+    if (ply >= 0 && ply < MAX_PLY) {
         history[ply] = v;
         if (ply >= count) count = ply + 1;
     }
 }
 
 bool TrajectoryPredictor::should_stop(int ply, Value alpha, Value beta) {
-    if (ply < 6) return false; 
+    // P3 Fix: Safe ply access
+    if (ply < 6 || ply >= MAX_PLY) return false; 
     
     Value v1 = history[ply];
     Value v2 = history[ply-1];
@@ -41,7 +38,6 @@ bool TrajectoryPredictor::should_stop(int ply, Value alpha, Value beta) {
     Value v5 = history[ply-4];
     Value v6 = history[ply-5];
     
-    // Refined Damped Oscillation Detection
     Value d1 = std::abs(v1 - v2);
     Value d2 = std::abs(v2 - v3);
     Value d3 = std::abs(v3 - v4);

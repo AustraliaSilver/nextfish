@@ -46,10 +46,10 @@
 #include "timeman.h"
 #include "types.h"
 
+namespace Stockfish {
+
 namespace HARENN { struct EvalResult; }
 namespace DEE { struct DEE_Result; }
-
-namespace Stockfish {
 
 // Different node types, used as a template parameter
 enum NodeType {

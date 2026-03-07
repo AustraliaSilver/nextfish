@@ -15,7 +15,7 @@ bool Evaluator::load_model(const std::string& filename) {
 }
 
 EvalResult Evaluator::evaluate(const Position& pos) const {
-    EvalResult res = { 0.0f, 0.0f, 0.0f, 0.0f, {} };
+    EvalResult res = { 0.0f, 0.0f, 0.0f, 0.0f };
     
     // Optimization: only pieces count
     Bitboard pieces = pos.pieces();

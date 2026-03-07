@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
 
     Bitboards::init();
     Position::init();
-    HARENN::GuidanceProvider::init();
+    Stockfish::HARENN::GuidanceProvider::init();
 
     auto uci = std::make_unique<UCIEngine>(argc, argv);
 
