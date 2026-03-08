@@ -1,6 +1,7 @@
 #include "harenn.h"
 #include "position.h"
 #include <algorithm>
+#include <cmath>
 
 namespace Stockfish {
 namespace HARENN {
@@ -17,15 +18,26 @@ bool Evaluator::load_model(const std::string& filename) {
 EvalResult Evaluator::evaluate(const Position& pos) const {
     EvalResult res = { 0.0f, 0.0f, 0.0f, 0.0f };
     
-    // Optimization: only pieces count
+    // HARENN v9: Fast tactical scan
     Bitboard pieces = pos.pieces();
-    while (pieces) {
-        Square s = pop_lsb(pieces);
-        res.tau += popcount(pos.attackers_to(s, ~pos.side_to_move())) * 0.05f;
+    Bitboard contested = 0;
+    Color us = pos.side_to_move();
+    Color them = ~us;
+    
+    // Check for contested pieces using attackers_to
+    Bitboard ourPieces = pos.pieces(us);
+    while (ourPieces) {
+        Square s = pop_lsb(ourPieces);
+        if (pos.attackers_to(s, them)) contested |= s;
     }
-    res.tau = std::min(0.8f, res.tau / 8.0f);
-    res.horizonRisk = res.tau * 0.6f;
-    res.resolutionScore = 1.0f - res.tau;
+    
+    int contestedCount = popcount(contested);
+    res.tau = std::min(0.95f, contestedCount * 0.12f);
+    
+    res.horizonRisk = (res.tau * 0.65f) + (popcount(pos.checkers()) * 0.35f);
+    res.horizonRisk = std::clamp(res.horizonRisk, 0.01f, 0.99f);
+    
+    res.resolutionScore = 1.0f - (res.tau * 0.75f);
 
     return res;
 }
@@ -41,23 +53,13 @@ EvalResult GuidanceProvider::query(const Position& pos) {
 }
 
 int GuidanceProvider::compute_reduction_adjustment(const Position& pos, Depth depth, Move m, int r) {
-    (void)depth;
-    (void)r;
-    EvalResult res = query(pos);
-    
-    int adjustment = 0;
-    if (res.horizonRisk > 0.8f) adjustment -= 1;
-    if (res.tau > 0.7f) adjustment -= 1;
-    
-    return std::max(-2, std::min(2, adjustment));
+    (void)pos; (void)depth; (void)m;
+    return 0; 
 }
 
 int GuidanceProvider::compute_aspiration_delta(const Position& pos, int iteration, int currentDelta) {
-    (void)iteration;
-    EvalResult res = query(pos);
-    
-    float multiplier = 1.0f + res.tau * 0.35f; // More conservative
-    return static_cast<int>(currentDelta * multiplier);
+    (void)pos; (void)iteration;
+    return currentDelta;
 }
 
 } // namespace HARENN
