@@ -123,120 +123,6 @@ Engine::Engine(std::optional<std::string> path) :
 
     options.add("UCI_ShowWDL", Option(false));
 
-    // MCTS (Monte Carlo Tree Search) options for complex positions
-    options.add("Shashin Enabled", Option(false));
-    options.add("Shashin Root White Scale", Option(100, 50, 200));
-    options.add("Shashin Root Black Scale", Option(100, 50, 200));
-    options.add("Shashin Root Capture Bonus", Option(180, 0, 400));
-    options.add("Shashin Root Check Bonus", Option(120, 0, 300));
-    options.add("Shashin Root Promotion Bonus", Option(150, 0, 300));
-    options.add("Shashin Root Castle Bonus", Option(100, -100, 250));
-    options.add("Shashin Root BadCapture Penalty", Option(140, 0, 300));
-    options.add("Shashin Root BadCheck Penalty", Option(90, 0, 250));
-    options.add("Shashin Root OppKingAttack Bonus", Option(40, 0, 200));
-    options.add("Shashin Root Black Risk Penalty", Option(0, 0, 200));
-    options.add("Shashin Root Black Capture Bonus", Option(35, -50, 100));
-    options.add("Shashin Root Quiet Bonus", Option(35, 0, 120));
-
-    options.add("MCTS Enabled", Option(false));
-    options.add("MCTS Root Node Percent", Option(9, 0, 20));
-    options.add("MCTS Root Min Depth", Option(8, 1, 32));
-    options.add("MCTS Root Min Iterations", Option(40, 1, 1000));
-    options.add("MCTS Root Max Iterations", Option(300, 10, 2000));
-    options.add("MCTS Root Nodes Per Iteration", Option(3000, 500, 20000));
-    options.add("MCTS Root Reorder TopK", Option(2, 1, 8));
-    
-    options.add("MCTS Iterations", Option(300, 100, 10000));
-    options.add("HARE Enabled", Option(false));
-    options.add("HARE Min Depth", Option(8, 4, 20));
-    options.add("HARE Window Margin", Option(24, 8, 96));
-    options.add("HARE Tactical Scale", Option(10, 0, 40));
-    options.add("HARE Quiet Bonus", Option(4, 0, 24));
-    options.add("HARE King Danger Scale", Option(10, 0, 40));
-    options.add("HARE Criticality Scale", Option(8, 0, 40));
-    options.add("HARE Horizon Risk Scale", Option(8, 0, 40));
-    options.add("HARE Check Bonus", Option(8, 0, 32));
-    options.add("HARE Cascade Budget", Option(60, 30, 90));
-    options.add("HARE Max Delta Ply", Option(2, 1, 4));
-    options.add("HARE FailLow Verify Enabled", Option(true));
-    options.add("HARE FailLow Window", Option(18, 8, 48));
-    options.add("HARE FailLow Min Reduction", Option(2, 1, 4));
-    options.add("HARE FailLow Depth Gain", Option(1, 1, 2));
-    options.add("AAW Enabled", Option(true));
-    options.add("AAW Base Delta", Option(16, 2, 64));
-    options.add("AAW Min Delta", Option(5, 2, 40));
-    options.add("AAW Max Delta", Option(80, 16, 320));
-    options.add("AAW Volatility Weight", Option(8, 0, 80));
-    options.add("AAW Stability Bonus", Option(10, 0, 40));
-    options.add("AAW Time Pressure", Option(15, 0, 60));
-    options.add("AAW Trend Asymmetry", Option(8, 0, 80));
-    options.add("AAW Expansion Bias", Option(4, 0, 80));
-    options.add("AAW Recenter Weight", Option(10, 0, 100));
-    options.add("AAW Full Window Attempt", Option(4, 2, 10));
-    options.add("AAW Max Attempts", Option(7, 3, 12));
-    options.add("AAW Directional Clamp", Option(false));
-    options.add("AAW Opposite Margin", Option(12, 4, 64));
-    options.add("AAW Defense Boost", Option(0, 0, 40));
-    options.add("AAW Confidence Weight", Option(12, 0, 80));
-    options.add("AAW Oscillation Guard", Option(2, 0, 6));
-    options.add("AAW FastPath Depth", Option(10, 6, 32));
-    options.add("AAW Adaptive Expansion", Option(true));
-    options.add("AAW Expansion Minor", Option(118, 100, 180));
-    options.add("AAW Expansion Major", Option(155, 120, 240));
-    options.add("AAW Expansion Extreme", Option(220, 150, 320));
-    options.add("AAW LowTime FullWindow", Option(105, 85, 140));
-    options.add("AAW-X Phase1 Enabled", Option(true));
-    options.add("AAW-X Target Confidence", Option(80, 60, 95));
-    options.add("AAW-X Posterior Blend", Option(35, 0, 100));
-    options.add("AAW-X Bimodal Gap", Option(34, 10, 120));
-    options.add("AAW-X Oscillation Boost", Option(10, 0, 40));
-    options.add("AAW-X ReSearch Max Reduction", Option(2, 0, 4));
-    options.add("AAW-X Phase2 Enabled", Option(true));
-    options.add("AAW-X Causal PV Divergence", Option(8, 0, 40));
-    options.add("AAW-X Causal MoveChange Boost", Option(10, 0, 50));
-    options.add("AAW-X Causal Tactical Resolve", Option(6, 0, 30));
-    options.add("AAW-X Synergy Risk Weight", Option(12, 0, 60));
-    options.add("AAW-X Synergy Stable Bonus", Option(8, 0, 40));
-    options.add("AAW-X Verify Margin", Option(6, 0, 30));
-    options.add("AAW-X Phase3 Enabled", Option(false));
-    options.add("AAW-X Phase3 Black Enabled", Option(false));
-    options.add("AAW-X Phase3 Black Scale", Option(110, 100, 180));
-    options.add("AAW-X Phase3 Black Trigger Bonus", Option(12, 0, 60));
-    options.add("AAW-X Phase3 Require StablePV", Option(false));
-    options.add("AAW-X Phase3 Eval Floor", Option(0, 0, 120));
-    options.add("AAW-X Phase3 Max Drift", Option(160, 16, 160));
-    options.add("AAW-X Phase3 RootPV Only", Option(false));
-    options.add("AAW-X Phase3 MinDepth", Option(10, 8, 28));
-    options.add("AAW-X Portfolio Medium", Option(132, 110, 260));
-    options.add("AAW-X Portfolio Wide", Option(182, 140, 340));
-    options.add("AAW-X Portfolio Trigger", Option(28, 8, 120));
-    options.add("AAW-X Portfolio DepthCut", Option(1, 0, 3));
-    options.add("AAW Black Widen", Option(2, 0, 16));
-    options.add("AAW Unstable FullWindow Attempt", Option(3, 2, 8));
-    options.add("AAW Black Conservative", Option(true));
-    options.add("AAW Black Max Attempts", Option(5, 3, 10));
-    options.add("AAW Black Recenter Cap", Option(40, 20, 70));
-    options.add("AAW Black Drift Disable", Option(40, 16, 96));
-    options.add("AAW Black Eval Disable", Option(24, 0, 200));
-    options.add("DEE-X Enabled", Option(false));
-    options.add("DEE-X Root Min Depth", Option(9, 1, 24));
-    options.add("DEE-X Root TopK", Option(2, 1, 8));
-    options.add("DEE-X Root Bonus", Option(120, 0, 600));
-    options.add("DEE-X SEE Margin", Option(64, 0, 256));
-    options.add("DEE-X Black TopK", Option(1, 1, 8));
-    options.add("DEE-X Black Risk Penalty", Option(28, 0, 120));
-    options.add("DEE-X Black Castle Bonus", Option(24, 0, 120));
-    options.add("DEE-X Min Reorder Score", Option(90, 0, 400));
-    options.add("DEE-X Tactical Weight", Option(8, 0, 24));
-    options.add("DEE-X Dynamic TopK", Option(true));
-    options.add("DEE-X Black Extra Margin", Option(20, 0, 120));
-    options.add("DEE-X Reorder PrevScore Guard", Option(30, 0, 120));
-    options.add("DEE-X Black Safe Enabled", Option(true));
-    options.add("DEE-X Black Safe MaxAbsEval", Option(80, 20, 300));
-    options.add("DEE-X Min Score Gap", Option(8, 2, 32));
-    options.add("DEE-X Black Skip Unstable PV", Option(false));
-    options.add("DEE-X Black Require SEEGood", Option(true));
-
     options.add(  //
       "SyzygyPath", Option("", [](const Option& o) {
           Tablebases::init(o);
@@ -248,6 +134,8 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Syzygy50MoveRule", Option(true));
 
     options.add("SyzygyProbeLimit", Option(7, 0, 7));
+
+    options.add("Use DEE/HARENN", Option(false));
 
     options.add(  //
       "EvalFile", Option(EvalFileDefaultNameBig, [this](const Option& o) {

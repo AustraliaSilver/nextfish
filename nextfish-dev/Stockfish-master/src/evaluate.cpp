@@ -28,6 +28,8 @@
 #include <sstream>
 #include <tuple>
 
+#include "dee.h"
+#include "harenn.h"
 #include "nnue/network.h"
 #include "nnue/nnue_misc.h"
 #include "position.h"
@@ -117,6 +119,18 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks) {
     ss << "Final evaluation       " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)";
     ss << " [with scaled NNUE, ...]";
     ss << "\n";
+
+    // HARENN and DEE Data Generation Labels
+    HARENN::EvalResult harenn = HARENN::GuidanceProvider::query(pos);
+    DEE::DEE_Result    dee    = DEE::Evaluator::evaluate(pos);
+
+    ss << "HARENN_TAU: " << harenn.tau << "\n";
+    ss << "HARENN_RHO: " << harenn.horizonRisk << "\n";
+    ss << "HARENN_RS: " << harenn.resolutionScore << "\n";
+    ss << "DEE_THREAT: " << dee.threat_value << "\n";
+    ss << "DEE_HANGING: " << dee.hanging_count << "\n";
+    ss << "DEE_TACTICAL: " << dee.is_tactical << "\n";
+    ss << "DEE_KING_SAFETY: " << dee.king_safety_delta << "\n";
 
     return ss.str();
 }

@@ -32,20 +32,27 @@
 #include <string_view>
 #include <vector>
 
+#include "dee.h"
+#include "harenn.h"
 #include "history.h"
-#include "hare.h"
 #include "misc.h"
 #include "nnue/network.h"
 #include "nnue/nnue_accumulator.h"
 #include "numa.h"
 #include "position.h"
 #include "score.h"
-#include "shashin.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
 
 namespace Stockfish {
+
+namespace HARENN {
+struct EvalResult;
+}
+namespace DEE {
+struct DEE_Result;
+}
 
 // Different node types, used as a template parameter
 enum NodeType {
@@ -78,6 +85,8 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
+    HARENN::EvalResult          harenn;
+    DEE::DEE_Result             dee;
 };
 
 
@@ -329,8 +338,6 @@ class Worker {
     TimePoint elapsed_time() const;
 
     Value evaluate(const Position&);
-    bool  see_ge_dynamic(Position& pos, Move move, int threshold, Depth depth, bool nnueEnabled) const;
-    bool  see_ge_dee(Position& pos, Move move, int threshold, Depth depth, bool nnueEnabled) const;
 
     LimitsType limits;
 
@@ -365,47 +372,6 @@ class Worker {
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;
-    
-    // Shashin position classification manager
-    std::unique_ptr<ShashinManager> shashinManager;
-
-    struct MCTSRootGuideEntry {
-        Move move = Move::none();
-        int bonus = 0;
-    };
-    struct MCTSReplyGuideEntry {
-        Move rootMove = Move::none();
-        Move replyMove = Move::none();
-        int bonus = 0;
-    };
-    struct MCTSFollowGuideEntry {
-        Move rootMove = Move::none();
-        Move replyMove = Move::none();
-        Move followMove = Move::none();
-        int bonus = 0;
-    };
-
-    std::array<MCTSRootGuideEntry, 8> mctsRootGuides{};
-    std::array<MCTSReplyGuideEntry, 16> mctsReplyGuides{};
-    std::array<MCTSFollowGuideEntry, 16> mctsFollowGuides{};
-    int mctsRootGuideCount = 0;
-    int mctsReplyGuideCount = 0;
-    int mctsFollowGuideCount = 0;
-
-    void clear_mcts_deep_guidance();
-    void update_mcts_deep_guidance(Position&                 rootPos,
-                                   const std::vector<MCTSRootStat>& rootStats,
-                                   int                       rootIterations,
-                                   int                       maxPly,
-                                   int                       topK,
-                                   int                       childIterations,
-                                   int                       baseBonus);
-    int mcts_deep_guidance_bonus(const Stack* ss, Move move) const;
-    void refresh_hare_config();
-
-    HARE::Config                    hareConfig{};
-    HARE::NullGuidanceProvider      hareNullGuidance{};
-    const HARE::GuidanceProvider*   hareGuidance = &hareNullGuidance;
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;

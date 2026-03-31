@@ -174,7 +174,6 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             int v = threatByLesser[pt] & to ? -19 : 20 * bool(threatByLesser[pt] & from);
             m.value += PieceValue[pt] * v;
 
-
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
         }
