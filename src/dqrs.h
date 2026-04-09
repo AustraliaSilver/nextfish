@@ -19,19 +19,19 @@ ESA_Result analyze_exchange(const Position& pos, Square target);
 
 // Eval Trajectory Prediction - tracks eval history in qsearch
 class TrajectoryPredictor {
-public:
-    void record(int ply, Value v);
-    bool should_stop(int ply, Value alpha, Value beta);
+   public:
+    void  record(int ply, Value v);
+    bool  should_stop(int ply, Value alpha, Value beta);
     Value predicted_convergence() const;
-    void reset();
+    void  reset();
 
-private:
-    Value history[MAX_PLY];
-    int count = 0;
+   private:
+    Value history[MAX_PLY] = {};
+    int   count            = 0;
 };
 
-} // namespace DQRS
+}  // namespace DQRS
 
-} // namespace Stockfish
+}  // namespace Stockfish
 
-#endif // DQRS_H_INCLUDED
+#endif  // DQRS_H_INCLUDED

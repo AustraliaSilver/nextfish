@@ -3,44 +3,32 @@
 
 #include "types.h"
 #include "position.h"
-#include <vector>
 
 namespace Stockfish {
 
 namespace DEE {
 
-struct ExchangeSequence {
-    std::vector<Move> moves;
-    Value material_delta;
-    Value structural_impact;
-    Value dynamic_impact;
-};
-
 struct DEE_Result {
-    Value total_score;
     Value threat_value;
-    bool  should_execute_now;
-    Move  best_exchange_move;
+    int   hanging_count;
+    bool  is_tactical;
+    Value king_safety_delta;
 };
 
 class Evaluator {
-public:
-    // Core DEE evaluation
+   public:
     static DEE_Result evaluate(const Position& pos);
-    
-    // Quick check for tactical tension
-    static bool has_tension(const Position& pos);
+    static bool       has_tension(const Position& pos);
+    static Value      adjusted_see(const Position& pos, Move m);
 
-    // Get adjusted SEE value with DEE principles
-    static Value adjusted_see(const Position& pos, Move m);
-
-private:
-    static Value compute_structural_impact(const Position& pos, const ExchangeSequence& seq);
-    static Value compute_dynamic_impact(const Position& pos, const ExchangeSequence& seq);
+   private:
+    static void
+    compute_both_attack_maps(const Position& pos, Bitboard& usAttacks, Bitboard& themAttacks);
+    static Value evaluate_king_safety(const Position& pos, Color c, Bitboard enemyAttacks);
 };
 
-} // namespace DEE
+}  // namespace DEE
 
-} // namespace Stockfish
+}  // namespace Stockfish
 
-#endif // DEE_H_INCLUDED
+#endif  // DEE_H_INCLUDED

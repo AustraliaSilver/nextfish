@@ -32,9 +32,6 @@
 #include <string_view>
 #include <vector>
 
-#include "dee.h"
-#include "dqrs.h"
-#include "harenn.h"
 #include "history.h"
 #include "misc.h"
 #include "nnue/network.h"
@@ -47,9 +44,6 @@
 #include "types.h"
 
 namespace Stockfish {
-
-namespace HARENN { struct EvalResult; }
-namespace DEE { struct DEE_Result; }
 
 // Different node types, used as a template parameter
 enum NodeType {
@@ -82,9 +76,6 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
-    DQRS::TrajectoryPredictor   trajectory;
-    HARENN::EvalResult          harenn;
-    DEE::DEE_Result             dee;
 };
 
 

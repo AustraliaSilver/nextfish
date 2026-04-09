@@ -28,8 +28,6 @@
 #include <sstream>
 #include <tuple>
 
-#include "dee.h"
-#include "harenn.h"
 #include "nnue/network.h"
 #include "nnue/nnue_misc.h"
 #include "position.h"
@@ -48,10 +46,7 @@ int Eval::simple_eval(const Position& pos) {
          - pos.non_pawn_material(~c);
 }
 
-bool Eval::use_smallnet(const Position& pos) { 
-    (void)pos;
-    return false; // Force Big Net
-}
+bool Eval::use_smallnet(const Position& pos) { return std::abs(simple_eval(pos)) > 962; }
 
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
@@ -122,16 +117,6 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks) {
     ss << "Final evaluation       " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)";
     ss << " [with scaled NNUE, ...]";
     ss << "\n";
-
-    // HARENN and DEE Data Generation Labels
-    HARENN::EvalResult harenn = HARENN::GuidanceProvider::query(pos);
-    DEE::DEE_Result dee = DEE::Evaluator::evaluate(pos);
-
-    ss << "HARENN_TAU: " << harenn.tau << "\n";
-    ss << "HARENN_RHO: " << harenn.horizonRisk << "\n";
-    ss << "HARENN_RS: " << harenn.resolutionScore << "\n";
-    ss << "DEE_SCORE: " << dee.total_score << "\n";
-    ss << "DEE_THREAT: " << dee.threat_value << "\n";
 
     return ss.str();
 }

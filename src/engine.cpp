@@ -147,6 +147,8 @@ Engine::Engine(std::optional<std::string> path) :
           return std::nullopt;
       }));
 
+    options.add("Use DEE/HARENN", Option(true));
+
     load_networks();
     resize_threads();
 }
