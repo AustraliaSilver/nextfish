@@ -1743,8 +1743,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
 Depth Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     int reductionScale = reductions[d] * reductions[mn];
-    // Slightly less reduction at high depths to preserve accuracy
-    int depthBonus = (d > 12) ? (d - 12) * 24 : 0;
+    // More conservative LMR reduction for stability at long time controls
+    int depthBonus = (d > 16) ? (d - 16) * 12 : 0;
     return std::max(0, reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182 - depthBonus);
 }
 
