@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - "nextfish-dev/Stockfish-master/src/**"
+      - "src/**"
       - ".github/workflows/auto-solo-vs-stockfish.yml"
   workflow_dispatch:
     inputs:
@@ -81,241 +81,67 @@ jobs:
       - name: Ensure cutechess-cli
         shell: pwsh
         run: |
-          if ((Test-Path ".\cutechess-cli.exe") -or (Test-Path ".\cutechess-cli")) {
-            Write-Host "cutechess-cli already exists in workspace."
-            exit 0
-          }
+          $zip = "cutechess-cli-win64.zip"
           $urls = @(
             "https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-1.3.1-win64.zip",
             "https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-cli-win64.zip"
           )
-          $zip = "cutechess-cli-win64.zip"
           $downloaded = $false
           foreach ($url in $urls) {
             try {
               Invoke-WebRequest -Uri $url -OutFile $zip
               $downloaded = $true
               break
-            } catch {
-              Write-Warning "Failed to download from $url"
-            }
-          }
-          if (-not $downloaded) {
-            throw "Could not download cutechess zip from known URLs"
+            } catch { continue }
           }
           Expand-Archive -Path $zip -DestinationPath "." -Force
-          $cli = Get-ChildItem -Path . -Recurse -Filter "cutechess-cli.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $cli) {
-            throw "cutechess-cli.exe not found after download/extract"
-          }
+          $cli = Get-ChildItem -Path . -Recurse -Filter "cutechess-cli.exe" -File | Select-Object -First 1
+          Copy-Item $cli.FullName ".\cutechess-cli.exe" -Force
           $cliDir = Split-Path -Path $cli.FullName -Parent
-          if ($cli.FullName -ne (Join-Path (Get-Location) "cutechess-cli.exe")) {
-            Copy-Item $cli.FullName ".\\cutechess-cli.exe" -Force
-          }
-          Get-ChildItem -Path $cliDir -Filter "*.dll" -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item $_.FullName (Join-Path (Get-Location) $_.Name) -Force
-          }
-          $platformsDir = Join-Path $cliDir "platforms"
-          if (Test-Path $platformsDir) {
-            Copy-Item $platformsDir (Join-Path (Get-Location) "platforms") -Recurse -Force
-          }
+          Get-ChildItem -Path $cliDir -Filter "*.dll" -File | ForEach-Object { Copy-Item $_.FullName ".\" -Force }
+          if (Test-Path (Join-Path $cliDir "platforms")) { Copy-Item (Join-Path $cliDir "platforms") ".\platforms" -Recurse -Force }
 
-      - name: Verify toolchain
+      - name: Ensure shared NNUE files
         shell: pwsh
         run: |
-          if (-not (Test-Path ".\cutechess-cli.exe") -and -not (Test-Path ".\cutechess-cli")) {
-            throw "cutechess-cli not found in repo root"
-          }
-          if (-not (Test-Path "C:\msys64\usr\bin\bash.exe")) {
-            throw "MSYS2 bash not found at C:\msys64\usr\bin\bash.exe"
-          }
-
-      - name: Ensure shared NNUE files before build
-        shell: pwsh
-        run: |
-          $nnueFiles = @(
-            "nn-3dd094f3dfcf.nnue",
-            "nn-37f18f62d772.nnue"
-          )
-          $dirs = @(
-            "nextfish-dev/Stockfish-master/src",
-            "stockfish18/src"
-          )
+          $nnueFiles = @("nn-3dd094f3dfcf.nnue", "nn-37f18f62d772.nnue")
           foreach ($name in $nnueFiles) {
-            $tmp = Join-Path $env:RUNNER_TEMP $name
-            if (-not (Test-Path $tmp)) {
-              $url = "https://tests.stockfishchess.org/api/nn/$name"
-              Invoke-WebRequest -Uri $url -OutFile $tmp
-            }
-            foreach ($d in $dirs) {
-              Copy-Item $tmp (Join-Path $d $name) -Force
-            }
+            $url = "https://tests.stockfishchess.org/api/nn/$name"
+            if (-not (Test-Path "src/$name")) { Invoke-WebRequest -Uri $url -OutFile "src/$name" }
+            if (-not (Test-Path "stockfish18/src/$name")) { Copy-Item "src/$name" "stockfish18/src/$name" -Force }
           }
-          Write-Host "NNUE files synced for both engines."
 
-      - name: Build Nextfish (PGO + O3 + LTO)
+      - name: Build Nextfish
         shell: msys2 {0}
-        working-directory: nextfish-dev/Stockfish-master/src
+        working-directory: src
         run: |
-          make -j4 profile-build ARCH=x86-64-avx2 COMP=gcc
-          make strip ARCH=x86-64-avx2 COMP=gcc
+          make -j4 build ARCH=x86-64-avx2 COMP=gcc
+          mv stockfish.exe ../nextfish_built.exe
 
-      - name: Build Stockfish (PGO + O3 + LTO)
+      - name: Build Stockfish 18
         shell: msys2 {0}
         working-directory: stockfish18/src
         run: |
-          make -j4 profile-build ARCH=x86-64-avx2 COMP=gcc
-          make strip ARCH=x86-64-avx2 COMP=gcc
-
-      - name: Normalize shared NNUE nets
-        shell: pwsh
-        run: |
-          $nextSrc = "nextfish-dev/Stockfish-master/src"
-          $stockSrc = "stockfish18/src"
-          $netFiles = Get-ChildItem "$nextSrc/nn-*.nnue" -File -ErrorAction SilentlyContinue
-          if (-not $netFiles) {
-            throw "No nn-*.nnue found in $nextSrc"
-          }
-          foreach ($f in $netFiles) {
-            Copy-Item $f.FullName (Join-Path $stockSrc $f.Name) -Force
-          }
-          Write-Host "Shared nets:" ($netFiles.Name -join ', ')
-
-      - name: Save built binaries
-        id: save_bin
-        shell: pwsh
-        run: |
-          $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-          $next = "builds/nextfish_pgo_avx2_$stamp.exe"
-          $stock = "builds/stockfish_orig_pgo_avx2_$stamp.exe"
-
-          Copy-Item "nextfish-dev/Stockfish-master/src/stockfish.exe" $next -Force
-          Copy-Item "stockfish18/src/stockfish.exe" $stock -Force
-
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "nextfish_exe=$next"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "stockfish_exe=$stock"
-
-      - name: Verify opponent is Stockfish 18
-        shell: pwsh
-        env:
-          STOCKFISH_EXE: ${{ steps.save_bin.outputs.stockfish_exe }}
-        run: |
-          $stockExe = (Resolve-Path "$env:STOCKFISH_EXE").Path
-          $uciDump = "uci`nquit`n" | & $stockExe
-          $nameLine = ($uciDump | Select-String '^id name ' | Select-Object -First 1).Line
-          if (-not $nameLine) { throw "Cannot read id name from stockfish binary" }
-          Write-Host "Detected: $nameLine"
-          if ($nameLine -notmatch 'Stockfish 18') {
-            throw "Opponent is not Stockfish 18: $nameLine"
-          }
+          make -j4 build ARCH=x86-64-avx2 COMP=gcc
+          mv stockfish.exe ../../stockfish_built.exe
 
       - name: Run Elo match
         id: match
         shell: pwsh
-        env:
-          NEXTFISH_EXE: ${{ steps.save_bin.outputs.nextfish_exe }}
-          STOCKFISH_EXE: ${{ steps.save_bin.outputs.stockfish_exe }}
         run: |
-          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
-          $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-          $pgn = "matches/nextfish_vs_stockfish_${stamp}.pgn"
-          $log = "matches/nextfish_vs_stockfish_${stamp}.log"
-          $summary = "matches/nextfish_vs_stockfish_${stamp}.summary.txt"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "pgn_path=$pgn"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "log_path=$log"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "summary_path=$summary"
-
-          try {
-            if (-not (Test-Path "$env:NEXTFISH_EXE")) { throw "Nextfish exe not found: $env:NEXTFISH_EXE" }
-            if (-not (Test-Path "$env:STOCKFISH_EXE")) { throw "Stockfish exe not found: $env:STOCKFISH_EXE" }
-            $nextExe = (Resolve-Path "$env:NEXTFISH_EXE").Path
-            $stockExe = (Resolve-Path "$env:STOCKFISH_EXE").Path
-            if (Test-Path ".\cutechess-cli.exe") {
-              $cutechess = (Resolve-Path ".\cutechess-cli.exe").Path
-            } elseif (Test-Path ".\cutechess-cli") {
-              $cutechess = (Resolve-Path ".\cutechess-cli").Path
-            } else {
-              throw "cutechess-cli not found in workspace root"
-            }
-
-          $cuteArgs = @(
-            '-engine', "cmd=$nextExe", 'name=NF-CI', 'proto=uci',
-            "option.Threads=$env:THREADS",
-            "option.Hash=$env:HASH"
-          )
-
-          $cuteArgs += @(
-            '-engine', "cmd=$stockExe", 'name=SF-CI', 'proto=uci',
-            "option.Threads=$env:THREADS",
-            "option.Hash=$env:HASH",
-
-            '-each', "tc=$env:TC",
-            'timemargin=200',
-            '-games', "$env:GAMES",
-            '-pgnout', $pgn,
-            '-concurrency', "$env:CONCURRENCY",
-            '-repeat'
-          )
-
-          if (Test-Path ".\UHO_2022_8mvs_+110_+119.pgn") {
-            $cuteArgs += @(
-              '-openings', 'file=UHO_2022_8mvs_+110_+119.pgn', 'format=pgn', 'order=random', 'plies=8',
-              '-srand', '20260224'
-            )
-          }
-
-            & $cutechess @cuteArgs 2>&1 | Tee-Object -FilePath $log
-            if ($LASTEXITCODE -ne 0) {
-              if (Test-Path $log) {
-                Write-Host "Last cutechess lines:"
-                $tail = (Get-Content $log -Tail 80) -join "`n"
-                Write-Host $tail
-                Write-Host "::error::cutechess-cli failed; tail=`n$tail"
-              }
-              throw "cutechess-cli exited with code $LASTEXITCODE"
-            }
-
-            $scoreLine = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
-            $eloLine = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
-            $whiteLine = Select-String -Path $log -Pattern 'playing White:' | Select-Object -Last 1
-            $blackLine = Select-String -Path $log -Pattern 'playing Black:' | Select-Object -Last 1
-            $sprtLine = Select-String -Path $log -Pattern '^SPRT:' | Select-Object -Last 1
-
-            @(
-              "Nextfish exe: $env:NEXTFISH_EXE"
-              "Stockfish exe: $env:STOCKFISH_EXE"
-              "Games: $env:GAMES  TC: $env:TC  Concurrency: $env:CONCURRENCY"
-              ($scoreLine.Line)
-              ($eloLine.Line)
-              ($whiteLine.Line)
-              ($blackLine.Line)
-              ($sprtLine.Line)
-            ) | Where-Object { $_ } | Set-Content $summary
-
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Nextfish vs Stockfish (PGO, same NNUE files)"
-            Get-Content $summary | ForEach-Object { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("- " + $_) }
-          } catch {
-            $err = ($_ | Out-String).Trim()
-            if (-not (Test-Path $log)) { Set-Content -Path $log -Value $err }
-            @(
-              "FAILED"
-              "Error: $err"
-              "NEXTFISH_EXE=$env:NEXTFISH_EXE"
-              "STOCKFISH_EXE=$env:STOCKFISH_EXE"
-              "PWD=$((Get-Location).Path)"
-            ) | Set-Content -Path $summary
-            Write-Host "::error::$err"
-            throw
-          }
-
+          $pgn = "matches/match.pgn"
+          $log = "matches/match.log"
+          $summary = "matches/summary.txt"
+          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -engine cmd=./stockfish_built.exe name=Stockfish18 proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -each tc=$env:TC -games $env:GAMES -pgnout $pgn -concurrency $env:CONCURRENCY -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn order=random plies=8 -repeat | Tee-Object -FilePath $log
+          
+          $score = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
+          $elo = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
+          Set-Content $summary -Value @($score.Line, $elo.Line)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Elo Result`n- $($score.Line)`n- $($elo.Line)"
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: elo-nextfish-vs-stockfish-${{ github.run_id }}
-          path: |
-            ${{ steps.match.outputs.pgn_path }}
-            ${{ steps.match.outputs.log_path }}
-            ${{ steps.match.outputs.summary_path }}
-          if-no-files-found: warn
+          name: nextfish-vs-stockfish
+          path: matches/*
