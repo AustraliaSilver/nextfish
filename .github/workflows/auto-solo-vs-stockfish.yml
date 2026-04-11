@@ -104,7 +104,7 @@ jobs:
       - name: Ensure shared NNUE files
         shell: pwsh
         run: |
-          $nnueFiles = @("nn-3dd094f3dfcf.nnue", "nn-37f18f62d772.nnue")
+          $nnueFiles = @("nn-c288c895ea92.nnue", "nn-37f18f62d772.nnue")
           foreach ($name in $nnueFiles) {
             $url = "https://tests.stockfishchess.org/api/nn/$name"
             if (-not (Test-Path "src/$name")) { Invoke-WebRequest -Uri $url -OutFile "src/$name" }
@@ -115,14 +115,14 @@ jobs:
         shell: msys2 {0}
         working-directory: src
         run: |
-          make -j4 build ARCH=x86-64-avx2 COMP=gcc
+          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT
           mv stockfish.exe ../nextfish_built.exe
 
       - name: Build Stockfish 18
         shell: msys2 {0}
         working-directory: stockfish18/src
         run: |
-          make -j4 build ARCH=x86-64-avx2 COMP=gcc
+          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT
           mv stockfish.exe ../../stockfish_built.exe
 
       - name: Run Elo match

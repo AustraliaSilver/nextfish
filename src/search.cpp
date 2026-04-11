@@ -547,7 +547,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY) return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
     posKey = pos.key(); auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
     ss->ttHit = ttHit; ttData.move = ttHit ? ttData.move : Move::none(); ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE; pvHit = ttHit && ttData.is_pv;
-    if (!PvNode && ttData.depth >= DEPTH_QS, is_valid(ttData.value) && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))) return ttData.value;
+    if (!PvNode && ttData.depth >= DEPTH_QS && is_valid(ttData.value) && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))) return ttData.value;
     Value unadjustedStaticEval = VALUE_NONE;
     if (ss->inCheck) bestValue = futilityBase = -VALUE_INFINITE;
     else {
