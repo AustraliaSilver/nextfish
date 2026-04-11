@@ -61,6 +61,7 @@ struct StateInfo {
     Bitboard   checkSquares[PIECE_TYPE_NB];
     Piece      capturedPiece;
     int        repetition;
+    int        tension;
 };
 
 

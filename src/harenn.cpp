@@ -1,94 +1,49 @@
 #include "harenn.h"
 #include "position.h"
 #include "bitboard.h"
+#include "dee.h"
+#include "dee_cache.h"
 #include <algorithm>
 
 namespace Stockfish {
 namespace HARENN {
 
-Evaluator::Evaluator() :
-    modelLoaded(false) {}
-Evaluator::~Evaluator() {}
-
-bool Evaluator::load_model(const std::string& filename) {
-    (void) filename;
-    modelLoaded = true;
-    return true;
-}
-
-EvalResult Evaluator::evaluate(const Position& pos) const {
-    EvalResult res = {0.0f, 0.0f, 0.0f, 0.0f};
-
-    Color    us  = pos.side_to_move();
-    Bitboard occ = pos.pieces();
-
-    int      attacks = 0;
-    Bitboard tmp     = pos.pieces(us);
-    while (tmp)
-    {
-        Square s = pop_lsb(tmp);
-        if (pos.attackers_to(s, occ) & pos.pieces(~us))
-            attacks++;
-    }
-    tmp = pos.pieces(~us);
-    while (tmp)
-    {
-        Square s = pop_lsb(tmp);
-        if (pos.attackers_to(s, occ) & pos.pieces(us))
-            attacks++;
-    }
-
-    // Conservative tau: only meaningful at higher attack counts
-    res.tau             = std::min(0.95f, attacks * 0.10f + (attacks >= 5 ? 0.10f : 0.0f));
-    res.horizonRisk     = popcount(pos.checkers()) * 0.35f + res.tau * 0.45f;
-    res.resolutionScore = 1.0f - res.tau * 0.65f - (attacks > 7 ? 0.10f : 0.0f);
-
-    int      materialDiff = 0;
-    Bitboard ourPieces    = pos.pieces(us);
-    Bitboard theirPieces  = pos.pieces(~us);
-    Bitboard ourTmp       = ourPieces;
-    while (ourTmp)
-    {
-        Square s     = pop_lsb(ourTmp);
-        Piece  piece = pos.piece_on(s);
-        materialDiff += PieceValue[piece];
-    }
-    Bitboard theirTmp = theirPieces;
-    while (theirTmp)
-    {
-        Square s     = pop_lsb(theirTmp);
-        Piece  piece = pos.piece_on(s);
-        materialDiff -= PieceValue[piece];
-    }
-    res.eval = static_cast<float>(materialDiff);
-
-    return res;
-}
-
-static Evaluator globalEvaluator;
-
-void GuidanceProvider::init() { globalEvaluator.load_model("harenn.model"); }
-
-EvalResult GuidanceProvider::query(const Position& pos) { return globalEvaluator.evaluate(pos); }
-
 int GuidanceProvider::compute_reduction_adjustment(const Position& pos,
-                                                   Depth           depth,
-                                                   Move            m,
-                                                   int             r) {
-    (void) pos;
+                                               Depth           depth,
+                                               Move            m,
+                                               int             currentR) {
     (void) depth;
-    (void) m;
-    (void) r;
+    (void) currentR;
+
+    if (!m) return 0;
+
+    Color us = pos.side_to_move();
+    Square enemyKing = pos.square<KING>(~us);
+    Square to = m.to_sq();
+
+    // Protect moves that land near the enemy king
+    int dist = std::max(std::abs(file_of(to) - file_of(enemyKing)), 
+                        std::abs(rank_of(to) - rank_of(enemyKing)));
+
+    if (dist <= 2)
+        return -128; // Small reduction decrease for king-proximity moves
+
     return 0;
 }
 
 int GuidanceProvider::compute_aspiration_delta(const Position& pos,
                                                int             iteration,
                                                int             currentDelta) {
-    (void) pos;
-    (void) iteration;
+    // In high tension positions, broaden the aspiration window to avoid costly re-searches.
+    // This is effective for maintaining stability in tactical chaos.
+    if (iteration < 6) return currentDelta;
+
+    int tension = DEE::get_tension(pos);
+    if (tension > 50)
+        return currentDelta + (tension / 4);
+
     return currentDelta;
 }
 
-}  // namespace HARENN
-}  // namespace Stockfish
+} // namespace HARENN
+} // namespace Stockfish
