@@ -30,7 +30,26 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
     return VALUE_ZERO;
 }
 
-int Evaluator::tension_score(const Position& pos) { (void)pos; return 0; }
+int Evaluator::tension_score(const Position& pos) {
+    Bitboard usAttacks = pos.attacks_by<PAWN>(WHITE) | pos.attacks_by<KNIGHT>(WHITE) |
+                         pos.attacks_by<BISHOP>(WHITE) | pos.attacks_by<ROOK>(WHITE) |
+                         pos.attacks_by<QUEEN>(WHITE) | pos.attacks_by<KING>(WHITE);
+
+    Bitboard themAttacks = pos.attacks_by<PAWN>(BLACK) | pos.attacks_by<KNIGHT>(BLACK) |
+                           pos.attacks_by<BISHOP>(BLACK) | pos.attacks_by<ROOK>(BLACK) |
+                           pos.attacks_by<QUEEN>(BLACK) | pos.attacks_by<KING>(BLACK);
+
+    Bitboard contested = usAttacks & themAttacks & pos.pieces();
+    int score = 0;
+
+    while (contested) {
+        Square sq = pop_lsb(contested);
+        Piece pc = pos.piece_on(sq);
+        score += int(PieceValue[pc]) / 100;
+    }
+
+    return score;
+}
 void Evaluator::compute_both_attack_maps(const Position& pos, Bitboard& us, Bitboard& them) {
     (void)pos; (void)us; (void)them;
 }
