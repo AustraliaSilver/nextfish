@@ -256,7 +256,6 @@ void Search::Worker::iterative_deepening() {
                 else if (bestValue >= beta) { alpha = std::max(beta - delta, alpha); beta = std::min(bestValue + delta, VALUE_INFINITE); ++failedHighCnt; }
                 else break;
                 delta += delta / 3;
-                if (options["Use DEE/HARENN"]) delta = HARENN::GuidanceProvider::compute_aspiration_delta(rootPos, iterIdx, delta);
             }
             std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
             if (mainThread && (threads.stop || pvIdx + 1 == multiPV || nodes > 10000000) && !(threads.abortedSearch && is_loss(rootMoves[0].uciScore)))
@@ -441,7 +440,6 @@ moves_loop:
         if (PvNode) (ss + 1)->pv = nullptr;
         extension = 0; capture = pos.capture_stage(move); movedPiece = pos.moved_piece(move); givesCheck = pos.gives_check(move);
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
-        if (options["Use DEE/HARENN"]) r += HARENN::GuidanceProvider::compute_reduction_adjustment(pos, depth, move, r);
         if (ss->ttPv) r += 946;
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue)) {
             if (moveCount >= (3 + depth * depth) / (2 - improving)) mp.skip_quiet_moves();
