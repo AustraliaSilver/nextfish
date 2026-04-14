@@ -160,11 +160,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                     + 7 * int(PieceValue[capturedPiece]);
 
             // DEE Micro-Ordering: Subtle tie-breaker for captures
-            if (useDeeCaptureOrdering && depth >= 6)
+            if (useDeeCaptureOrdering && depth >= 4)
             {
                 const int dee = int(DEE::Evaluator::adjusted_see(pos, m));
                 if (dee > 0)
-                    m.value += std::min(40, dee); // V17 stable weight
+                    m.value += std::min(50, dee); // Tuned for higher aggression
             }
         }
 
