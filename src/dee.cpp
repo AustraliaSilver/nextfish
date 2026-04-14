@@ -25,7 +25,7 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
     int theirAtt = popcount(attackers & pos.pieces(~us));
     
     if (ourAtt > theirAtt)
-        return Value(ourAtt * 10);
+        return Value((ourAtt - theirAtt) * 15 + ourAtt * 5);
 
     return VALUE_ZERO;
 }

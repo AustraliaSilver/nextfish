@@ -22,8 +22,8 @@
         "enabled": false
     },
     "opening": {
-        "file": "UHO_2022_8mvs_+110_+119.pgn",
-        "format": 1,
+        "file": "nextfish-harenn/openings.epd",
+        "format": 0,
         "order": 0,
         "plies": -1,
         "start": 1
@@ -34,6 +34,7 @@
         "site": "?",
         "file": "",
         "notation": 0,
+        "append_file": true,
         "track_nodes": false,
         "track_seldepth": false,
         "track_nps": false,
@@ -46,7 +47,8 @@
         "crc": false
     },
     "epd": {
-        "file": ""
+        "file": "",
+        "append_file": true
     },
     "sprt": {
         "alpha": 0.0,
@@ -58,7 +60,7 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 7625988445568403618,
+    "seed": 4251542380699664872,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -67,8 +69,8 @@
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 10,
-    "concurrency": 2,
+    "rounds": 40,
+    "concurrency": 4,
     "force_concurrency": false,
     "recover": false,
     "noswap": false,
@@ -79,6 +81,7 @@
     "log": {
         "file": "",
         "level": 2,
+        "append_file": true,
         "compress": false,
         "realtime": true,
         "engine_coms": false
@@ -87,15 +90,15 @@
         {
             "name": "Nextfish",
             "dir": "",
-            "cmd": "./src/nextfish",
+            "cmd": "nextfish.exe",
             "args": "",
             "restart": false,
             "options": [],
             "limit": {
                 "tc": {
-                    "increment": 100,
+                    "increment": 10,
                     "fixed_time": 0,
-                    "time": 10000,
+                    "time": 1000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -107,15 +110,15 @@
         {
             "name": "Baseline",
             "dir": "",
-            "cmd": "./stockfish_baseline",
+            "cmd": "_c2e3d37_baseline.exe",
             "args": "",
             "restart": false,
             "options": [],
             "limit": {
                 "tc": {
-                    "increment": 100,
+                    "increment": 10,
                     "fixed_time": 0,
-                    "time": 10000,
+                    "time": 1000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -126,27 +129,16 @@
         }
     ],
     "stats": {
-        "Baseline vs Nextfish": {
-            "wins": 13,
-            "losses": 0,
-            "draws": 5,
-            "penta_WW": 4,
-            "penta_WD": 5,
-            "penta_WL": 0,
-            "penta_DD": 0,
-            "penta_LD": 0,
-            "penta_LL": 0
-        },
         "Nextfish vs Baseline": {
-            "wins": 0,
-            "losses": 1,
-            "draws": 1,
-            "penta_WW": 0,
-            "penta_WD": 0,
-            "penta_WL": 0,
+            "wins": 32,
+            "losses": 30,
+            "draws": 18,
+            "penta_WW": 2,
+            "penta_WD": 9,
+            "penta_WL": 19,
             "penta_DD": 0,
-            "penta_LD": 1,
-            "penta_LL": 0
+            "penta_LD": 9,
+            "penta_LL": 1
         }
     }
 }
