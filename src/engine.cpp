@@ -150,9 +150,9 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Use DEE/HARENN", Option(true));
     options.add("Use DEE Capture Ordering", Option(true));
     options.add("Use DEE Capture Pruning", Option(false));
-    options.add("Use DEE Capture LMR", Option(false));
-    options.add("Use HARE Aspiration", Option(false));
-    options.add("Use HARE Reduction", Option(false));
+    options.add("Use DEE Capture LMR", Option(true));
+    options.add("Use HARE Aspiration", Option(true));
+    options.add("Use HARE Reduction", Option(true));
     options.add("Use HARE FailLow Verify", Option(false));
     load_networks();
     resize_threads();

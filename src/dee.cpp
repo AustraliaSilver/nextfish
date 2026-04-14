@@ -30,9 +30,35 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
     return VALUE_ZERO;
 }
 
-int Evaluator::tension_score(const Position& pos) { (void)pos; return 0; }
+int Evaluator::tension_score(const Position& pos) {
+    Bitboard wAtt = 0, bAtt = 0;
+    compute_both_attack_maps(pos, wAtt, bAtt);
+
+    // Contested squares (both sides attack). Count occupied ones higher.
+    const Bitboard contested = wAtt & bAtt;
+    const int score          = popcount(contested) + 2 * popcount(contested & pos.pieces());
+
+    return std::clamp(score, 0, 100);
+}
 void Evaluator::compute_both_attack_maps(const Position& pos, Bitboard& us, Bitboard& them) {
-    (void)pos; (void)us; (void)them;
+    Bitboard w = 0, b = 0;
+
+    w |= pos.attacks_by<PAWN>(WHITE);
+    w |= pos.attacks_by<KNIGHT>(WHITE);
+    w |= pos.attacks_by<BISHOP>(WHITE);
+    w |= pos.attacks_by<ROOK>(WHITE);
+    w |= pos.attacks_by<QUEEN>(WHITE);
+    w |= pos.attacks_by<KING>(WHITE);
+
+    b |= pos.attacks_by<PAWN>(BLACK);
+    b |= pos.attacks_by<KNIGHT>(BLACK);
+    b |= pos.attacks_by<BISHOP>(BLACK);
+    b |= pos.attacks_by<ROOK>(BLACK);
+    b |= pos.attacks_by<QUEEN>(BLACK);
+    b |= pos.attacks_by<KING>(BLACK);
+
+    us   = w;
+    them = b;
 }
 
 } // namespace DEE

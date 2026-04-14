@@ -239,6 +239,8 @@ void Search::Worker::iterative_deepening() {
             }
             selDepth = 0;
             delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            if (options["Use DEE/HARENN"] && options["Use HARE Aspiration"])
+                delta = HARENN::GuidanceProvider::compute_aspiration_delta(rootPos, int(rootDepth), delta);
             Value avg = rootMoves[pvIdx].averageScore;
             alpha = std::max(avg - delta, -VALUE_INFINITE); beta = std::min(avg + delta, VALUE_INFINITE);
             int contempt = 12; int optimismBase = 142 * avg / (std::abs(avg) + 91);
@@ -449,6 +451,10 @@ moves_loop:
                 if (!givesCheck && lmrDepth < 7) { Value futilityValue = ss->staticEval + 232 + 217 * lmrDepth + PieceValue[capturedPiece] + 131 * captHist / 1024; if (futilityValue <= alpha) continue; }
                 int margin = std::max(166 * depth + captHist / 29, 0);
                 if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece]) && !pos.see_ge(move, -margin)) continue;
+
+                // DEE capture LMR: search a bit deeper when exchange looks tactically favorable.
+                if (capture && options["Use DEE/HARENN"] && options["Use DEE Capture LMR"] && int(DEE::Evaluator::adjusted_see(pos, move)) > 0)
+                    r = std::max(0, r - 512);  // Reclaim 0.5 ply
             } else {
                 int history = (*contHist[0])[movedPiece][move.to_sq()] + (*contHist[1])[movedPiece][move.to_sq()] + sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()];
                 if (history < -4083 * depth) continue;
@@ -458,6 +464,9 @@ moves_loop:
                 lmrDepth = std::max(lmrDepth, 0); if (!pos.see_ge(move, -25 * lmrDepth * lmrDepth)) continue;
             }
         }
+
+        if (options["Use DEE/HARENN"] && options["Use HARE Reduction"] && !rootNode)
+            r = std::max(0, r + HARENN::GuidanceProvider::compute_reduction_adjustment(pos, depth, move, r));
         if (!rootNode && move == ttData.move && !excludedMove && depth >= 6 + ss->ttPv && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos)) {
             Value singularBeta = ttData.value - (53 + 75 * (ss->ttPv && !PvNode)) * depth / 60; Depth singularDepth = newDepth / 2;
             ss->excludedMove = move; value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode); ss->excludedMove = Move::none();
