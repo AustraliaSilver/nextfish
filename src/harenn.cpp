@@ -4,153 +4,110 @@
 #include "dee.h"
 #include <algorithm>
 #include <fstream>
-#include <cmath>
-#include <cstring>
 #include <iostream>
+#include <cmath>
+#include <vector>
 
 namespace Stockfish {
+
 namespace HARENN {
 
 namespace {
-    struct CacheEntry {
-        Key key = 0;
-        EvalResult res;
-    };
-    thread_local CacheEntry threadCache;
-
-    // Use 512 to be safe, though model is 256
-    thread_local int32_t h1_buffer[512];
-
-    constexpr int32_t SCALE_W = 128;
-    constexpr int32_t SCALE_OUT = 128 * 128;
+    float sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
 }
 
-Evaluator GuidanceProvider::evaluator;
-
-Evaluator::Evaluator() : modelLoaded(false) {}
-Evaluator::~Evaluator() {}
-
-bool Evaluator::load_model(const std::string& filename) {
+bool Network::load(const std::string& filename) {
     std::ifstream f(filename, std::ios::binary);
-    if (!f) {
-        std::cerr << "info string HARENN: Failed to open model file " << filename << std::endl;
-        return false;
-    }
+    if (!f) return false;
 
     char magic[4];
     f.read(magic, 4);
-    if (std::memcmp(magic, "HNN4", 4) != 0) {
-        std::cerr << "info string HARENN: Invalid magic in " << filename << std::endl;
-        return false;
-    }
+    if (std::string(magic, 4) != "HNN4") return false;
 
     f.read((char*)&eval_mean, 4);
     f.read((char*)&eval_std, 4);
 
-    auto load_layer = [&](Layer& l) {
-        f.read((char*)&l.rows, 4);
-        f.read((char*)&l.cols, 4);
-        l.weights.resize(l.rows * l.cols);
-        l.bias.resize(l.rows);
-        f.read((char*)l.weights.data(), l.weights.size() * 2);
-        f.read((char*)l.bias.data(), l.bias.size() * 4);
+    auto load_layer = [&](Layer& layer) {
+        f.read((char*)&layer.rows, 4);
+        f.read((char*)&layer.cols, 4);
+        int size = layer.rows * layer.cols;
+        layer.weights.resize(size);
+        f.read((char*)layer.weights.data(), size * 2);
+        layer.bias.resize(layer.cols);
+        f.read((char*)layer.bias.data(), layer.cols * 4);
     };
 
     load_layer(fc1);
     load_layer(eval_head);
     load_layer(tau_head);
+    load_layer(rho_head);
+    load_layer(rs_head);
 
-    modelLoaded = true;
-    std::cerr << "info string HARENN: Model loaded successfully (" 
-              << fc1.rows << "x" << fc1.cols << ")" << std::endl;
     return true;
 }
 
-void Evaluator::input_layer_sparse_simd(const int* active_features, int count, const Layer& layer, int32_t* output) const {
-    const int in_features = layer.rows; // 768 (transposed)
-    const int out_features = layer.cols; // 256
-    const int16_t* weights = layer.weights.data();
-    const int32_t* bias = layer.bias.data();
+EvalResult Network::forward(const int* active_features, int count) const {
+    // 1. Input Layer (Sparse Sequential Access)
+    const int out_features = fc1.cols; // 256
+    static thread_local std::vector<int32_t> h1(256);
+    std::fill(h1.begin(), h1.end(), 0);
 
-    // 1. Init with bias
-    std::memcpy(output, bias, out_features * sizeof(int32_t));
-
-    // 2. Add active features
-    for (int k = 0; k < count; ++k) {
-        int feat_idx = active_features[k];
-        if (feat_idx >= in_features) continue;
-
-        const int16_t* feat_weights = &weights[feat_idx * out_features];
-        for (int i = 0; i < out_features; ++i) {
-            output[i] += feat_weights[i];
-        }
-    }
-    
-    // 3. ReLU
-    for (int i = 0; i < out_features; ++i) {
-        output[i] = std::max(0, output[i]);
-    }
-}
-
-void Evaluator::compute_layer_simd(const int32_t* input, const Layer& layer, int32_t* output) const {
-    const int in_features = layer.cols;
-    const int16_t* weights = layer.weights.data();
-
-    int64_t sum = layer.bias[0];
-    for (int j = 0; j < in_features; ++j) {
-        sum += (int64_t)input[j] * weights[j];
-    }
-    output[0] = (int32_t)(sum / SCALE_W);
-}
-
-EvalResult Evaluator::evaluate(const Position& pos) const {
-    if (!modelLoaded) return {0.0f, 0.5f, 0.0f, 0.0f};
-
-    int active_features[64]; // Increased size to prevent overflow
-    int count = 0;
-    for (Color c : {WHITE, BLACK}) {
-        for (PieceType pt = PAWN; pt <= KING; ++pt) {
-            Bitboard b = pos.pieces(c, pt);
-            int piece_offset = (c == WHITE ? 0 : 6) + (pt - 1);
-            while (b) {
-                active_features[count++] = pop_lsb(b) * 12 + piece_offset;
-            }
+    for (int i = 0; i < count; ++i) {
+        const int feat_idx = active_features[i];
+        const int16_t* feat_weights = &fc1.weights[feat_idx * out_features];
+        for (int j = 0; j < out_features; ++j) {
+            h1[j] += feat_weights[j];
         }
     }
 
-    int32_t out_e, out_t;
-    input_layer_sparse_simd(active_features, count, fc1, h1_buffer);
-    compute_layer_simd(h1_buffer, eval_head, &out_e);
-    compute_layer_simd(h1_buffer, tau_head, &out_t);
+    // 2. Bias + ReLU
+    for (int j = 0; j < out_features; ++j) {
+        h1[j] = std::max(0, h1[j] + fc1.bias[j]);
+    }
 
-    float final_eval = (float)out_e / (float)SCALE_OUT;
-    float final_tau = 1.0f / (1.0f + std::exp(-(float)out_t / (float)SCALE_OUT));
+    // 3. Multi-Head Output
+    auto run_head = [&](const Layer& head) {
+        int64_t sum = head.bias[0];
+        for (int j = 0; j < out_features; ++j) {
+            sum += (int64_t)h1[j] * head.weights[j];
+        }
+        return (float)sum / (128.0f * 128.0f);
+    };
 
-    return { final_eval * eval_std + eval_mean, final_tau, 0.0f, 0.0f };
+    EvalResult res;
+    res.eval = run_head(eval_head) * eval_std + eval_mean;
+    res.tau  = sigmoid(run_head(tau_head));
+    res.rho  = sigmoid(run_head(rho_head));
+    res.rs   = sigmoid(run_head(rs_head));
+
+    return res;
 }
+
+static Network global_net;
 
 void GuidanceProvider::init() {
-    evaluator.load_model("nextfish.harenn");
+    if (global_net.load("nextfish.harenn")) {
+        sync_cout << "info string HARENN: Full 4-Head Model loaded successfully" << sync_endl;
+    } else {
+        sync_cout << "info string HARENN: Failed to load model. Check nextfish.harenn path" << sync_endl;
+    }
 }
 
 EvalResult GuidanceProvider::query(const Position& pos) {
-    if (pos.key() == threadCache.key)
-        return threadCache.res;
-
-    threadCache.res = evaluator.evaluate(pos);
-    threadCache.key = pos.key();
-    return threadCache.res;
-}
-
-int GuidanceProvider::compute_reduction_adjustment(const Position& pos, Depth d, Move m, int r) {
-    (void)pos; (void)d; (void)m;
-    return r; 
-}
-
-int GuidanceProvider::compute_aspiration_delta(const Position& pos, int iter, int delta) {
-    (void)pos; (void)iter;
-    return delta;
+    int active_features[64];
+    int count = 0;
+    
+    // Convert board to indices (Sparse 768 representation)
+    for (Square sq = SQ_A1; sq <= SQ_H8; ++sq) {
+        Piece pc = pos.piece_on(sq);
+        if (pc != NO_PIECE) {
+            active_features[count++] = (int)sq * 12 + (int)pc - 1;
+        }
+    }
+    
+    return global_net.forward(active_features, count);
 }
 
 } // namespace HARENN
+
 } // namespace Stockfish

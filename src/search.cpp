@@ -1,21 +1,3 @@
-/*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
-
-  Stockfish is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  Stockfish is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 #include "search.h"
 
 #include <algorithm>
@@ -51,6 +33,7 @@
 #include "ucioption.h"
 #include "dee.h"
 #include "harenn.h"
+#include "harenn_ctrl.h"
 
 namespace Stockfish {
 
@@ -130,7 +113,8 @@ void update_all_stats(const Position& pos,
                       SearchedList&   capturesSearched,
                       Depth           depth,
                       Move            TTMove,
-                      int             moveCount);
+                      int             moveCount,
+                      bool            useHarenn);
 
 bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
     if (pos.capture_stage(move) || pos.rule50_count() < 10)
@@ -517,7 +501,7 @@ moves_loop:
     if (bestValue >= beta && !is_decisive(bestValue) && !is_decisive(alpha)) bestValue = (bestValue * depth + beta) / (depth + 1);
     if (!moveCount) bestValue = excludedMove ? alpha : ss->inCheck ? mated_in(ss->ply) : VALUE_DRAW;
     else if (bestMove) {
-        update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth, ttData.move, moveCount);
+        update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth, ttData.move, moveCount, options["Use DEE/HARENN"]);
         if (!PvNode) ttMoveHistory << (bestMove == ttData.move ? 809 : -865);
     } else if (!priorCapture && prevSq != SQ_NONE) {
         int bonusScale = -215; bonusScale -= (ss - 1)->statScore / 100; bonusScale += std::min(56 * depth, 489); bonusScale += 184 * ((ss - 1)->moveCount > 8); bonusScale += 147 * (!ss->inCheck && bestValue <= ss->staticEval - 107); bonusScale += 156 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 65);
@@ -577,12 +561,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     }
     if (ss->inCheck && bestValue == -VALUE_INFINITE) return mated_in(ss->ply);
     if (!is_decisive(bestValue) && bestValue > beta) bestValue = (bestValue + beta) / 2;
-    Color us = pos.side_to_move();
-    if (!ss->inCheck && !moveCount && !pos.non_pawn_material(us) && type_of(pos.captured_piece()) >= ROOK) {
-        if (!((us == WHITE ? shift<NORTH>(pos.pieces(us, PAWN)) : shift<SOUTH>(pos.pieces(us, PAWN))) & ~pos.pieces())) {
-            pos.state()->checkersBB = Rank1BB; if (!MoveList<LEGAL>(pos).size()) bestValue = VALUE_DRAW; pos.state()->checkersBB = 0;
-        }
-    }
     ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit, bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove, unadjustedStaticEval, tt.generation());
     return bestValue;
 }
@@ -609,10 +587,17 @@ Value value_from_tt(Value v, int ply, int r50c) {
     return v;
 }
 void update_pv(Move* pv, Move move, const Move* childPv) { for (*pv++ = move; childPv && *childPv != Move::none();) *pv++ = *childPv++; *pv = Move::none(); }
-void update_all_stats(const Position& pos, Stack* ss, Search::Worker& workerThread, Move bestMove, Square prevSq, SearchedList& quietsSearched, SearchedList& capturesSearched, Depth depth, Move ttMove, int moveCount) {
+void update_all_stats(const Position& pos, Stack* ss, Search::Worker& workerThread, Move bestMove, Square prevSq, SearchedList& quietsSearched, SearchedList& capturesSearched, Depth depth, Move ttMove, int moveCount, bool useHarenn) {
     CapturePieceToHistory& captureHistory = workerThread.captureHistory; Piece movedPiece = pos.moved_piece(bestMove); PieceType capturedPiece;
     int bonus = std::min(116 * depth - 81, 1515) + 347 * (bestMove == ttMove) + (ss - 1)->statScore / 32;
     int malus = std::min(848 * depth - 207, 2446) - 17 * moveCount;
+
+    // V27 Integration: AI-Enhanced History Scaling
+    if (useHarenn) {
+        int aiBonus = HARENN::Controller::get_move_bonus(pos, bestMove);
+        bonus += (bonus * aiBonus) / 100;
+    }
+
     if (!pos.capture_stage(bestMove)) { update_quiet_histories(pos, ss, workerThread, bestMove, bonus * 910 / 1024); int i = 0; for (Move move : quietsSearched) { i++; int actualMalus = malus * 1085 / 1024; if (i > 5) actualMalus -= actualMalus * (i - 5) / i; update_quiet_histories(pos, ss, workerThread, move, -actualMalus); } }
     else { capturedPiece = type_of(pos.piece_on(bestMove.to_sq())); captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1395 / 1024; }
     if (prevSq != SQ_NONE && ((ss - 1)->moveCount == 1 + (ss - 1)->ttHit) && !pos.captured_piece()) update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, -malus * 602 / 1024);

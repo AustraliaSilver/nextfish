@@ -24,6 +24,7 @@
 
 #include "bitboard.h"
 #include "dee.h"
+#include "harenn_ctrl.h"
 #include "misc.h"
 #include "position.h"
 
@@ -178,6 +179,9 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             m.value += (*continuationHistory[2])[pc][to];
             m.value += (*continuationHistory[3])[pc][to];
             m.value += (*continuationHistory[5])[pc][to];
+
+            if (useDeeCaptureOrdering)
+                m.value += HARENN::Controller::get_move_bonus(pos, m);
 
             // bonus for checks
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;

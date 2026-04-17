@@ -12,32 +12,29 @@ struct ExchangeCluster {
     Square target;
     int    pressure;
     int    attacker_imbalance;
-    Value  net_swing;
-    Value  aftermath_score;
+    Value  static_score;
 };
 
 struct DEE_Result {
-    Value threat_value;
-    int   hanging_count;
-    bool  is_tactical;
-    Value king_safety_delta;
-    int   tension_score;
-    Value aftermath_score;
-    int   cluster_count;
-    ExchangeCluster clusters[4];
+    Value total_score;
+    int   threat_value;
 };
 
 class Evaluator {
-   public:
-    static DEE_Result evaluate(const Position& pos);
-    static bool       has_tension(const Position& pos);
-    static int        tension_score(const Position& pos);
-    static Value      adjusted_see(const Position& pos, Move m);
-    static int        move_order_bonus(const Position& pos, Move m, Depth depth);
+public:
+    // Tie-breaker used in MovePicker for capture ordering
+    static Value adjusted_see(const Position& pos, Move m);
 
-   private:
+    // QS Pruning Logic (V15)
+    static bool should_prune_in_qs(const Position& pos, Move m, Value adjustedSee);
+
+    // Board-wide tactical metrics
+    static int tension_score(const Position& pos);
+    
     static void
     compute_both_attack_maps(const Position& pos, Bitboard& usAttacks, Bitboard& themAttacks);
+
+private:
     static Value evaluate_king_safety(const Position& pos, Color c, Bitboard enemyAttacks);
 };
 
