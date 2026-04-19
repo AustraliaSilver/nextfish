@@ -113,14 +113,14 @@ jobs:
         shell: pwsh
         working-directory: src
         run: |
-          make -j4 build ARCH=x86-64 COMP=mingw optimize=no debug=yes
+          make -j4 build ARCH=x86-64-avx2 COMP=msvc optimize=no debug=yes
           if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../nextfish_built.exe" }
 
       - name: Build Stockfish 18
         shell: pwsh
         working-directory: stockfish18/src
         run: |
-          make -j4 build ARCH=x86-64 COMP=mingw optimize=no debug=no
+          make -j4 build ARCH=x86-64-avx2 COMP=msvc optimize=no debug=no
           if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../../stockfish_built.exe" }
 
       - name: Ensure HARENN model file
