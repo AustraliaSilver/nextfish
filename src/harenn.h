@@ -28,10 +28,17 @@ class Network {
 public:
     bool load(const std::string& filename);
     EvalResult forward(const int* active_features, int count) const;
+    
+    // Lazy evaluation methods - compute individual heads
+    float compute_eval(const int* active_features, int count) const;
+    float compute_tau(const int* active_features, int count) const;
+    float compute_rho(const int* active_features, int count) const;
+    float compute_rs(const int* active_features, int count) const;
 
 private:
     float eval_mean, eval_std;
     Layer fc1;
+    Layer fc2;
     Layer eval_head;
     Layer tau_head;
     Layer rho_head;

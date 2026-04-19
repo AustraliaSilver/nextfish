@@ -27,6 +27,9 @@ public:
 
     // Điều phối Quiescence Search (Đồng thuận AI-Engine)
     static int get_qs_tactical_adjustment(const Position& pos, int standPat);
+
+    // Điều phối thời gian (Time management)
+    static int get_time_multiplier(const Position& pos);
 };
 
 } // namespace HARENN
