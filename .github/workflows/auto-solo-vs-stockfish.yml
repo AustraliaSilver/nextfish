@@ -116,18 +116,18 @@ jobs:
           }
 
       - name: Build Nextfish
-        shell: pwsh
+        shell: msys2 {0}
         working-directory: src
         run: |
-          cmd /c "make -j4 build ARCH=x86-64-avx2 COMP=msvc"
-          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../nextfish_built.exe" }
+          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT
+          mv stockfish.exe ../nextfish_built.exe
 
       - name: Build Stockfish 18
-        shell: pwsh
+        shell: msys2 {0}
         working-directory: stockfish18/src
         run: |
-          cmd /c "make -j4 build ARCH=x86-64-avx2 COMP=msvc"
-          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../../stockfish_built.exe" }
+          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT
+          mv stockfish.exe ../../stockfish_built.exe
 
       - name: Run Elo match
         id: match
