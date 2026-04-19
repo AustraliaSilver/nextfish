@@ -107,18 +107,6 @@ jobs:
             if (-not (Test-Path "./$name")) { Copy-Item "src/$name" "./$name" -Force }
           }
 
-      - name: Ensure HARENN model file
-        shell: pwsh
-        run: |
-          # Copy HARENN model file from nextfish-harenn directory
-          if (Test-Path "nextfish-harenn/nextfish.harenn") {
-            Copy-Item "nextfish-harenn/nextfish.harenn" "nextfish.harenn" -Force
-            Copy-Item "nextfish-harenn/nextfish.harenn" "src/nextfish.harenn" -Force
-            Write-Host "HARENN model file copied from nextfish-harenn directory"
-          } else {
-            Write-Host "Warning: nextfish-harenn/nextfish.harenn not found"
-          }
-
       - name: Build Nextfish
         shell: pwsh
         working-directory: src
@@ -132,6 +120,17 @@ jobs:
         run: |
           make -j4 build ARCH=x86-64-avx2 COMP=mingw optimize=no
           if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../../stockfish_built.exe" }
+
+      - name: Ensure HARENN model file
+        shell: pwsh
+        run: |
+          # Copy HARENN model file from nextfish-harenn directory
+          if (Test-Path "nextfish-harenn/nextfish.harenn") {
+            Copy-Item "nextfish-harenn/nextfish.harenn" "nextfish.harenn" -Force
+            Write-Host "HARENN model file copied to root directory for engine"
+          } else {
+            Write-Host "Warning: nextfish-harenn/nextfish.harenn not found"
+          }
 
       - name: Run Elo match
         id: match
