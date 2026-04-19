@@ -66,13 +66,6 @@ jobs:
         with:
           arch: x64
 
-      - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: make gcc
-
       - name: Prepare directories
         shell: pwsh
         run: |
@@ -123,18 +116,18 @@ jobs:
           }
 
       - name: Build Nextfish
-        shell: msys2 {0}
+        shell: pwsh
         working-directory: src
         run: |
-          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT optimize=no
-          mv stockfish.exe ../nextfish_built.exe
+          make -j4 build ARCH=x86-64-avx2 COMP=msvc
+          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../nextfish_built.exe" }
 
       - name: Build Stockfish 18
-        shell: msys2 {0}
+        shell: pwsh
         working-directory: stockfish18/src
         run: |
-          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT optimize=no
-          mv stockfish.exe ../../stockfish_built.exe
+          make -j4 build ARCH=x86-64-avx2 COMP=msvc
+          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../../stockfish_built.exe" }
 
       - name: Run Elo match
         id: match
