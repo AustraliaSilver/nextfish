@@ -103,8 +103,6 @@ jobs:
           foreach ($name in $nnueFiles) {
             $url = "https://tests.stockfishchess.org/api/nn/$name"
             if (-not (Test-Path "src/$name")) { Invoke-WebRequest -Uri $url -OutFile "src/$name" }
-            # Copy to stockfish18/src before build
-            if (-not (Test-Path "stockfish18/src/$name")) { Copy-Item "src/$name" "stockfish18/src/$name" -Force }
             # Copy to root directory for runtime
             if (-not (Test-Path "./$name")) { Copy-Item "src/$name" "./$name" -Force }
           }
