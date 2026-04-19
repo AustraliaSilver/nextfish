@@ -110,7 +110,8 @@ jobs:
         run: |
           if (Test-Path "nextfish.harenn") {
             Copy-Item "nextfish.harenn" "src/nextfish.harenn" -Force
-            Write-Host "HARENN model file copied to src directory"
+            Copy-Item "nextfish.harenn" "./nextfish.harenn" -Force
+            Write-Host "HARENN model file copied to src and root directories"
           } else {
             Write-Host "Warning: nextfish.harenn not found in repository"
           }
