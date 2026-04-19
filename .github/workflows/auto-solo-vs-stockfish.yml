@@ -103,6 +103,7 @@ jobs:
             $url = "https://tests.stockfishchess.org/api/nn/$name"
             if (-not (Test-Path "src/$name")) { Invoke-WebRequest -Uri $url -OutFile "src/$name" }
             if (-not (Test-Path "stockfish18/src/$name")) { Copy-Item "src/$name" "stockfish18/src/$name" -Force }
+            if (-not (Test-Path "./$name")) { Copy-Item "src/$name" "./$name" -Force }
           }
 
       - name: Ensure HARENN model file
