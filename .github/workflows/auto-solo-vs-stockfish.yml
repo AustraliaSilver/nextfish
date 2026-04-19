@@ -132,9 +132,19 @@ jobs:
             Write-Host "Warning: nextfish-harenn/nextfish.harenn not found"
           }
 
-      - name: Verify NNUE files
+      - name: Verify model files
         shell: pwsh
         run: |
+          # Verify HARENN model file
+          if (Test-Path "./nextfish.harenn") {
+            Write-Host "nextfish.harenn exists in root directory"
+            $size = (Get-Item "./nextfish.harenn").Length
+            Write-Host "nextfish.harenn size: $size bytes"
+          } else {
+            Write-Host "Warning: nextfish.harenn not found in root directory"
+          }
+          
+          # Verify NNUE files
           $nnueFiles = @("nn-c288c895ea92.nnue", "nn-37f18f62d772.nnue")
           foreach ($name in $nnueFiles) {
             if (Test-Path "./$name") {
