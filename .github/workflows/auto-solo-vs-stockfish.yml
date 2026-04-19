@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - "src/**"
+      - "nextfish-harenn/**"
       - ".github/workflows/auto-solo-vs-stockfish.yml"
   workflow_dispatch:
     inputs:
