@@ -115,9 +115,8 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path "nextfish.harenn") {
-            Copy-Item "nextfish.harenn" "src/nextfish.harenn" -Force
-            Copy-Item "nextfish.harenn" "stockfish18/src/nextfish.harenn" -Force
-            Write-Host "HARENN model file copied successfully"
+            Copy-Item "nextfish.harenn" "stockfish18/nextfish.harenn" -Force
+            Write-Host "HARENN model file already in root directory, copied to stockfish18"
           } else {
             Write-Host "Warning: nextfish.harenn not found in repository"
           }
