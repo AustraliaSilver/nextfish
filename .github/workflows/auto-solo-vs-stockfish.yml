@@ -111,6 +111,17 @@ jobs:
             if (-not (Test-Path "stockfish18/src/$name")) { Copy-Item "src/$name" "stockfish18/src/$name" -Force }
           }
 
+      - name: Ensure HARENN model file
+        shell: pwsh
+        run: |
+          if (Test-Path "nextfish.harenn") {
+            Copy-Item "nextfish.harenn" "src/nextfish.harenn" -Force
+            Copy-Item "nextfish.harenn" "stockfish18/src/nextfish.harenn" -Force
+            Write-Host "HARENN model file copied successfully"
+          } else {
+            Write-Host "Warning: nextfish.harenn not found in repository"
+          }
+
       - name: Build Nextfish
         shell: msys2 {0}
         working-directory: src
@@ -132,7 +143,7 @@ jobs:
           $pgn = "matches/match.pgn"
           $log = "matches/match.log"
           $summary = "matches/summary.txt"
-          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -engine cmd=./stockfish_built.exe name=Stockfish18 proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -each tc=$env:TC -games $env:GAMES -pgnout $pgn -concurrency $env:CONCURRENCY -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn order=random plies=8 -repeat | Tee-Object -FilePath $log
+          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH option."Use DEE/HARENN"=true -engine cmd=./stockfish_built.exe name=Stockfish18 proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -each tc=$env:TC -games $env:GAMES -pgnout $pgn -concurrency $env:CONCURRENCY -repeat | Tee-Object -FilePath $log
           
           $score = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
           $elo = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
