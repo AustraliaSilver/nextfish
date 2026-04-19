@@ -109,11 +109,21 @@ jobs:
       - name: Ensure HARENN model file
         shell: pwsh
         run: |
+          # Download HARENN model file from GitHub releases
+          $harennUrl = "https://github.com/AustraliaSilver/nextfish/releases/download/v1.0/nextfish.harenn"
+          if (-not (Test-Path "nextfish.harenn")) {
+            Write-Host "Downloading HARENN model file from $harennUrl"
+            try {
+              Invoke-WebRequest -Uri $harennUrl -OutFile "nextfish.harenn"
+            } catch {
+              Write-Host "Warning: Failed to download HARENN model file"
+            }
+          }
           if (Test-Path "nextfish.harenn") {
             Copy-Item "nextfish.harenn" "src/nextfish.harenn" -Force
-            Write-Host "HARENN model file copied to src/ directory for build"
+            Write-Host "HARENN model file ready"
           } else {
-            Write-Host "Warning: nextfish.harenn not found in root directory"
+            Write-Host "Warning: nextfish.harenn not available"
           }
 
       - name: Build Nextfish
