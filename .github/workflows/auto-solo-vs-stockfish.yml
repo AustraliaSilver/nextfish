@@ -132,6 +132,18 @@ jobs:
             Write-Host "Warning: nextfish-harenn/nextfish.harenn not found"
           }
 
+      - name: Verify NNUE files
+        shell: pwsh
+        run: |
+          $nnueFiles = @("nn-c288c895ea92.nnue", "nn-37f18f62d772.nnue")
+          foreach ($name in $nnueFiles) {
+            if (Test-Path "./$name") {
+              Write-Host "$name exists in root directory"
+            } else {
+              Write-Host "Warning: $name not found in root directory"
+            }
+          }
+
       - name: Run Elo match
         id: match
         shell: pwsh
