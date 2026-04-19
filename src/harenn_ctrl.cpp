@@ -10,7 +10,7 @@ namespace Stockfish {
 namespace HARENN {
 
 namespace {
-    constexpr int CACHE_SIZE = 16;
+    constexpr int CACHE_SIZE = 128;
     
     struct LRUCache {
         std::array<Key, CACHE_SIZE> keys;
@@ -101,15 +101,38 @@ int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, in
 }
 
 int Controller::get_move_bonus(const Position& pos, Move m) {
-    (void)pos; (void)m;
-    return 0;
+    EvalResult res = get_analysis(pos);
+    
+    int bonus = 0;
+    
+    // Bonus based on position complexity (rho - risk measure)
+    if (res.rho > 0.75f)
+        bonus += 16;
+    else if (res.rho > 0.60f)
+        bonus += 8;
+    
+    // Bonus based on evaluation closeness (tactical positions)
+    if (std::abs(res.eval) < 40.0f)
+        bonus += 12;
+    else if (std::abs(res.eval) < 60.0f)
+        bonus += 6;
+    
+    // Bonus for captures in high-risk positions
+    if (res.rho > 0.65f && pos.capture(m))
+        bonus += 24;
+    
+    // Bonus for checks in high-risk positions
+    if (res.rho > 0.65f && pos.gives_check(m))
+        bonus += 20;
+    
+    return bonus;
 }
 
 int Controller::adjust_aspiration(const Position& pos, int delta) {
     EvalResult res = get_analysis(pos);
-    // V54: Enhanced Aspiration for Black and High Risk positions
-    // Black needs a wider window to catch White's aggressive thrusts
-    if (res.rho > 0.80f || (pos.side_to_move() == BLACK && res.eval < -50.0f))
+    // Enhanced Aspiration for better search efficiency
+    // Slightly wider window for high-risk positions
+    if (res.rho > 0.78f || (pos.side_to_move() == BLACK && res.eval < -45.0f))
         return delta + 3;
     return delta + 2;
 }

@@ -61,16 +61,10 @@ jobs:
           path: stockfish18
           fetch-depth: 1
 
-      - name: Setup MSYS2 toolchain
-        uses: msys2/setup-msys2@v2
+      - name: Setup MSVC compiler
+        uses: ilammy/msvc-dev-cmd@v1
         with:
-          msystem: MINGW64
-          path-type: minimal
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            make
-            unzip
+          arch: x64
 
       - name: Prepare directories
         shell: pwsh
@@ -122,18 +116,18 @@ jobs:
           }
 
       - name: Build Nextfish
-        shell: msys2 {0}
+        shell: pwsh
         working-directory: src
         run: |
-          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT
-          mv stockfish.exe ../nextfish_built.exe
+          cmd /c "make -j4 build ARCH=x86-64-avx2 COMP=msvc"
+          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../nextfish_built.exe" }
 
       - name: Build Stockfish 18
-        shell: msys2 {0}
+        shell: pwsh
         working-directory: stockfish18/src
         run: |
-          make -j4 build ARCH=x86-64-avx2 COMP=gcc OS=Windows_NT
-          mv stockfish.exe ../../stockfish_built.exe
+          cmd /c "make -j4 build ARCH=x86-64-avx2 COMP=msvc"
+          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../../stockfish_built.exe" }
 
       - name: Run Elo match
         id: match
@@ -142,7 +136,7 @@ jobs:
           $pgn = "matches/match.pgn"
           $log = "matches/match.log"
           $summary = "matches/summary.txt"
-          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH option."Use DEE/HARENN"=true -engine cmd=./stockfish_built.exe name=Stockfish18 proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -each tc=$env:TC -games $env:GAMES -pgnout $pgn -concurrency $env:CONCURRENCY -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn order=random plies=8 -repeat | Tee-Object -FilePath $log
+          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH option."Use DEE/HARENN"=true -engine cmd=./stockfish_built.exe name=Stockfish18 proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -each tc=$env:TC -games $env:GAMES -pgnout $pgn -concurrency $env:CONCURRENCY -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn | Tee-Object -FilePath $log
           
           $score = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
           $elo = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
