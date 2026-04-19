@@ -54,13 +54,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout official Stockfish 18
-        uses: actions/checkout@v4
-        with:
-          repository: official-stockfish/Stockfish
-          ref: sf_18
-          path: stockfish18
-          fetch-depth: 1
+      - name: Download pre-built Stockfish 18
+        shell: pwsh
+        run: |
+          $url = "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-windows-x86-64-avx2.zip"
+          Invoke-WebRequest -Uri $url -OutFile "stockfish18.zip"
+          Expand-Archive -Path "stockfish18.zip" -DestinationPath "." -Force
+          Move-Item "stockfish/stockfish-windows-x86-64-avx2.exe" "stockfish_built.exe" -Force
 
       - name: Setup MSVC compiler
         uses: ilammy/msvc-dev-cmd@v1
@@ -115,13 +115,6 @@ jobs:
         run: |
           make -j4 build ARCH=x86-64-avx2 COMP=mingw optimize=no debug=no
           if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../nextfish_built.exe" }
-
-      - name: Build Stockfish 18
-        shell: pwsh
-        working-directory: stockfish18/src
-        run: |
-          make -j4 build ARCH=x86-64-avx2 COMP=mingw optimize=no debug=no
-          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../../stockfish_built.exe" }
 
       - name: Ensure HARENN model file
         shell: pwsh
