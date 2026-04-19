@@ -872,8 +872,8 @@ ifeq ($(debug), no)
 		CXXFLAGS += -flto -flto-partition=one
 		LDFLAGS += $(CXXFLAGS) -flto=jobserver
 	else
-		CXXFLAGS += -flto=full
-		LDFLAGS += $(CXXFLAGS)
+		CXXFLAGS += -flto -flto-partition=one
+		LDFLAGS += $(CXXFLAGS) -flto=jobserver
 	endif
 
 # To use LTO and static linking on Windows,
