@@ -151,7 +151,7 @@ jobs:
           $pgn = "matches/match.pgn"
           $log = "matches/match.log"
           $summary = "matches/summary.txt"
-          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH option."Use DEE/HARENN"=true -engine cmd=./stockfish_built.exe name=Stockfish18 proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH option.EvalFile=nn-c288c895ea92.nnue -each tc=$env:TC -games $env:GAMES -pgnout $pgn -concurrency $env:CONCURRENCY -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn -resign movecount=3 score=400 -draw movenumber=40 movecount=8 score=20 | Tee-Object -FilePath $log
+          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH option."Use DEE/HARENN"=true -engine cmd=./stockfish_built.exe name=Stockfish18 proto=uci option.Threads=$env:THREADS option.Hash=$env:HASH -each tc=$env:TC -games $env:GAMES -pgnout $pgn -concurrency $env:CONCURRENCY -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn -resign movecount=3 score=400 -draw movenumber=40 movecount=8 score=20 | Tee-Object -FilePath $log
           
           $score = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
           $elo = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
