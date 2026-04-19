@@ -109,11 +109,11 @@ jobs:
       - name: Ensure HARENN model file
         shell: pwsh
         run: |
-          if (Test-Path "src/nextfish.harenn") {
-            Copy-Item "src/nextfish.harenn" "./nextfish.harenn" -Force
-            Write-Host "HARENN model file copied from src/ to root directory"
+          if (Test-Path "nextfish.harenn") {
+            Copy-Item "nextfish.harenn" "src/nextfish.harenn" -Force
+            Write-Host "HARENN model file copied to src/ directory for build"
           } else {
-            Write-Host "Warning: nextfish.harenn not found in src directory"
+            Write-Host "Warning: nextfish.harenn not found in root directory"
           }
 
       - name: Build Nextfish
