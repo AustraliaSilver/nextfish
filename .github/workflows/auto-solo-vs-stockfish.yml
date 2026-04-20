@@ -45,8 +45,8 @@ jobs:
       GAMES: ${{ github.event_name == 'push' && '500' || (github.event.inputs.games || '500') }}
       TC: ${{ github.event.inputs.tc || '10+0.1' }}
       CONCURRENCY: ${{ github.event.inputs.concurrency || '1' }}
-      THREADS: ${{ github.event.inputs.threads || '2' }}
-      HASH: ${{ github.event.inputs.hash || '512' }}
+      THREADS: ${{ github.event.inputs.threads || '1' }}
+      HASH: ${{ github.event.inputs.hash || '128' }}
 
     steps:
       - name: Checkout
