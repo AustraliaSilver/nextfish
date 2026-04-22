@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-r"""
-HARENN Turbo Parallel Data Generator - V7 (Worker Tracking)
-D:/nextfish/data - Hiển thị chi tiết Luồng (Worker) và Ván đấu (Game)
+"""
+HARENN Turbo Parallel Data Generator - V8 (Raw Data Collection)
+D:/nextfish/data - Loại bỏ mọi bộ lọc, phân tích 100% nước đi
 """
 
 import argparse
@@ -18,7 +18,6 @@ import chess.engine
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
-# Tắt log engine
 logging.getLogger("chess.engine").setLevel(logging.CRITICAL)
 
 @dataclass
@@ -126,10 +125,8 @@ class ParallelGenerator:
         except: return None
 
     def worker_task(self, game_id):
-        # Lấy số thứ tự luồng (Worker ID)
         p_name = multiprocessing.current_process().name
         worker_id = p_name.split('-')[-1] if '-' in p_name else "0"
-        
         engine = chess.engine.SimpleEngine.popen_uci(self.engine_path)
         positions, batch_num, board = [], 0, chess.Board()
         total_game_pos = 0
@@ -141,16 +138,18 @@ class ParallelGenerator:
                 else:
                     move = engine.play(board, chess.engine.Limit(time=0.04)).move
                 board.push(move)
-                if move_num > 6 and random.random() < 0.25:
+                
+                # BỎ LỌC, LẤY TẤT CẢ SAU NƯỚC 6
+                if move_num > 6:
                     data = self.analyze_full(board, engine)
-                    if data and abs(data["cp"]) < 500:
+                    if data:
                         total_game_pos += 1
-                        print(f"  [W{worker_id} | G{game_id}] Pos {total_game_pos}: Eval {data['cp']}, Tau {data['tau']}, Rho {data['rho']}", flush=True)
+                        print(f"  [W{worker_id} | G{game_id}] Pos {total_game_pos}: Eval {data['cp']}", flush=True)
                         pos = TrainingPosition(
                             fen=board.fen(), stm=0 if board.turn == chess.WHITE else 1,
                             eval_score=data["cp"], depth=16,
                             best_move=data["m16"][0] if data["m16"] else "0000",
-                            best_move_label=data["l16"][0] if data["l16"] else 0,
+                            best_move_label=self.move_to_label(board, chess.Move.from_uci(data["m16"][0])) if data["m16"] else 0,
                             best_moves_d16=data["m16"], best_moves_d20=data["m20"], best_moves_d24=data["m24"],
                             best_move_labels_d16=data["l16"], best_move_labels_d20=data["l20"], best_move_labels_d24=data["l24"],
                             game_result=1, material=self.count_material(board), piece_count=len(board.piece_map()),
@@ -161,12 +160,7 @@ class ParallelGenerator:
                             ts = time.strftime("%H%M%S")
                             with open(self.output_dir / f"hnn_g{game_id}_b{batch_num}_{ts}.json", 'w') as f:
                                 json.dump({"positions": positions}, f, indent=2)
-                            print(f"  [W{worker_id} | G{game_id}] Saved batch {batch_num} (5 positions)", flush=True)
                             positions, batch_num = [], batch_num + 1
-            if positions:
-                ts = time.strftime("%H%M%S")
-                with open(self.output_dir / f"hnn_g{game_id}_final_{ts}.json", 'w') as f:
-                    json.dump({"positions": positions}, f, indent=2)
             return total_game_pos
         finally: engine.quit()
 
@@ -177,19 +171,15 @@ def main():
     parser.add_argument("--games", "-g", type=int, default=100)
     parser.add_argument("--concurrency", "-j", type=int, default=multiprocessing.cpu_count() - 1)
     args = parser.parse_args()
-    print(f"=== HARENN Turbo Generator V7 (Worker Tracking) ===")
-    print(f"Engine: {args.engine}")
-    print(f"Concurrency: {args.concurrency} cores | Total Games: {args.games}")
-    print("-" * 50, flush=True)
+    print(f"=== HARENN Turbo Generator V8 (Raw Data) ===")
     gen = ParallelGenerator(args.engine, args.output)
-    total_pos, games_finished, start_time = 0, 0, time.time()
+    total_pos, start_time = 0, time.time()
     with ProcessPoolExecutor(max_workers=args.concurrency) as executor:
         futures = {executor.submit(gen.worker_task, i): i for i in range(args.games)}
         for future in as_completed(futures):
-            games_finished += 1
             res = future.result()
             total_pos += res
             elapsed = time.time() - start_time
-            print(f"[{time.strftime('%H:%M:%S')}] Finished G{futures[future]} | Total Progress: {games_finished}/{args.games} | Total Pos: {total_pos} | Speed: {total_pos/elapsed:.2f} pos/s", flush=True)
+            print(f"[{time.strftime('%H:%M:%S')}] Total Progress: {total_pos} Pos | Speed: {total_pos/elapsed:.2f} pos/s", flush=True)
 
 if __name__ == "__main__": main()
