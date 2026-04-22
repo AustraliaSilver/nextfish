@@ -23,7 +23,7 @@ jobs:
           sudo apt-get install -y g++ make python3-pip
           pip install python-chess numpy
 
-      - name: Build HARENN Engine
+      - name: Build HARENN Engine (PGO Optimized)
         run: |
           cd src
           curl -L -O https://tests.stockfishchess.org/api/nn/nn-3dd094f3dfcf.nnue
@@ -35,7 +35,9 @@ jobs:
           sed -i 's/DEE::Evaluator/Stockfish::DEE::Evaluator/g' search.cpp
           sed -i 's/HARENN::GuidanceProvider/Stockfish::HARENN::GuidanceProvider/g' main.cpp
           
-          make ARCH=x86-64-modern all -j$(nproc)
+          # Thực hiện PGO Build
+          make ARCH=x86-64-avx2 profile-build -j$(nproc)
+          
           mv stockfish ../harenn_engine
           cd ..
           chmod +x harenn_engine
