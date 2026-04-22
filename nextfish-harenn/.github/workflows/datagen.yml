@@ -1,0 +1,66 @@
+name: HARENN Continuous Data Generation
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 */5 * * *' # Every 5 hours
+  workflow_dispatch:
+
+jobs:
+  data-generation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ make python3-pip
+          pip install python-chess numpy
+
+      - name: Build HARENN Engine
+        run: |
+          cd src
+          curl -L -O https://tests.stockfishchess.org/api/nn/nn-3dd094f3dfcf.nnue
+          curl -L -O https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue
+          
+          # Fix possible ambiguity in search.cpp by using explicit namespace
+          sed -i 's/HARENN::GuidanceProvider/Stockfish::HARENN::GuidanceProvider/g' search.cpp
+          sed -i 's/HARENN::EvalResult/Stockfish::HARENN::EvalResult/g' search.cpp
+          sed -i 's/DEE::Evaluator/Stockfish::DEE::Evaluator/g' search.cpp
+          sed -i 's/HARENN::GuidanceProvider/Stockfish::HARENN::GuidanceProvider/g' main.cpp
+          
+          make ARCH=x86-64-modern all -j$(nproc)
+          mv stockfish ../harenn_engine
+          cd ..
+          chmod +x harenn_engine
+          chmod +x parallel_generate.py
+
+      - name: Generate Data
+        run: |
+          mkdir -p data
+          echo "Starting data generation..."
+          
+          python3 parallel_generate.py --engine ./harenn_engine --output ./data --games 5 --concurrency 2
+
+      - name: Commit and Push Data
+        run: |
+          git config --global user.name "HARENN Data Bot"
+          git config --global user.email "harenn-bot@users.noreply.github.com"
+          
+          # Force checkout or create data branch
+          git fetch origin data || true
+          git checkout data || git checkout -b data
+          
+          # Merge main changes if needed to keep build scripts up to date
+          git merge main -m "Merge main into data [skip ci]" || true
+          
+          git add -f data/*.json
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          git commit -m "Add HARENN training data $timestamp [skip ci]" || echo "No changes to commit"
+          git push origin data
