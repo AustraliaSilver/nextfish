@@ -1,0 +1,7 @@
+# Allow tracking data in this specific sub-repo
+!data/
+!data/*
+
+# Still ignore python cache
+__pycache__/
+*.pyc
