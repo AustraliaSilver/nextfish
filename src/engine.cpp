@@ -17,6 +17,7 @@
 */
 
 #include "engine.h"
+#include "harenn.h"
 
 #include <algorithm>
 #include <cassert>
@@ -148,13 +149,14 @@ Engine::Engine(std::optional<std::string> path) :
           return std::nullopt;
       }));
 
-    options.add("Use DEE/HARENN", Option(true));
-    options.add("Use DEE Capture Ordering", Option(true));
+    options.add("Use DEE/HARENN", Option(false));
+    options.add("Use DEE Capture Ordering", Option(false));
     options.add("Use DEE Capture Pruning", Option(false));
     options.add("Use DEE Capture LMR", Option(false));
     options.add("Use HARE Aspiration", Option(true));
     options.add("Use HARE Reduction", Option(true));
     options.add("Use HARE FailLow Verify", Option(true));
+    options.add("Use HARE Time Management", Option(true));
     
     // Initialize HARENN controller
     HARENN::Controller::init();
@@ -346,6 +348,17 @@ void Engine::trace_eval() const {
     verify_networks();
 
     sync_cout << "\n" << Eval::trace(p, *networks) << sync_endl;
+}
+
+void Engine::trace_harenn() const {
+    verify_networks();
+    HARENN::EvalResult res = HARENN::GuidanceProvider::query(pos);
+    sync_cout << "\n--- HARENN Model Inference ---"
+              << "\nEvaluation: " << (res.eval * 100.0f) << " cp"
+              << "\nTactical Complexity (Tau): " << res.tau
+              << "\nHorizon Risk (Rho): " << res.rho
+              << "\nResolution Score (RS): " << res.rs
+              << sync_endl;
 }
 
 const OptionsMap& Engine::get_options() const { return options; }

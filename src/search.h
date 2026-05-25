@@ -358,6 +358,14 @@ class Worker {
     TranspositionTable&                                       tt;
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
 
+    // Cached option flags for hot search paths
+    bool useDEE = true;
+    bool useDEECaptureOrdering = true;
+    bool useDEECaptureLMR = false;
+    bool useDEECapturePruning = false;
+    bool useHAREAspiration = true;
+    bool useHAREReduction = true;
+
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
     Eval::NNUE::AccumulatorCaches refreshTable;

@@ -25,6 +25,8 @@
 
 #include "search.h"
 #include "ucioption.h"
+#include "position.h"
+#include "harenn_ctrl.h"
 
 namespace Stockfish {
 
@@ -48,7 +50,8 @@ void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options,
-                          double&             originalTimeAdjust) {
+                          double&             originalTimeAdjust,
+                          const Position&     pos) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     // If we have no time, we don't need to fully initialize TM.
@@ -130,6 +133,20 @@ void TimeManagement::init(Search::LimitsType& limits,
 
     // Limit the maximum possible time for this move
     optimumTime = TimePoint(optScale * timeLeft);
+
+    if (options["Use DEE/HARENN"] && options["Use HARE Time Management"])
+    {
+        double mult = HARENN::Controller::get_time_multiplier(pos) / 100.0;
+        double timeLeftMs = (double)limits.time[us];
+        // Safety: when clock is very low, always use 100% of calculated time
+        if (timeLeftMs < 2000.0) {
+            double ratio = std::max(0.0, (timeLeftMs - 500.0) / 1500.0);
+            mult = 1.0 + (mult - 1.0) * ratio;
+            if (mult > 1.0) mult = 1.0;
+        }
+        optimumTime = TimePoint(optimumTime * mult);
+    }
+
     maximumTime =
       TimePoint(std::min(0.825179 * limits.time[us] - moveOverhead, maxScale * optimumTime)) - 10;
 
