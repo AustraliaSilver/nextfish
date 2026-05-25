@@ -5,24 +5,23 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <vector>
 
 namespace Stockfish {
 
 namespace HARENN {
 
 namespace {
-    constexpr int CACHE_SIZE = 2048;
+    constexpr int CACHE_SIZE = 32768;
     
     struct LRUCache {
         struct Entry {
             Key key = 0;
             EvalResult result;
         };
-        std::array<Entry, CACHE_SIZE> table;
+        std::vector<Entry> table;
         
-        LRUCache() {
-            // entries default initialized
-        }
+        LRUCache() : table(CACHE_SIZE) {}
         
         EvalResult* lookup(Key key) {
             int idx = (int)(key & (CACHE_SIZE - 1));
@@ -38,7 +37,7 @@ namespace {
             table[idx].result = res;
         }
     };
-    thread_local LRUCache nodeCache;
+    thread_local LRUCache* nodeCache = nullptr;
 }
 
 void Controller::init() {
@@ -47,12 +46,15 @@ void Controller::init() {
 
 EvalResult Controller::get_analysis(const Position& pos) {
     Key key = pos.key();
-    EvalResult* cached = nodeCache.lookup(key);
+    if (!nodeCache) {
+        nodeCache = new LRUCache();
+    }
+    EvalResult* cached = nodeCache->lookup(key);
     if (cached)
         return *cached;
 
     EvalResult res = GuidanceProvider::query(pos);
-    nodeCache.insert(key, res);
+    nodeCache->insert(key, res);
     return res;
 }
 
