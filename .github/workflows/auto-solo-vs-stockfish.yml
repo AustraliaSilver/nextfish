@@ -155,11 +155,8 @@ jobs:
           Write-Host "Testing Nextfish initialization..."
           $input_commands = "uci`nsetoption name Use DEE/HARENN value true`nsetoption name Use HARE Time Management value true`nisready`nquit"
           Set-Content -Path "nextfish_input.txt" -Value $input_commands
-          $nextfish_proc = Start-Process -FilePath "./nextfish_built.exe" -RedirectStandardInput "nextfish_input.txt" -RedirectStandardOutput "nextfish_test.log" -RedirectStandardError "nextfish_err.log" -PassThru
-          $nextfish_proc.WaitForExit()
-          Write-Host "Nextfish exit code: $($nextfish_proc.ExitCode)"
-          Get-Content "nextfish_test.log"
-          if (Test-Path "nextfish_err.log") { Get-Content "nextfish_err.log" }
+          # Run under gdb to print backtrace on crash
+          cmd.exe /c "gdb -batch -ex run -ex bt --args nextfish_built.exe < nextfish_input.txt"
           
           Write-Host "Testing Stockfish18 initialization..."
           $stockfish_proc = Start-Process -FilePath "./stockfish_built.exe" -ArgumentList "uci", "quit" -RedirectStandardOutput "stockfish_test.log" -PassThru
