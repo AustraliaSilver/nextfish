@@ -989,7 +989,7 @@ build: net
 profile-build: net objclean profileclean
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
-	$(MAKE) ARCH=$(if $(findstring avx,$(ARCH)),x86-64,$(ARCH)) COMP=$(COMP) $(profile_make)
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
 	$(PGOBENCH) > PGOBENCH.out 2>&1
@@ -1109,9 +1109,14 @@ config-sanity: net
 	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
 	 test "$(comp)" = "aarch64-linux-android21-clang")
 
-harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS)) -DUSE_AVX2 -mavx2 -mbmi -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2
+harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
 harenn_ctrl.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS)) -DUSE_AVX2 -mavx2 -mbmi -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2
+dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+nnue_accumulator.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+nnue_misc.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+network.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+half_ka_v2_hm.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+full_threats.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
 
 $(EXE): $(OBJS)
 	+$(CXX) -o $@ $(OBJS) $(LDFLAGS)
