@@ -159,7 +159,7 @@ namespace {
                 acc_vec = _mm256_add_epi32(acc_vec, _mm256_mullo_epi32(h1_vec, w2_vec));
             }
             
-            alignas(32) int32_t acc_arr[8];
+            int32_t acc_arr[8];
             _mm256_storeu_si256((__m256i*)acc_arr, acc_vec);
             int64_t horizontal_sum = acc_arr[0] + acc_arr[1] + acc_arr[2] + acc_arr[3] +
                                      acc_arr[4] + acc_arr[5] + acc_arr[6] + acc_arr[7];
@@ -189,7 +189,7 @@ namespace {
             acc_vec = _mm256_add_epi32(acc_vec, _mm256_mullo_epi32(h2_vec, w_vec));
         }
         
-        alignas(32) int32_t acc_arr[8];
+        int32_t acc_arr[8];
         _mm256_storeu_si256((__m256i*)acc_arr, acc_vec);
         int64_t horizontal_sum = acc_arr[0] + acc_arr[1] + acc_arr[2] + acc_arr[3] +
                                  acc_arr[4] + acc_arr[5] + acc_arr[6] + acc_arr[7];
@@ -209,8 +209,8 @@ EvalResult Network::forward(const int* active_features, int count) const {
     if (out_features1 > 512 || out_features2 > 128) {
         return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
     }
-    alignas(32) int32_t h1[512];
-    alignas(32) int32_t h2[128];
+    int32_t h1[512];
+    int32_t h2[128];
     
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
 
@@ -227,8 +227,8 @@ float Network::compute_eval(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.0f;
-    alignas(32) int32_t h1[512];
-    alignas(32) int32_t h2[128];
+    int32_t h1[512];
+    int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return run_head_single(h2, out_features2, eval_head) * eval_std + eval_mean;
 }
@@ -237,8 +237,8 @@ float Network::compute_tau(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.5f;
-    alignas(32) int32_t h1[512];
-    alignas(32) int32_t h2[128];
+    int32_t h1[512];
+    int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return fast_sigmoid(run_head_single(h2, out_features2, tau_head));
 }
@@ -247,8 +247,8 @@ float Network::compute_rho(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.5f;
-    alignas(32) int32_t h1[512];
-    alignas(32) int32_t h2[128];
+    int32_t h1[512];
+    int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return fast_sigmoid(run_head_single(h2, out_features2, rho_head));
 }
@@ -257,8 +257,8 @@ float Network::compute_rs(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.5f;
-    alignas(32) int32_t h1[512];
-    alignas(32) int32_t h2[128];
+    int32_t h1[512];
+    int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return fast_sigmoid(run_head_single(h2, out_features2, rs_head));
 }
