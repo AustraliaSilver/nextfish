@@ -478,7 +478,7 @@ ifeq ($(COMP),gcc)
 endif
 
 ifeq ($(target_windows),yes)
-	LDFLAGS += -static
+	LDFLAGS += -static -Wl,--stack,8388608
 endif
 
 ifeq ($(COMP),mingw)
@@ -879,8 +879,9 @@ ifeq ($(debug), no)
 # To use LTO and static linking on Windows,
 # the tool chain requires gcc version 10.1 or later.
 	else ifeq ($(comp),mingw)
-		CXXFLAGS += -flto -flto-partition=one
-		LDFLAGS += $(CXXFLAGS) -save-temps
+		# LTO is disabled on MinGW to prevent fprofile-generate segmentation faults
+		# CXXFLAGS += -flto -flto-partition=one
+		# LDFLAGS += $(CXXFLAGS) -save-temps
 	endif
 endif
 endif
