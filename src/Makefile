@@ -1117,6 +1117,8 @@ nnue_misc.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use
 network.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
 half_ka_v2_hm.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
 full_threats.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+evaluate.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+bitboard.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
 
 $(EXE): $(OBJS)
 	+$(CXX) -o $@ $(OBJS) $(LDFLAGS)
