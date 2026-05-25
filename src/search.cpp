@@ -155,7 +155,7 @@ void Search::Worker::start_searching() {
     accumulatorStack.reset();
     if (!is_mainthread()) { iterative_deepening(); return; }
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
-                            main_manager()->originalTimeAdjust);
+                            main_manager()->originalTimeAdjust, rootPos);
     tt.new_search();
     if (rootMoves.empty()) {
         rootMoves.emplace_back(Move::none());
@@ -182,6 +182,13 @@ void Search::Worker::start_searching() {
 }
 
 void Search::Worker::iterative_deepening() {
+    useDEE = options["Use DEE/HARENN"];
+    useDEECaptureOrdering = options["Use DEE Capture Ordering"];
+    useDEECaptureLMR = options["Use DEE Capture LMR"];
+    useDEECapturePruning = options["Use DEE Capture Pruning"];
+    useHAREAspiration = options["Use HARE Aspiration"];
+    useHAREReduction = options["Use HARE Reduction"];
+
     SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
     Move pv[MAX_PLY + 1];
     Depth lastBestMoveDepth = 0; Value lastBestScore = -VALUE_INFINITE;
@@ -223,6 +230,9 @@ void Search::Worker::iterative_deepening() {
             }
             selDepth = 0;
             delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            if (useHAREAspiration) {
+                delta = HARENN::Controller::adjust_aspiration(rootPos, delta);
+            }
             Value avg = rootMoves[pvIdx].averageScore;
             alpha = std::max(avg - delta, -VALUE_INFINITE); beta = std::min(avg + delta, VALUE_INFINITE);
             int contempt = 12; int optimismBase = 142 * avg / (std::abs(avg) + 91);
@@ -414,7 +424,7 @@ moves_loop:
     probCutBeta = beta + 418;
     if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta && !is_decisive(beta) && is_valid(ttData.value) && !is_decisive(ttData.value)) return probCutBeta;
     const PieceToHistory* contHist[] = { (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory, (ss - 4)->continuationHistory, (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
-    MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist, &sharedHistory, ss->ply, options["Use DEE/HARENN"] && options["Use DEE Capture Ordering"]);
+    MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist, &sharedHistory, ss->ply, useDEE && useDEECaptureOrdering);
     value = bestValue; int moveCount = 0;
     while ((move = mp.next_move()) != Move::none()) {
         if (move == excludedMove || !pos.legal(move)) continue;
@@ -424,7 +434,17 @@ moves_loop:
         if (PvNode) (ss + 1)->pv = nullptr;
         extension = 0; capture = pos.capture_stage(move); movedPiece = pos.moved_piece(move); givesCheck = pos.gives_check(move);
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
+        if (useDEE && useHAREReduction) {
+            r = HARENN::Controller::get_smart_reduction(pos, depth, move, moveCount, r, ss->staticEval, rootMoves[0].score);
+        }
         if (ss->ttPv) r += 946;
+        if (useDEECaptureLMR && capture && depth >= 2 && moveCount > 1) {
+            if (depth < 12) {
+                Value adjSee = DEE::Evaluator::adjusted_see(pos, move);
+                if (adjSee < 0)
+                    r += 1024;
+            }
+        }
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue)) {
             if (moveCount >= (3 + depth * depth) / (2 - improving)) mp.skip_quiet_moves();
             int lmrDepth = newDepth - r / 1024;
@@ -501,7 +521,7 @@ moves_loop:
     if (bestValue >= beta && !is_decisive(bestValue) && !is_decisive(alpha)) bestValue = (bestValue * depth + beta) / (depth + 1);
     if (!moveCount) bestValue = excludedMove ? alpha : ss->inCheck ? mated_in(ss->ply) : VALUE_DRAW;
     else if (bestMove) {
-        update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth, ttData.move, moveCount, options["Use DEE/HARENN"]);
+        update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth, ttData.move, moveCount, useDEE);
         if (!PvNode) ttMoveHistory << (bestMove == ttData.move ? 809 : -865);
     } else if (!priorCapture && prevSq != SQ_NONE) {
         int bonusScale = -215; bonusScale -= (ss - 1)->statScore / 100; bonusScale += std::min(56 * depth, 489); bonusScale += 184 * ((ss - 1)->moveCount > 8); bonusScale += 147 * (!ss->inCheck && bestValue <= ss->staticEval - 107); bonusScale += 156 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 65);
@@ -547,6 +567,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     while ((move = mp.next_move()) != Move::none()) {
         if (!pos.legal(move)) continue;
         givesCheck = pos.gives_check(move); capture = pos.capture_stage(move); moveCount++;
+        if (useDEECapturePruning && capture) {
+            Value adjSee = DEE::Evaluator::adjusted_see(pos, move);
+            if (DEE::Evaluator::should_prune_in_qs(pos, move, adjSee))
+                continue;
+        }
         if (!is_loss(bestValue)) {
             if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase) && move.type_of() != PROMOTION) {
                 if (moveCount > 2) continue;
@@ -592,11 +617,7 @@ void update_all_stats(const Position& pos, Stack* ss, Search::Worker& workerThre
     int bonus = std::min(116 * depth - 81, 1515) + 347 * (bestMove == ttMove) + (ss - 1)->statScore / 32;
     int malus = std::min(848 * depth - 207, 2446) - 17 * moveCount;
 
-    // V27 Integration: AI-Enhanced History Scaling
-    if (useHarenn) {
-        int aiBonus = HARENN::Controller::get_move_bonus(pos, bestMove);
-        bonus += (bonus * aiBonus) / 100;
-    }
+
 
     if (!pos.capture_stage(bestMove)) { update_quiet_histories(pos, ss, workerThread, bestMove, bonus * 910 / 1024); int i = 0; for (Move move : quietsSearched) { i++; int actualMalus = malus * 1085 / 1024; if (i > 5) actualMalus -= actualMalus * (i - 5) / i; update_quiet_histories(pos, ss, workerThread, move, -actualMalus); } }
     else { capturedPiece = type_of(pos.piece_on(bestMove.to_sq())); captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1395 / 1024; }

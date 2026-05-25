@@ -17,7 +17,7 @@ public:
     static EvalResult get_analysis(const Position& pos);
 
     // Điều phối cắt tỉa (LMR) dựa trên AI
-    static int get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR);
+    static int get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore);
 
     // Điều chỉnh cửa sổ tìm kiếm (Aspiration)
     static int adjust_aspiration(const Position& pos, int delta);

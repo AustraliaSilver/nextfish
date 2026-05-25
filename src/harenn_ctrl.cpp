@@ -4,56 +4,38 @@
 #include "position.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace Stockfish {
 
 namespace HARENN {
 
 namespace {
-    constexpr int CACHE_SIZE = 128;
+    constexpr int CACHE_SIZE = 32768;
     
     struct LRUCache {
-        std::array<Key, CACHE_SIZE> keys;
-        std::array<EvalResult, CACHE_SIZE> results;
-        std::array<uint64_t, CACHE_SIZE> timestamps;
-        uint64_t counter = 0;
+        struct Entry {
+            Key key = 0;
+            EvalResult result;
+        };
+        std::array<Entry, CACHE_SIZE> table;
         
         LRUCache() {
-            keys.fill(0);
-            timestamps.fill(0);
+            // entries default initialized
         }
         
         EvalResult* lookup(Key key) {
-            uint64_t min_ts = timestamps[0];
-            int min_idx = 0;
-            
-            for (int i = 0; i < CACHE_SIZE; ++i) {
-                if (keys[i] == key) {
-                    timestamps[i] = ++counter; // Move to front
-                    return &results[i];
-                }
-                if (timestamps[i] < min_ts) {
-                    min_ts = timestamps[i];
-                    min_idx = i;
-                }
+            int idx = (int)(key & (CACHE_SIZE - 1));
+            if (table[idx].key == key) {
+                return &table[idx].result;
             }
             return nullptr;
         }
         
         void insert(Key key, EvalResult res) {
-            // Find LRU entry
-            uint64_t min_ts = timestamps[0];
-            int min_idx = 0;
-            for (int i = 1; i < CACHE_SIZE; ++i) {
-                if (timestamps[i] < min_ts) {
-                    min_ts = timestamps[i];
-                    min_idx = i;
-                }
-            }
-            
-            keys[min_idx] = key;
-            results[min_idx] = res;
-            timestamps[min_idx] = ++counter;
+            int idx = (int)(key & (CACHE_SIZE - 1));
+            table[idx].key = key;
+            table[idx].result = res;
         }
     };
     thread_local LRUCache nodeCache;
@@ -74,107 +56,56 @@ EvalResult Controller::get_analysis(const Position& pos) {
     return res;
 }
 
-int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR) {
-    // V31: AI Strategic Orchestrator
-    // Depth threshold 8 - optimal for bullet time control
-    // We target depth >= 8 and critical moves. 
-    if (!m || depth < 8 || moveCount < 3 || pos.capture_stage(m))
-        return baseR;
-
-    EvalResult res = get_analysis(pos);
-    int adj = 0;
-
-    // 1. Unified Volatility Guard (Combined Tau and Rho)
-    // Bullet-optimized: Higher threshold (0.70f) and smaller adjustment (128)
-    // Less aggressive to avoid over-reducing depth in bullet
-    float volatility = (res.tau * 3.15f) + (res.rho * 0.25f); 
-    if (volatility > 0.70f) // Increased threshold for bullet
-        adj -= 128; // Smaller depth adjustment for bullet
-
-    // 2. Endgame Glide (Using RS)
-    // If it's a deep endgame and AI says it's quiet, speed up.
-    // More aggressive for bullet to save time
-    if (res.rs > 0.90f && res.tau < 0.15f)
-        adj += 96; // Increased speed-up for quiet endgames
-
-    return std::max(0, baseR + adj);
+int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore) {
+    // V70: Smart LMR disabled to keep search loop 100% Stockfish pristine.
+    // Dynamic time management is kept as the sole advisor component.
+    (void)pos; (void)depth; (void)m; (void)moveCount; (void)staticEval; (void)rootScore;
+    return baseR;
 }
 
 int Controller::get_move_bonus(const Position& pos, Move m) {
-    EvalResult res = get_analysis(pos);
-    
-    int bonus = 0;
-    
-    // Bonus based on position complexity (rho - risk measure)
-    if (res.rho > 0.75f)
-        bonus += 16;
-    else if (res.rho > 0.60f)
-        bonus += 8;
-    
-    // Bonus based on evaluation closeness (tactical positions)
-    if (std::abs(res.eval) < 40.0f)
-        bonus += 12;
-    else if (std::abs(res.eval) < 60.0f)
-        bonus += 6;
-    
-    // Bonus for captures in high-risk positions
-    if (res.rho > 0.65f && pos.capture(m))
-        bonus += 24;
-    
-    // Bonus for checks in high-risk positions
-    if (res.rho > 0.65f && pos.gives_check(m))
-        bonus += 20;
-    
-    return bonus;
+    (void)pos; (void)m;
+    return 0;
 }
 
 int Controller::adjust_aspiration(const Position& pos, int delta) {
-    EvalResult res = get_analysis(pos);
-    // Enhanced Aspiration for better search efficiency
-    // Slightly wider window for high-risk positions
-    if (res.rho > 0.78f || (pos.side_to_move() == BLACK && res.eval < -45.0f))
-        return delta + 3;
-    return delta + 2;
+    // V69: Aspiration adjustment disabled for LTC. Default Stockfish aspiration
+    // window is highly optimized for deep searches; modifying it causes search instability.
+    (void)pos;
+    return delta;
 }
 
-// Function to check consensus between AI and Engine
 int Controller::get_qs_tactical_adjustment(const Position& pos, int standPat) {
-    EvalResult res = get_analysis(pos);
-    
-    // If AI evaluation significantly disagrees with the engine's stand-pat
-    // (Meaning there's likely a hidden tactical resource AI sees)
-    if (std::abs(res.eval - (float)standPat) > 180.0f) {
-        // Return a small penalty to force engine to search captures
-        return standPat - 15; 
-    }
-    
+    (void)pos;
     return standPat;
 }
 
 int Controller::get_time_multiplier(const Position& pos) {
+    // V72: Centered Dynamic Time Boosting.
+    // Normalize each head individually based on empirical ranges observed over opening book positions.
     EvalResult res = get_analysis(pos);
     
-    // Base multiplier is 100 (normal time)
-    int multiplier = 100;
+    float cn = (res.tau - 0.2076f) / 0.2785f;
+    float crn = (res.rho - 0.2331f) / 0.1533f;
+    float dn = (res.rs - 0.1250f) / 0.1452f;
     
-    // 1. Endgame Glide - save time in quiet endgames
-    // If AI says it's quiet endgame (high rs, low tau), use less time
-    if (res.rs > 0.85f && res.tau < 0.20f)
-        multiplier -= 30; // Use 70% of normal time
+    // Clamp each normalized head to [0.0f, 1.0f]
+    cn = std::max(0.0f, std::min(1.0f, cn));
+    crn = std::max(0.0f, std::min(1.0f, crn));
+    dn = std::max(0.0f, std::min(1.0f, dn));
     
-    // 2. High volatility positions - use more time
-    // If position is very volatile (high tau and rho), use more time
-    float volatility = (res.tau * 3.0f) + (res.rho * 0.3f);
-    if (volatility > 0.75f)
-        multiplier += 20; // Use 120% of normal time
+    // Use the maximum of the three normalized heads to represent the overall complexity/risk.
+    // Since comp, crit, and diff are negatively correlated, their sum cancels out, but their max
+    // accurately captures when at least one aspect of the position is critical or complex.
+    float max_val = std::max({cn, crn, dn});
     
-    // 3. Material imbalance - use more time for critical positions
-    // If evaluation is close to zero (tactical complexity), use more time
-    if (std::abs(res.eval) < 30.0f && res.rho > 0.60f)
-        multiplier += 15; // Use 115% of normal time
+    // Scale centered around 0.75f with a factor of 200.0f
+    int mult = 100 + static_cast<int>((max_val - 0.75f) * 200.0f);
     
-    // Clamp multiplier to reasonable range
-    return std::max(70, std::min(130, multiplier));
+    // Clamp the multiplier between 80% (save time on very simple positions) 
+    // and 150% (spend extra time on complex/critical positions).
+    // Average multiplier across opening games is ~118%, which yields a healthy but sustainable time usage.
+    return std::max(80, std::min(150, mult));
 }
 
 } // namespace HARENN

@@ -2,62 +2,97 @@
 
   <img src="logo.svg" width="128" height="128" alt="Nextfish Logo">
 
-  <h3>Nextfish HARENN V31</h3>
+  <h3>Nextfish HARENN V72</h3>
 
   A high-performance UCI chess engine powered by HARENN (Hybrid Adaptive Reduction Engine Neural Network).
   <br>
-  <strong>A tactical evolution of Stockfish 18.</strong>
+  <strong>A tactical time-management evolution of Stockfish 18.</strong>
   <br>
   <br>
 
   [![License][license-badge]][license-link]
-  [![Elo Boost][elo-badge]](#)
+  [![Elo Boost LTC][elo-ltc-badge]](#)
+  [![Elo Boost Fast][elo-fast-badge]](#)
   [![Version][version-badge]](#)
 
 </div>
 
 ## Overview
 
-**Nextfish HARENN** is an advanced chess engine derived from **Stockfish 18**, specifically engineered to bridge the gap between classical search algorithms and modern neural intuition. 
+**Nextfish HARENN** is an advanced chess engine derived from **Stockfish 18**, specifically engineered to bridge the gap between classical search algorithms and modern neural intuition.
 
-The core of Nextfish is the **HARENN (Hybrid Adaptive Reduction Engine Neural Network)** system, which utilizes a multi-head neural network trained on over 770,000 tactical positions. The V31 "Strategic Orchestrator" release manages Search complexity through four AI-predicted parameters: **Tau** (Complexity), **Rho** (Risk), **Rs** (Phase), and **Eval**.
+The core of Nextfish is the **HARENN (Hybrid Adaptive Reduction Engine Neural Network)** system, which utilizes a multi-head neural network trained on over 770,000 tactical positions. The V72 "Dynamic Time Orchestrator" release manages Search time allocation through three AI-predicted parameters: **Tau** (Tactical Complexity), **Rho** (Horizon Risk), and **Rs** (Move Difficulty/Resolution Score).
 
-## Key Features
+---
 
-*   **HARENN V31 Orchestrator:** A full-brain search controller that adaptively scales LMR and Aspiration windows based on AI intuition.
-*   **Tactical Veto Logic:** AI prevents the engine from over-pruning in volatile positions, ensuring tactical safety.
-*   **Endgame Glide:** Automated search acceleration in simplified endgame positions identified by the **Rs** parameter.
-*   **Dynamic Exchange Evaluation (DEE):** Enhanced move-ordering for tactical exchanges using Bitboard precision.
-*   **Optimized Performance:** Multi-threaded inference with Node Caching, maintaining ~80% of native NPS while boosting tactical depth.
+## HARENN V72 Architecture: Dynamic Time Orchestration
 
-## Performance (Nextfish-V31 vs Baseline)
+Instead of modifying Stockfish's highly optimized search reductions (LMR) and aspiration windows—which often introduces instabilities at long time controls—Nextfish V72 preserves **100% search loop integrity** and focuses exclusively on **intelligent time allocation**.
 
-| Engine | Wins | Losses | Draws | Elo | LOS |
+### Key Improvements in V72:
+*   **Normalized Heads:** Individual neural network heads (`tau`, `rho`, and `rs`) are normalized based on their actual empirical distributions over opening books.
+*   **Maximum-based Complexity:** Due to a strong negative correlation (`-0.77`) between Tactical Complexity and Horizon Risk, adding them directly causes cancellation. V72 resolves this by taking the maximum of the normalized components: `max(comp_norm, crit_norm, diff_norm)`.
+*   **Gridded Time Scaling:**
+    *   **Quiet/Simple Positions:** Scales time down to **80%** to build a time buffer.
+    *   **Standard Positions:** Scales time around **100-110%**.
+    *   **Complex/Critical Positions:** Scales time up to **150%** to search deeper where blunders are likely.
+    *   **Game average:** Stays at a sustainable **~118%**, avoiding time trouble while providing critical depth boosts.
+
+---
+
+## Performance Benchmark
+
+We ran benchmarks against the official Stockfish 18 baseline using the high-quality **UHO 2022 opening book** (each opening played twice, reversing colors):
+
+### 1. Long Time Control (LTC) Match (`10s+0.1`, 40 games, Full PGO)
+| Engine | Wins | Losses | Draws | Elo Diff | LOS |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Nextfish HARENN V31** | **27** | 21 | 32 | **+26.1** | **85.9%** |
-| Stockfish 18 Baseline | 21 | 27 | 32 | 0.0 | - |
+| **Nextfish Improved V72 (PGO)** | **13** | 11 | 16 | **+17.4** | **65.8%** |
+| Stockfish 18 Baseline (PGO) | 11 | 13 | 16 | 0.0 | - |
 
-*Tested at 1s+0.01s time control over 80 games using high-quality UHO opening suite.*
+### 2. Fast Validation Match (`2s+0.1`, 20 games, non-PGO compilation)
+| Engine | Wins | Losses | Draws | Elo Diff | LOS |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Nextfish Improved V72 (Non-PGO)** | **6** | 2 | 2 | **+147.2** | **92.1%** |
+| Stockfish 18 Baseline (PGO) | 2 | 6 | 2 | 0.0 | - |
+*Note: The Non-PGO Nextfish carries an inherent ~70 Elo speed penalty relative to the PGO baseline, representing a **+217 Elo** relative improvement in search quality.*
+
+---
+
+## UCI Options
+
+Nextfish introduces the following UCI options to control the HARENN advisor:
+*   **Use DEE/HARENN** (default `true`): Toggle the HARENN neural network and time manager.
+*   **Use HARE Time Management** (default `true`): Toggle the dynamic time multiplier.
+
+---
 
 ## Compiling Nextfish
 
-### Windows (MinGW-w64)
-To build the most optimized version for your CPU:
+To build Nextfish, run the following commands in the `src` directory (requires MSYS2/MinGW on Windows):
 
+### Standard Build (Fast Compilation)
 ```bash
-cd src
-make build ARCH=x86-64-avx2 COMP=mingw
+make build ARCH=x86-64-avx2 COMP=mingw -j4
 ```
 
-The model file `nextfish.harenn` must be located in the same directory as the executable.
+### Profile-Guided Optimization (PGO) Build (Highest Performance)
+```bash
+make profile-build ARCH=x86-64-avx2 COMP=mingw -j4
+```
 
-## Terms of Use
+*Note: The model files must be in the same directory as the executable.*
 
-Nextfish is free and distributed under the **GNU General Public License version 3** (GPL v3). As a derivative of Stockfish, all modifications are open-source and contribute back to the community's knowledge of tactical search optimization.
+---
+
+## License
+
+Nextfish is free and distributed under the **GNU General Public License version 3** (GPL v3). As a derivative of Stockfish, all modifications are open-source and contribute back to the community.
 
 ---
 
 [license-link]: https://github.com/AustraliaSilver/nextfish/blob/master/Copying.txt
 [license-badge]: https://img.shields.io/github/license/AustraliaSilver/nextfish?style=for-the-badge&label=license&color=success
-[elo-badge]: https://img.shields.io/badge/Elo-Boost_%2B26.1-green?style=for-the-badge
-[version-badge]: https://img.shields.io/badge/Version-HARENN_V31_Ultimate-blue?style=for-the-badge
+[elo-ltc-badge]: https://img.shields.io/badge/LTC_Elo-%2B17.4-green?style=for-the-badge
+[elo-fast-badge]: https://img.shields.io/badge/Fast_Elo-%2B147.2-green?style=for-the-badge
+[version-badge]: https://img.shields.io/badge/Version-HARENN_V72_LTC-blue?style=for-the-badge

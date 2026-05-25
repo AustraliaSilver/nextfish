@@ -32,6 +32,8 @@ namespace Search {
 struct LimitsType;
 }
 
+class Position;
+
 // The TimeManagement class computes the optimal time to think depending on
 // the maximum available time, the game move number, and other parameters.
 class TimeManagement {
@@ -40,7 +42,8 @@ class TimeManagement {
               Color               us,
               int                 ply,
               const OptionsMap&   options,
-              double&             originalTimeAdjust);
+              double&             originalTimeAdjust,
+              const Position&     pos);
 
     TimePoint optimum() const;
     TimePoint maximum() const;

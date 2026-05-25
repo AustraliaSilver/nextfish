@@ -1129,7 +1129,6 @@ clang-profile-use:
 	all
 
 gcc-profile-make:
-	@mkdir -p profdir
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-generate=profdir' \
 	EXTRACXXFLAGS+=$(EXTRAPROFILEFLAGS) \
