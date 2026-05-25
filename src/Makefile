@@ -1109,9 +1109,9 @@ config-sanity: net
 	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
 	 test "$(comp)" = "aarch64-linux-android21-clang")
 
-harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-harenn_ctrl.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
+harenn_ctrl.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
+dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
 nnue_accumulator.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
 nnue_misc.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
 network.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
