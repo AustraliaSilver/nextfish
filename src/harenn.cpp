@@ -39,11 +39,12 @@ namespace {
 }
 
 bool Network::load(const std::string& filename) {
-    // Read entire file into buffer for faster I/O
     std::ifstream f(filename, std::ios::binary | std::ios::ate);
     if (!f) return false;
 
     std::streamsize file_size = f.tellg();
+    if (file_size < 12) return false; // Magic (4) + eval_mean (4) + eval_std (4)
+    
     f.seekg(0, std::ios::beg);
     
     std::vector<char> buffer(file_size);
@@ -51,6 +52,7 @@ bool Network::load(const std::string& filename) {
     f.close();
     
     const char* ptr = buffer.data();
+    const char* end = ptr + file_size;
     
     // Parse magic
     if (std::string(ptr, 4) != "HNN4") return false;
@@ -61,25 +63,31 @@ bool Network::load(const std::string& filename) {
     std::memcpy(&eval_std, ptr, 4); ptr += 4;
     
     auto load_layer = [&](Layer& layer, bool bias_size_is_cols) {
+        if (end - ptr < 8) return false;
         std::memcpy(&layer.rows, ptr, 4); ptr += 4;
         std::memcpy(&layer.cols, ptr, 4); ptr += 4;
+        
         int size = layer.rows * layer.cols;
+        int bias_size = bias_size_is_cols ? layer.cols : layer.rows;
+        
+        if (size < 0 || bias_size < 0 || end - ptr < size * 2 + bias_size * 4) return false;
+        
         layer.weights.reserve(size);
         layer.weights.resize(size);
         std::memcpy(layer.weights.data(), ptr, size * 2); ptr += size * 2;
         
-        int bias_size = bias_size_is_cols ? layer.cols : layer.rows;
         layer.bias.reserve(bias_size);
         layer.bias.resize(bias_size);
         std::memcpy(layer.bias.data(), ptr, bias_size * 4); ptr += bias_size * 4;
+        return true;
     };
     
-    load_layer(fc1, true);
-    load_layer(fc2, false);
-    load_layer(eval_head, false);
-    load_layer(tau_head, false);
-    load_layer(rho_head, false);
-    load_layer(rs_head, false);
+    if (!load_layer(fc1, true)) return false;
+    if (!load_layer(fc2, false)) return false;
+    if (!load_layer(eval_head, false)) return false;
+    if (!load_layer(tau_head, false)) return false;
+    if (!load_layer(rho_head, false)) return false;
+    if (!load_layer(rs_head, false)) return false;
     
     return true;
 }
