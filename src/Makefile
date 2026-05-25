@@ -1109,9 +1109,9 @@ config-sanity: net
 	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
 	 test "$(comp)" = "aarch64-linux-android21-clang")
 
-harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS)) -DUSE_AVX2 -mavx2 -mbmi -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2
 harenn_ctrl.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS)) -DUSE_AVX2 -mavx2 -mbmi -DUSE_SSE41 -msse4.1 -DUSE_SSSE3 -mssse3 -DUSE_SSE2 -msse2
 
 $(EXE): $(OBJS)
 	+$(CXX) -o $@ $(OBJS) $(LDFLAGS)
