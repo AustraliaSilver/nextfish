@@ -260,17 +260,27 @@ float Network::compute_rs(const int* active_features, int count) const {
 }
 
 static Network global_net;
+static bool model_loaded = false;
 
 void GuidanceProvider::init() {
     init_sigmoid_table();
     if (global_net.load("nextfish.harenn")) {
+        model_loaded = true;
         sync_cout << "info string HARENN: Full 4-Head Model loaded successfully" << sync_endl;
     } else {
+        model_loaded = false;
         sync_cout << "info string HARENN: Failed to load model. Check nextfish.harenn path" << sync_endl;
     }
 }
 
+bool GuidanceProvider::is_model_loaded() {
+    return model_loaded;
+}
+
 EvalResult GuidanceProvider::query(const Position& pos) {
+    if (!model_loaded) {
+        return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
+    }
     int active_features[64];
     int count = 0;
     

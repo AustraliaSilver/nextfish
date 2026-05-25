@@ -49,6 +49,7 @@ class GuidanceProvider {
 public:
     static void init();
     static EvalResult query(const Position& pos);
+    static bool is_model_loaded();
 };
 
 } // namespace HARENN

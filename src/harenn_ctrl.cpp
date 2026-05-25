@@ -82,6 +82,12 @@ int Controller::get_qs_tactical_adjustment(const Position& pos, int standPat) {
 
 int Controller::get_time_multiplier(const Position& pos) {
     // V72: Centered Dynamic Time Boosting.
+    
+    // Safety check: if HARENN model fails to load, fallback to standard Stockfish (100% time usage)
+    if (!GuidanceProvider::is_model_loaded()) {
+        return 100;
+    }
+    
     // Normalize each head individually based on empirical ranges observed over opening book positions.
     EvalResult res = get_analysis(pos);
     
