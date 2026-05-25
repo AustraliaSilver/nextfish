@@ -88,11 +88,11 @@ namespace {
     // Shared hidden layer computation for lazy evaluation (2-layer architecture)
     void compute_hidden_layer(const int* active_features, int count, 
                               const Layer& fc1, const Layer& fc2,
-                              std::vector<int32_t>& h1, std::vector<int32_t>& h2) {
+                              int32_t* h1, int32_t* h2) {
         const int out_features1 = fc1.cols;
         const int out_features2 = fc2.rows; // fc2 is (out_features2, out_features1)
         
-        std::fill(h1.begin(), h1.end(), 0);
+        std::fill(h1, h1 + out_features1, 0);
 
         // First layer (sparse → dense) - AVX2 optimized
         for (int i = 0; i < count; ++i) {
@@ -103,9 +103,9 @@ namespace {
             for (; j <= out_features1 - 8; j += 8) {
                 __m128i w_vec_16 = _mm_loadu_si128((const __m128i*)(feat_weights + j));
                 __m256i w_vec = _mm256_cvtepi16_epi32(w_vec_16);
-                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1.data() + j));
+                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1 + j));
                 h1_vec = _mm256_add_epi32(h1_vec, w_vec);
-                _mm256_storeu_si256((__m256i*)(h1.data() + j), h1_vec);
+                _mm256_storeu_si256((__m256i*)(h1 + j), h1_vec);
             }
             // Fallback for remainder
             for (; j < out_features1; ++j) {
@@ -120,12 +120,12 @@ namespace {
             __m256i max_vec = _mm256_set1_epi32(128);
             int j = 0;
             for (; j <= out_features1 - 8; j += 8) {
-                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1.data() + j));
+                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1 + j));
                 __m256i bias_vec = _mm256_loadu_si256((const __m256i*)(fc1.bias.data() + j));
                 __m256i val_vec = _mm256_add_epi32(h1_vec, bias_vec);
                 val_vec = _mm256_max_epi32(zero_vec, val_vec);
                 val_vec = _mm256_min_epi32(max_vec, val_vec);
-                _mm256_storeu_si256((__m256i*)(h1.data() + j), val_vec);
+                _mm256_storeu_si256((__m256i*)(h1 + j), val_vec);
             }
             for (; j < out_features1; ++j) {
                 h1[j] = std::clamp(h1[j] + fc1.bias[j], 0, 128);
@@ -133,7 +133,7 @@ namespace {
         }
 
         // Second layer (dense → dense) - AVX2 optimized
-        std::fill(h2.begin(), h2.end(), 0);
+        std::fill(h2, h2 + out_features2, 0);
         const int16_t* w2 = fc2.weights.data();
         const int32_t* bias2_ptr = fc2.bias.data();
         
@@ -145,7 +145,7 @@ namespace {
             
             int j = 0;
             for (; j <= out_features1 - 8; j += 8) {
-                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1.data() + j));
+                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1 + j));
                 __m128i w2_vec_16 = _mm_loadu_si128((const __m128i*)(w2_row + j));
                 __m256i w2_vec = _mm256_cvtepi16_epi32(w2_vec_16);
                 acc_vec = _mm256_add_epi32(acc_vec, _mm256_mullo_epi32(h1_vec, w2_vec));
@@ -166,11 +166,10 @@ namespace {
         }
     }
     
-    float run_head_single(const std::vector<int32_t>& h2, const Layer& head) {
-        const int out_features = h2.size();
+    float run_head_single(const int32_t* h2, int out_features, const Layer& head) {
         int64_t sum = head.bias[0];
         const int16_t* w = head.weights.data();
-        const int32_t* h2_ptr = h2.data();
+        const int32_t* h2_ptr = h2;
         
         __m256i acc_vec = _mm256_setzero_si256();
         
@@ -199,18 +198,19 @@ namespace {
 EvalResult Network::forward(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
-    static thread_local std::vector<int32_t> h1;
-    static thread_local std::vector<int32_t> h2;
-    if (h1.size() != out_features1) h1.resize(out_features1);
-    if (h2.size() != out_features2) h2.resize(out_features2);
+    if (out_features1 > 512 || out_features2 > 128) {
+        return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
+    }
+    alignas(32) int32_t h1[512];
+    alignas(32) int32_t h2[128];
     
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
 
     EvalResult res;
-    res.eval = run_head_single(h2, eval_head) * eval_std + eval_mean;
-    res.tau  = fast_sigmoid(run_head_single(h2, tau_head));
-    res.rho  = fast_sigmoid(run_head_single(h2, rho_head));
-    res.rs   = fast_sigmoid(run_head_single(h2, rs_head));
+    res.eval = run_head_single(h2, out_features2, eval_head) * eval_std + eval_mean;
+    res.tau  = fast_sigmoid(run_head_single(h2, out_features2, tau_head));
+    res.rho  = fast_sigmoid(run_head_single(h2, out_features2, rho_head));
+    res.rs   = fast_sigmoid(run_head_single(h2, out_features2, rs_head));
 
     return res;
 }
@@ -218,45 +218,41 @@ EvalResult Network::forward(const int* active_features, int count) const {
 float Network::compute_eval(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
-    static thread_local std::vector<int32_t> h1;
-    static thread_local std::vector<int32_t> h2;
-    if (h1.size() != out_features1) h1.resize(out_features1);
-    if (h2.size() != out_features2) h2.resize(out_features2);
+    if (out_features1 > 512 || out_features2 > 128) return 0.0f;
+    alignas(32) int32_t h1[512];
+    alignas(32) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return run_head_single(h2, eval_head) * eval_std + eval_mean;
+    return run_head_single(h2, out_features2, eval_head) * eval_std + eval_mean;
 }
 
 float Network::compute_tau(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
-    static thread_local std::vector<int32_t> h1;
-    static thread_local std::vector<int32_t> h2;
-    if (h1.size() != out_features1) h1.resize(out_features1);
-    if (h2.size() != out_features2) h2.resize(out_features2);
+    if (out_features1 > 512 || out_features2 > 128) return 0.5f;
+    alignas(32) int32_t h1[512];
+    alignas(32) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return fast_sigmoid(run_head_single(h2, tau_head));
+    return fast_sigmoid(run_head_single(h2, out_features2, tau_head));
 }
 
 float Network::compute_rho(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
-    static thread_local std::vector<int32_t> h1;
-    static thread_local std::vector<int32_t> h2;
-    if (h1.size() != out_features1) h1.resize(out_features1);
-    if (h2.size() != out_features2) h2.resize(out_features2);
+    if (out_features1 > 512 || out_features2 > 128) return 0.5f;
+    alignas(32) int32_t h1[512];
+    alignas(32) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return fast_sigmoid(run_head_single(h2, rho_head));
+    return fast_sigmoid(run_head_single(h2, out_features2, rho_head));
 }
 
 float Network::compute_rs(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
-    static thread_local std::vector<int32_t> h1;
-    static thread_local std::vector<int32_t> h2;
-    if (h1.size() != out_features1) h1.resize(out_features1);
-    if (h2.size() != out_features2) h2.resize(out_features2);
+    if (out_features1 > 512 || out_features2 > 128) return 0.5f;
+    alignas(32) int32_t h1[512];
+    alignas(32) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return fast_sigmoid(run_head_single(h2, rs_head));
+    return fast_sigmoid(run_head_single(h2, out_features2, rs_head));
 }
 
 static Network global_net;
