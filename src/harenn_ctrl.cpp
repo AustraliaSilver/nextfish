@@ -11,7 +11,7 @@ namespace Stockfish {
 namespace HARENN {
 
 namespace {
-    constexpr int CACHE_SIZE = 32768;
+    constexpr int CACHE_SIZE = 2048;
     
     struct LRUCache {
         struct Entry {
