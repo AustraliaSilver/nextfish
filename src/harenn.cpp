@@ -152,7 +152,7 @@ namespace {
             }
             
             alignas(32) int32_t acc_arr[8];
-            _mm256_store_si256((__m256i*)acc_arr, acc_vec);
+            _mm256_storeu_si256((__m256i*)acc_arr, acc_vec);
             int64_t horizontal_sum = acc_arr[0] + acc_arr[1] + acc_arr[2] + acc_arr[3] +
                                      acc_arr[4] + acc_arr[5] + acc_arr[6] + acc_arr[7];
             sum += horizontal_sum;
@@ -183,7 +183,7 @@ namespace {
         }
         
         alignas(32) int32_t acc_arr[8];
-        _mm256_store_si256((__m256i*)acc_arr, acc_vec);
+        _mm256_storeu_si256((__m256i*)acc_arr, acc_vec);
         int64_t horizontal_sum = acc_arr[0] + acc_arr[1] + acc_arr[2] + acc_arr[3] +
                                  acc_arr[4] + acc_arr[5] + acc_arr[6] + acc_arr[7];
         sum += horizontal_sum;
