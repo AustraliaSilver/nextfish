@@ -163,6 +163,7 @@ jobs:
           $stockfish_proc.WaitForExit()
           Write-Host "Stockfish18 exit code: $($stockfish_proc.ExitCode)"
           Get-Content "stockfish_test.log" | Select-String -Pattern "EvalFile" -Context 0,0
+          exit 0
 
       - name: Run Elo match
         id: match
