@@ -992,8 +992,7 @@ profile-build: net objclean profileclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
-	$(PGOBENCH) > PGOBENCH.out 2>&1
-	tail -n 4 PGOBENCH.out
+	-$(PGOBENCH) > PGOBENCH.out 2>&1; val=$$?; cat PGOBENCH.out; if [ $$val -ne 0 ]; then exit $$val; fi
 	@echo ""
 	@echo "Step 3/4. Building optimized executable ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
