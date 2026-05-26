@@ -1114,13 +1114,13 @@ harenn_ctrl.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-u
 dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
 engine.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
 thread.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
-nnue_accumulator.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-nnue_misc.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-network.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-half_ka_v2_hm.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-full_threats.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-evaluate.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
-bitboard.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use%,$(CXXFLAGS))
+nnue_accumulator.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
+nnue_misc.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
+network.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
+half_ka_v2_hm.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
+full_threats.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
+evaluate.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
+bitboard.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
 
 $(EXE): $(OBJS)
 	+$(CXX) -o $@ $(OBJS) $(LDFLAGS)
@@ -1144,7 +1144,7 @@ clang-profile-use:
 
 gcc-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-generate' \
+	EXTRACXXFLAGS='-fprofile-generate -mstackrealign -fno-tree-vectorize' \
 	EXTRACXXFLAGS+=$(EXTRAPROFILEFLAGS) \
 	EXTRALDFLAGS='-lgcov' \
 	all
