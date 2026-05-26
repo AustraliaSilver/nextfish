@@ -11,51 +11,12 @@ namespace Stockfish {
 
 namespace HARENN {
 
-namespace {
-    constexpr int CACHE_SIZE = 32768;
-    
-    struct LRUCache {
-        struct Entry {
-            Key key = 0;
-            EvalResult result;
-        };
-        std::vector<Entry> table;
-        
-        LRUCache() : table(CACHE_SIZE) {}
-        
-        EvalResult* lookup(Key key) {
-            int idx = (int)(key & (CACHE_SIZE - 1));
-            if (table[idx].key == key) {
-                return &table[idx].result;
-            }
-            return nullptr;
-        }
-        
-        void insert(Key key, EvalResult res) {
-            int idx = (int)(key & (CACHE_SIZE - 1));
-            table[idx].key = key;
-            table[idx].result = res;
-        }
-    };
-    thread_local LRUCache* nodeCache = nullptr;
-}
-
 void Controller::init() {
     GuidanceProvider::init();
 }
 
 EvalResult Controller::get_analysis(const Position& pos) {
-    Key key = pos.key();
-    if (!nodeCache) {
-        nodeCache = new LRUCache();
-    }
-    EvalResult* cached = nodeCache->lookup(key);
-    if (cached)
-        return *cached;
-
-    EvalResult res = GuidanceProvider::query(pos);
-    nodeCache->insert(key, res);
-    return res;
+    return GuidanceProvider::query(pos);
 }
 
 int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore) {
