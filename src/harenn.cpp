@@ -287,26 +287,22 @@ EvalResult GuidanceProvider::query(const Position& pos) {
     }
     int active_features[64];
     int count = 0;
-    
-    bool is_black = (pos.side_to_move() == BLACK);
+
+    // Feature encoding matching train_harenn.py exactly:
+    // - Square: sq ^ 56 (converts Stockfish bottom-up to FEN top-down)
+    // - Piece: W_PAWN=1..W_KING=6 -> py_pc 0..5, B_PAWN=9..B_KING=14 -> py_pc 6..11
+    // No perspective flip - model trained on raw FEN encoding for both sides.
     Bitboard pieces = pos.pieces();
     while (pieces) {
         Square sq = pop_lsb(pieces);
         Piece pc = pos.piece_on(sq);
         if (pc != NO_PIECE) {
-            int py_sq;
-            int py_pc;
-            if (!is_black) {
-                py_sq = (int)sq ^ 56;
-                py_pc = (pc <= W_KING) ? ((int)pc - 1) : ((int)pc - 3);
-            } else {
-                py_sq = (int)sq;
-                py_pc = (pc <= W_KING) ? ((int)pc + 5) : ((int)pc - 9);
-            }
+            int py_sq = (int)sq ^ 56;  // Convert bottom-up to top-down (a1->a8 rank flip)
+            int py_pc = (pc <= W_KING) ? ((int)pc - 1) : ((int)pc - 3);  // W:0-5, B:6-11
             active_features[count++] = py_sq * 12 + py_pc;
         }
     }
-    
+
     return global_net.forward(active_features, count);
 }
 

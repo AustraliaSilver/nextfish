@@ -20,8 +20,10 @@ EvalResult Controller::get_analysis(const Position& pos) {
 }
 
 int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore) {
-    // V70: Smart LMR disabled to keep search loop 100% Stockfish pristine.
-    // Dynamic time management is kept as the sole advisor component.
+    // V87: HARENN LMR completely neutralized. Large-scale 200 games verification of V83 LMR
+    // parameters dropped -77.7 Elo. Analysis shows model query overhead and depth instability
+    // from custom reductions/de-reductions consistently hurt search performance.
+    // Reverting to 100% pristine Stockfish LMR search loop.
     (void)pos; (void)depth; (void)m; (void)moveCount; (void)staticEval; (void)rootScore;
     return baseR;
 }
@@ -32,49 +34,37 @@ int Controller::get_move_bonus(const Position& pos, Move m) {
 }
 
 int Controller::adjust_aspiration(const Position& pos, int delta) {
-    // V69: Aspiration adjustment disabled for LTC. Default Stockfish aspiration
-    // window is highly optimized for deep searches; modifying it causes search instability.
+    // V86: Aspiration adjustment neutralized. Safe narrowing (delta-2) in calm positions (rho<0.20)
+    // caused search instability and dropped -52.5 Elo over 200 games.
+    // Reverted to default Stockfish behavior.
     (void)pos;
     return delta;
 }
 
 int Controller::get_qs_tactical_adjustment(const Position& pos, int standPat) {
+    // V89: Neural-Guided Quiescence Adjustments (Neutralized)
+    // Adjusting standPat based on rho resulted in a regression of -10.4 Elo.
+    // Keeping this neutralized to maintain the search loop 100% Stockfish pristine.
     (void)pos;
     return standPat;
 }
 
 int Controller::get_time_multiplier(const Position& pos) {
-    // V72: Centered Dynamic Time Boosting.
-    
-    // Safety check: if HARENN model fails to load, fallback to standard Stockfish (100% time usage)
-    if (!GuidanceProvider::is_model_loaded()) {
-        return 100;
-    }
-    
-    // Normalize each head individually based on empirical ranges observed over opening book positions.
-    EvalResult res = get_analysis(pos);
-    
-    float cn = (res.tau - 0.2076f) / 0.2785f;
-    float crn = (res.rho - 0.2331f) / 0.1533f;
-    float dn = (res.rs - 0.1250f) / 0.1452f;
-    
-    // Clamp each normalized head to [0.0f, 1.0f]
-    cn = std::max(0.0f, std::min(1.0f, cn));
-    crn = std::max(0.0f, std::min(1.0f, crn));
-    dn = std::max(0.0f, std::min(1.0f, dn));
-    
-    // Use the maximum of the three normalized heads to represent the overall complexity/risk.
-    // Since comp, crit, and diff are negatively correlated, their sum cancels out, but their max
-    // accurately captures when at least one aspect of the position is critical or complex.
-    float max_val = std::max({cn, crn, dn});
-    
-    // Scale centered around 0.75f with a factor of 200.0f
-    int mult = 100 + static_cast<int>((max_val - 0.75f) * 200.0f);
-    
-    // Clamp the multiplier between 80% (save time on very simple positions) 
-    // and 150% (spend extra time on complex/critical positions).
-    // Average multiplier across opening games is ~118%, which yields a healthy but sustainable time usage.
-    return std::max(80, std::min(150, mult));
+    // V95: Time Management permanently neutralized.
+    //
+    // History:
+    // - V88-V91: Wrong feature encoding (perspective flip mismatch) caused avg tau=0.757
+    //   instead of correct 0.255. All tau-based formulas worked on garbage → regressions.
+    // - V94: Fixed feature encoding (sq^56 rank flip, W=0-5, B=6-11). Verified avg tau=0.255.
+    //   But [93,107]/scale-200 time management STILL caused -45.4 Elo regression.
+    // - Root cause: Middlegame positions have tau ~0.30-0.40 (above opening calibration 0.255).
+    //   Asymmetric clamping → consistently uses 107% time → cumulative time pressure.
+    // - HARENN loaded (no TM) and HARENN disabled are statistically equal (+6.9 vs +31.4 Elo,
+    //   within the ±62 Elo error bars for 100-game samples).
+    //
+    // Conclusion: Leave Stockfish's optimized time management untouched.
+    (void)pos;
+    return 100;
 }
 
 } // namespace HARENN
