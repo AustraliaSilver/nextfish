@@ -331,6 +331,7 @@ Value Search::Worker::search(Position& pos, Stack* ss, Value alpha, Value beta, 
     depth = std::min(depth, MAX_PLY - 1);
     if (!rootNode && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply)) { alpha = value_draw(nodes); if (alpha >= beta) return alpha; }
     Move pv[MAX_PLY + 1]; StateInfo st; Key posKey; Move move, excludedMove, bestMove; Depth extension, newDepth; Value bestValue, value, eval, maxValue, probCutBeta; bool givesCheck, improving, priorCapture, opponentWorsening, capture, ttCapture; int priorReduction; Piece movedPiece; SearchedList capturesSearched, quietsSearched;
+    std::pair<float, float> harennResult = {0.0f, 0.0f}; bool harennQueried = false;
     ss->inCheck = pos.checkers(); priorCapture = pos.captured_piece(); Color us = pos.side_to_move(); ss->moveCount = 0; bestValue = -VALUE_INFINITE; maxValue = VALUE_INFINITE;
     if (is_mainthread()) main_manager()->check_time(*this);
     if (PvNode && selDepth < ss->ply + 1) selDepth = ss->ply + 1;
@@ -434,6 +435,16 @@ moves_loop:
         if (PvNode) (ss + 1)->pv = nullptr;
         extension = 0; capture = pos.capture_stage(move); movedPiece = pos.moved_piece(move); givesCheck = pos.gives_check(move);
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
+        if (useDEE && PvNode && depth >= 6 && depth <= 12 && (givesCheck || capture)) {
+            if (!harennQueried) {
+                harennResult = HARENN::Controller::get_rho_and_rs(pos);
+                harennQueried = true;
+            }
+            const float threshold = (us == BLACK) ? 0.7060f : 0.8500f;
+            if (harennResult.first > threshold || harennResult.second > threshold) {
+                extension += 1;
+            }
+        }
         if (useDEE && useHAREReduction) {
             r = HARENN::Controller::get_smart_reduction(pos, depth, move, moveCount, r, ss->staticEval, rootMoves[0].score);
         }

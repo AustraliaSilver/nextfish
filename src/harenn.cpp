@@ -263,6 +263,20 @@ float Network::compute_rs(const int* active_features, int count) const {
     return fast_sigmoid(run_head_single(h2, out_features2, rs_head));
 }
 
+std::pair<float, float> Network::compute_rho_and_rs(const int* active_features, int count) const {
+    const int out_features1 = fc1.cols;
+    const int out_features2 = fc2.rows;
+    if (out_features1 > 512 || out_features2 > 128) {
+        return {0.5f, 0.5f};
+    }
+    int32_t h1[512];
+    int32_t h2[128];
+    compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
+    float rho = fast_sigmoid(run_head_single(h2, out_features2, rho_head));
+    float rs  = fast_sigmoid(run_head_single(h2, out_features2, rs_head));
+    return {rho, rs};
+}
+
 static Network global_net;
 static bool model_loaded = false;
 
@@ -304,6 +318,27 @@ EvalResult GuidanceProvider::query(const Position& pos) {
     }
 
     return global_net.forward(active_features, count);
+}
+
+std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos) {
+    if (!model_loaded) {
+        return {0.5f, 0.5f};
+    }
+    int active_features[64];
+    int count = 0;
+
+    Bitboard pieces = pos.pieces();
+    while (pieces) {
+        Square sq = pop_lsb(pieces);
+        Piece pc = pos.piece_on(sq);
+        if (pc != NO_PIECE) {
+            int py_sq = (int)sq ^ 56;
+            int py_pc = (pc <= W_KING) ? ((int)pc - 1) : ((int)pc - 3);
+            active_features[count++] = py_sq * 12 + py_pc;
+        }
+    }
+
+    return global_net.compute_rho_and_rs(active_features, count);
 }
 
 } // namespace HARENN

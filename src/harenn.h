@@ -4,6 +4,7 @@
 #include "types.h"
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace Stockfish {
 
@@ -34,6 +35,7 @@ public:
     float compute_tau(const int* active_features, int count) const;
     float compute_rho(const int* active_features, int count) const;
     float compute_rs(const int* active_features, int count) const;
+    std::pair<float, float> compute_rho_and_rs(const int* active_features, int count) const;
 
 private:
     float eval_mean, eval_std;
@@ -49,6 +51,7 @@ class GuidanceProvider {
 public:
     static void init();
     static EvalResult query(const Position& pos);
+    static std::pair<float, float> query_rho_and_rs(const Position& pos);
     static bool is_model_loaded();
 };
 

@@ -19,6 +19,10 @@ EvalResult Controller::get_analysis(const Position& pos) {
     return GuidanceProvider::query(pos);
 }
 
+std::pair<float, float> Controller::get_rho_and_rs(const Position& pos) {
+    return GuidanceProvider::query_rho_and_rs(pos);
+}
+
 int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore) {
     // V87: HARENN LMR completely neutralized. Large-scale 200 games verification of V83 LMR
     // parameters dropped -77.7 Elo. Analysis shows model query overhead and depth instability
@@ -47,6 +51,33 @@ int Controller::get_qs_tactical_adjustment(const Position& pos, int standPat) {
     // Keeping this neutralized to maintain the search loop 100% Stockfish pristine.
     (void)pos;
     return standPat;
+}
+
+int Controller::get_search_extension(const Position& pos, Move m, Depth depth, bool givesCheck) {
+    if (!GuidanceProvider::is_model_loaded()) {
+        return 0;
+    }
+
+    // Only apply to reasonable search depths to minimize evaluation overhead
+    if (depth < 6) {
+        return 0;
+    }
+
+    // Query the HARENN model
+    EvalResult res = get_analysis(pos);
+
+    // If Horizon Risk (rho) or Resolution Score (rs) is very high,
+    // indicating high tactical volatility/danger, and this is a check
+    // or a capture, extend the search depth by 1 Ply to resolve instability.
+    // For Black (side to move), we lower the threshold slightly (rho > 0.70f or rs > 0.70f)
+    // to search deeper in critical defensive situations.
+    const bool isBlack = (pos.side_to_move() == BLACK);
+    const float threshold = isBlack ? 0.7060f : 0.8228f;
+    if ((res.rho > threshold || res.rs > threshold) && (givesCheck || pos.capture_stage(m))) {
+        return 1;
+    }
+
+    return 0;
 }
 
 int Controller::get_time_multiplier(const Position& pos) {
