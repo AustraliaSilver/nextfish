@@ -22,8 +22,8 @@ struct EvalResult {
 
 struct Layer {
     int rows, cols;
-    alignas(64) std::vector<int16_t> weights;
-    alignas(64) std::vector<int32_t> bias;
+    std::vector<int16_t> weights;
+    std::vector<int32_t> bias;
 };
 
 class Network {
