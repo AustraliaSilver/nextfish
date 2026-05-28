@@ -2,6 +2,7 @@
 #include "position.h"
 #include "bitboard.h"
 #include "dee.h"
+#include "numa.h"
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -209,8 +210,8 @@ EvalResult Network::forward(const int* active_features, int count) const {
     if (out_features1 > 512 || out_features2 > 128) {
         return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
     }
-    int32_t h1[512];
-    int32_t h2[128];
+    alignas(64) int32_t h1[512];
+    alignas(64) int32_t h2[128];
     
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
 
@@ -227,8 +228,8 @@ float Network::compute_eval(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.0f;
-    int32_t h1[512];
-    int32_t h2[128];
+    alignas(64) int32_t h1[512];
+    alignas(64) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return run_head_single(h2, out_features2, eval_head) * eval_std + eval_mean;
 }
@@ -237,8 +238,8 @@ float Network::compute_tau(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.5f;
-    int32_t h1[512];
-    int32_t h2[128];
+    alignas(64) int32_t h1[512];
+    alignas(64) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return fast_sigmoid(run_head_single(h2, out_features2, tau_head));
 }
@@ -247,8 +248,8 @@ float Network::compute_rho(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.5f;
-    int32_t h1[512];
-    int32_t h2[128];
+    alignas(64) int32_t h1[512];
+    alignas(64) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return fast_sigmoid(run_head_single(h2, out_features2, rho_head));
 }
@@ -257,8 +258,8 @@ float Network::compute_rs(const int* active_features, int count) const {
     const int out_features1 = fc1.cols;
     const int out_features2 = fc2.rows;
     if (out_features1 > 512 || out_features2 > 128) return 0.5f;
-    int32_t h1[512];
-    int32_t h2[128];
+    alignas(64) int32_t h1[512];
+    alignas(64) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     return fast_sigmoid(run_head_single(h2, out_features2, rs_head));
 }
@@ -269,22 +270,32 @@ std::pair<float, float> Network::compute_rho_and_rs(const int* active_features, 
     if (out_features1 > 512 || out_features2 > 128) {
         return {0.5f, 0.5f};
     }
-    int32_t h1[512];
-    int32_t h2[128];
+    alignas(64) int32_t h1[512];
+    alignas(64) int32_t h2[128];
     compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
     float rho = fast_sigmoid(run_head_single(h2, out_features2, rho_head));
     float rs  = fast_sigmoid(run_head_single(h2, out_features2, rs_head));
     return {rho, rs};
 }
 
-static Network global_net;
+static NumaReplicationContext* global_numa_ctx = nullptr;
+static std::unique_ptr<NumaReplicated<Network>> global_net_repl = nullptr;
 static bool model_loaded = false;
 
 void GuidanceProvider::init() {
     init_sigmoid_table();
-    if (global_net.load("nextfish.harenn")) {
+    
+    // We construct a replication context based on system NUMA configuration.
+    // Stockfish's numaContext is private to Engine, so we create our own replication context here.
+    if (!global_numa_ctx) {
+        global_numa_ctx = new NumaReplicationContext(NumaConfig::from_system(BundledL3Policy{32}));
+    }
+    
+    Network net;
+    if (net.load("nextfish.harenn")) {
         model_loaded = true;
-        sync_cout << "info string HARENN: Full 4-Head Model loaded successfully" << sync_endl;
+        global_net_repl = std::make_unique<NumaReplicated<Network>>(*global_numa_ctx, std::move(net));
+        sync_cout << "info string HARENN: Full 4-Head Model loaded and replicated successfully across NUMA nodes" << sync_endl;
     } else {
         model_loaded = false;
         sync_cout << "info string HARENN: Failed to load model. Check nextfish.harenn path" << sync_endl;
@@ -295,17 +306,13 @@ bool GuidanceProvider::is_model_loaded() {
     return model_loaded;
 }
 
-EvalResult GuidanceProvider::query(const Position& pos) {
-    if (!model_loaded) {
+EvalResult GuidanceProvider::query(const Position& pos, NumaReplicatedAccessToken numaToken) {
+    if (!model_loaded || !global_net_repl) {
         return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
     }
     int active_features[64];
     int count = 0;
 
-    // Feature encoding matching train_harenn.py exactly:
-    // - Square: sq ^ 56 (converts Stockfish bottom-up to FEN top-down)
-    // - Piece: W_PAWN=1..W_KING=6 -> py_pc 0..5, B_PAWN=9..B_KING=14 -> py_pc 6..11
-    // No perspective flip - model trained on raw FEN encoding for both sides.
     Bitboard pieces = pos.pieces();
     while (pieces) {
         Square sq = pop_lsb(pieces);
@@ -317,11 +324,12 @@ EvalResult GuidanceProvider::query(const Position& pos) {
         }
     }
 
-    return global_net.forward(active_features, count);
+    // Access node-local copy of Network
+    return (*global_net_repl)[numaToken].forward(active_features, count);
 }
 
-std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos) {
-    if (!model_loaded) {
+std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken) {
+    if (!model_loaded || !global_net_repl) {
         return {0.5f, 0.5f};
     }
     int active_features[64];
@@ -338,7 +346,8 @@ std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos) 
         }
     }
 
-    return global_net.compute_rho_and_rs(active_features, count);
+    // Access node-local copy of Network
+    return (*global_net_repl)[numaToken].compute_rho_and_rs(active_features, count);
 }
 
 } // namespace HARENN

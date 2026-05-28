@@ -14,8 +14,8 @@ public:
     static void init();
     
     // Phân tích AI tích hợp (Tau, Rho, Rs, Eval)
-    static EvalResult get_analysis(const Position& pos);
-    static std::pair<float, float> get_rho_and_rs(const Position& pos);
+    static EvalResult get_analysis(const Position& pos, NumaReplicatedAccessToken numaToken);
+    static std::pair<float, float> get_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken);
 
     // Điều phối cắt tỉa (LMR) dựa trên AI
     static int get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore);
@@ -27,7 +27,7 @@ public:
     static int get_move_bonus(const Position& pos, Move m);
 
     // AI-based selective depth extension
-    static int get_search_extension(const Position& pos, Move m, Depth depth, bool givesCheck);
+    static int get_search_extension(const Position& pos, Move m, Depth depth, bool givesCheck, NumaReplicatedAccessToken numaToken);
 
     // Điều phối Quiescence Search (Đồng thuận AI-Engine)
     static int get_qs_tactical_adjustment(const Position& pos, int standPat);

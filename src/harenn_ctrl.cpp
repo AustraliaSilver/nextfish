@@ -15,12 +15,12 @@ void Controller::init() {
     GuidanceProvider::init();
 }
 
-EvalResult Controller::get_analysis(const Position& pos) {
-    return GuidanceProvider::query(pos);
+EvalResult Controller::get_analysis(const Position& pos, NumaReplicatedAccessToken numaToken) {
+    return GuidanceProvider::query(pos, numaToken);
 }
 
-std::pair<float, float> Controller::get_rho_and_rs(const Position& pos) {
-    return GuidanceProvider::query_rho_and_rs(pos);
+std::pair<float, float> Controller::get_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken) {
+    return GuidanceProvider::query_rho_and_rs(pos, numaToken);
 }
 
 int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore) {
@@ -53,7 +53,7 @@ int Controller::get_qs_tactical_adjustment(const Position& pos, int standPat) {
     return standPat;
 }
 
-int Controller::get_search_extension(const Position& pos, Move m, Depth depth, bool givesCheck) {
+int Controller::get_search_extension(const Position& pos, Move m, Depth depth, bool givesCheck, NumaReplicatedAccessToken numaToken) {
     if (!GuidanceProvider::is_model_loaded()) {
         return 0;
     }
@@ -64,7 +64,7 @@ int Controller::get_search_extension(const Position& pos, Move m, Depth depth, b
     }
 
     // Query the HARENN model
-    EvalResult res = get_analysis(pos);
+    EvalResult res = get_analysis(pos, numaToken);
 
     // If Horizon Risk (rho) or Resolution Score (rs) is very high,
     // indicating high tactical volatility/danger, and this is a check

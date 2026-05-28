@@ -2,6 +2,7 @@
 #define HARENN_H_INCLUDED
 
 #include "types.h"
+#include "numa.h"
 #include <string>
 #include <vector>
 #include <utility>
@@ -21,8 +22,8 @@ struct EvalResult {
 
 struct Layer {
     int rows, cols;
-    std::vector<int16_t> weights;
-    std::vector<int32_t> bias;
+    alignas(64) std::vector<int16_t> weights;
+    alignas(64) std::vector<int32_t> bias;
 };
 
 class Network {
@@ -50,8 +51,8 @@ private:
 class GuidanceProvider {
 public:
     static void init();
-    static EvalResult query(const Position& pos);
-    static std::pair<float, float> query_rho_and_rs(const Position& pos);
+    static EvalResult query(const Position& pos, NumaReplicatedAccessToken numaToken);
+    static std::pair<float, float> query_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken);
     static bool is_model_loaded();
 };
 

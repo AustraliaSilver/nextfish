@@ -437,7 +437,7 @@ moves_loop:
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
         if (useDEE && PvNode && depth >= 6 && depth <= 12 && (givesCheck || capture)) {
             if (!harennQueried) {
-                harennResult = HARENN::Controller::get_rho_and_rs(pos);
+                harennResult = HARENN::Controller::get_rho_and_rs(pos, numaAccessToken);
                 harennQueried = true;
             }
             const float threshold = (us == BLACK) ? 0.7060f : 0.8500f;

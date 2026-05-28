@@ -352,7 +352,7 @@ void Engine::trace_eval() const {
 
 void Engine::trace_harenn() const {
     verify_networks();
-    HARENN::EvalResult res = HARENN::GuidanceProvider::query(pos);
+    HARENN::EvalResult res = HARENN::GuidanceProvider::query(pos, NumaReplicatedAccessToken(0));
     sync_cout << "\n--- HARENN Model Inference ---"
               << "\nEvaluation: " << (res.eval * 100.0f) << " cp"
               << "\nTactical Complexity (Tau): " << res.tau
