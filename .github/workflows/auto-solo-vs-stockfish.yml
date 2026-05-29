@@ -156,11 +156,10 @@ jobs:
           $input_commands = "uci`nsetoption name Use DEE/HARENN value true`nsetoption name Use HARE Time Management value true`nisready`nquit"
           Set-Content -Path "nextfish_input.txt" -Value $input_commands
           
-          # Run Nextfish directly and capture output
-          $nextfish_proc = Start-Process -FilePath "./nextfish_built.exe" -RedirectStandardInput "nextfish_input.txt" -RedirectStandardOutput "nextfish_test.log" -RedirectStandardError "nextfish_err.log" -PassThru
-          $nextfish_proc.WaitForExit()
-          
-          Write-Host "Nextfish exit code: $($nextfish_proc.ExitCode)"
+          # Run Nextfish under cmd.exe standard redirection to avoid PowerShell pipe bugs
+          cmd.exe /c "nextfish_built.exe < nextfish_input.txt > nextfish_test.log 2> nextfish_err.log"
+          $exit_code = $LASTEXITCODE
+          Write-Host "Nextfish exit code: $exit_code"
           if (Test-Path "nextfish_test.log") {
             Write-Host "--- Nextfish stdout ---"
             Get-Content "nextfish_test.log"
@@ -170,7 +169,7 @@ jobs:
             Get-Content "nextfish_err.log"
           }
           
-          if ($nextfish_proc.ExitCode -ne 0) {
+          if ($exit_code -ne 0) {
             Write-Host "Nextfish crashed! Running under GDB to capture backtrace..."
             cmd.exe /c "gdb -batch -ex run -ex bt --args nextfish_built.exe < nextfish_input.txt"
             Write-Error "Nextfish crashed or failed to initialize!"
