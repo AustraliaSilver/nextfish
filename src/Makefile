@@ -1110,14 +1110,16 @@ config-sanity: net
 
 engine.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
 thread.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
-
-nnue_accumulator.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
-nnue_misc.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
-network.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
-half_ka_v2_hm.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
-full_threats.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
-evaluate.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
-bitboard.o: override CXXFLAGS := $(filter-out -O3,$(CXXFLAGS)) -O3
+harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+harenn_ctrl.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+nnue_accumulator.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+nnue_misc.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+network.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+half_ka_v2_hm.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+full_threats.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+evaluate.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
+bitboard.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
 
 
 
