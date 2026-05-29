@@ -73,7 +73,7 @@ int Controller::get_search_extension(const Position& pos, Move m, Depth depth, b
     // to search deeper in critical defensive situations.
     const bool isBlack = (pos.side_to_move() == BLACK);
     const float threshold = isBlack ? 0.7060f : 0.8228f;
-    if ((res.rho > threshold || res.rs > threshold) && (givesCheck || pos.capture_stage(m))) {
+    if ((res.rho > threshold || res.rs < (1.0f - threshold)) && (givesCheck || pos.capture_stage(m))) {
         return 1;
     }
 
