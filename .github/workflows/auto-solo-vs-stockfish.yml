@@ -171,6 +171,8 @@ jobs:
           }
           
           if ($nextfish_proc.ExitCode -ne 0) {
+            Write-Host "Nextfish crashed! Running under GDB to capture backtrace..."
+            cmd.exe /c "gdb -batch -ex run -ex bt --args nextfish_built.exe < nextfish_input.txt"
             Write-Error "Nextfish crashed or failed to initialize!"
             exit 1
           }
