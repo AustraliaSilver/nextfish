@@ -278,13 +278,17 @@ std::pair<float, float> Network::compute_rho_and_rs(const int* active_features, 
     return {rho, rs};
 }
 
-static Network global_net;
+static Network* global_net = nullptr;
 static bool model_loaded = false;
 
 void GuidanceProvider::init() {
     init_sigmoid_table();
     
-    if (global_net.load("nextfish.harenn")) {
+    if (!global_net) {
+        global_net = new Network();
+    }
+    
+    if (global_net->load("nextfish.harenn")) {
         model_loaded = true;
         sync_cout << "info string HARENN: Full 4-Head Model loaded successfully" << sync_endl;
     } else {
@@ -299,7 +303,7 @@ bool GuidanceProvider::is_model_loaded() {
 
 EvalResult GuidanceProvider::query(const Position& pos, NumaReplicatedAccessToken numaToken) {
     (void)numaToken;
-    if (!model_loaded) {
+    if (!model_loaded || !global_net) {
         return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
     }
     int active_features[64];
@@ -316,12 +320,12 @@ EvalResult GuidanceProvider::query(const Position& pos, NumaReplicatedAccessToke
         }
     }
 
-    return global_net.forward(active_features, count);
+    return global_net->forward(active_features, count);
 }
 
 std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken) {
     (void)numaToken;
-    if (!model_loaded) {
+    if (!model_loaded || !global_net) {
         return {0.5f, 0.5f};
     }
     int active_features[64];
@@ -338,7 +342,7 @@ std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos, 
         }
     }
 
-    return global_net.compute_rho_and_rs(active_features, count);
+    return global_net->compute_rho_and_rs(active_features, count);
 }
 
 } // namespace HARENN
