@@ -425,7 +425,7 @@ moves_loop:
     probCutBeta = beta + 418;
     if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta && !is_decisive(beta) && is_valid(ttData.value) && !is_decisive(ttData.value)) return probCutBeta;
     const PieceToHistory* contHist[] = { (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory, (ss - 4)->continuationHistory, (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
-    MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist, &sharedHistory, ss->ply, useDEE && useDEECaptureOrdering);
+    MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist, &sharedHistory, ss->ply, false);
     value = bestValue; int moveCount = 0;
     while ((move = mp.next_move()) != Move::none()) {
         if (move == excludedMove || !pos.legal(move)) continue;
@@ -435,16 +435,7 @@ moves_loop:
         if (PvNode) (ss + 1)->pv = nullptr;
         extension = 0; capture = pos.capture_stage(move); movedPiece = pos.moved_piece(move); givesCheck = pos.gives_check(move);
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
-        if (useDEE && PvNode && depth >= 6 && depth <= 12 && (givesCheck || capture)) {
-            if (!harennQueried) {
-                harennResult = HARENN::Controller::get_rho_and_rs(pos, numaAccessToken);
-                harennQueried = true;
-            }
-            const float threshold = (us == BLACK) ? 0.7060f : 0.8500f;
-            if (harennResult.first > threshold || harennResult.second > threshold) {
-                extension += 1;
-            }
-        }
+        // AVAE search extension neutralized to restore pristine Stockfish 18 performance.
         if (useDEE && useHAREReduction) {
             r = HARENN::Controller::get_smart_reduction(pos, depth, move, moveCount, r, ss->staticEval, rootMoves[0].score);
         }
