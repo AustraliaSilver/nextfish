@@ -278,24 +278,15 @@ std::pair<float, float> Network::compute_rho_and_rs(const int* active_features, 
     return {rho, rs};
 }
 
-static NumaReplicationContext* global_numa_ctx = nullptr;
-static std::unique_ptr<NumaReplicated<Network>> global_net_repl = nullptr;
+static Network global_net;
 static bool model_loaded = false;
 
 void GuidanceProvider::init() {
     init_sigmoid_table();
     
-    // We construct a replication context based on system NUMA configuration.
-    // Stockfish's numaContext is private to Engine, so we create our own replication context here.
-    if (!global_numa_ctx) {
-        global_numa_ctx = new NumaReplicationContext(NumaConfig::from_system(BundledL3Policy{32}));
-    }
-    
-    Network net;
-    if (net.load("nextfish.harenn")) {
+    if (global_net.load("nextfish.harenn")) {
         model_loaded = true;
-        global_net_repl = std::make_unique<NumaReplicated<Network>>(*global_numa_ctx, std::move(net));
-        sync_cout << "info string HARENN: Full 4-Head Model loaded and replicated successfully across NUMA nodes" << sync_endl;
+        sync_cout << "info string HARENN: Full 4-Head Model loaded successfully" << sync_endl;
     } else {
         model_loaded = false;
         sync_cout << "info string HARENN: Failed to load model. Check nextfish.harenn path" << sync_endl;
@@ -307,7 +298,8 @@ bool GuidanceProvider::is_model_loaded() {
 }
 
 EvalResult GuidanceProvider::query(const Position& pos, NumaReplicatedAccessToken numaToken) {
-    if (!model_loaded || !global_net_repl) {
+    (void)numaToken;
+    if (!model_loaded) {
         return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
     }
     int active_features[64];
@@ -324,12 +316,12 @@ EvalResult GuidanceProvider::query(const Position& pos, NumaReplicatedAccessToke
         }
     }
 
-    // Access node-local copy of Network
-    return (*global_net_repl)[numaToken].forward(active_features, count);
+    return global_net.forward(active_features, count);
 }
 
 std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken) {
-    if (!model_loaded || !global_net_repl) {
+    (void)numaToken;
+    if (!model_loaded) {
         return {0.5f, 0.5f};
     }
     int active_features[64];
@@ -346,8 +338,7 @@ std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos, 
         }
     }
 
-    // Access node-local copy of Network
-    return (*global_net_repl)[numaToken].compute_rho_and_rs(active_features, count);
+    return global_net.compute_rho_and_rs(active_features, count);
 }
 
 } // namespace HARENN
