@@ -27,6 +27,9 @@
 
 using namespace Stockfish;
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((force_align_arg_pointer))
+#endif
 int main(int argc, char* argv[]) {
     std::cout << engine_info() << std::endl;
 

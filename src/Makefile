@@ -1108,18 +1108,6 @@ config-sanity: net
 	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
 	 test "$(comp)" = "aarch64-linux-android21-clang")
 
-engine.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
-thread.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
-harenn.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-harenn_ctrl.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-dee.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-nnue_accumulator.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-nnue_misc.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-network.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-half_ka_v2_hm.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-full_threats.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-evaluate.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
-bitboard.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O3
 
 
 
@@ -1145,14 +1133,14 @@ clang-profile-use:
 
 gcc-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-generate -mstackrealign -fno-tree-vectorize' \
+	EXTRACXXFLAGS='-fprofile-generate' \
 	EXTRACXXFLAGS+=$(EXTRAPROFILEFLAGS) \
 	EXTRALDFLAGS='-lgcov' \
 	all
 
 gcc-profile-use:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-use -fno-peel-loops -fno-tracer -mstackrealign -fno-tree-vectorize' \
+	EXTRACXXFLAGS='-fprofile-use -fno-peel-loops -fno-tracer' \
 	EXTRACXXFLAGS+=$(EXTRAPROFILEFLAGS) \
 	EXTRALDFLAGS='-lgcov' \
 	all

@@ -49,15 +49,20 @@ class NativeThread {
         pthread_attr_init(attr);
         pthread_attr_setstacksize(attr, TH_STACK_SIZE);
 
-        auto start_routine = [](void* ptr) -> void* {
-            auto f = reinterpret_cast<std::function<void()>*>(ptr);
-            // Call the function
-            (*f)();
-            delete f;
-            return nullptr;
+        struct ThreadEntry {
+#if defined(__GNUC__) || defined(__clang__)
+            __attribute__((force_align_arg_pointer))
+#endif
+            static void* run(void* ptr) {
+                auto f = reinterpret_cast<std::function<void()>*>(ptr);
+                // Call the function
+                (*f)();
+                delete f;
+                return nullptr;
+            }
         };
 
-        pthread_create(&thread, attr, start_routine, func);
+        pthread_create(&thread, attr, ThreadEntry::run, func);
     }
 
     void join() { pthread_join(thread, nullptr); }
