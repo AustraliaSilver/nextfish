@@ -73,7 +73,7 @@ class OptionalThreadToNumaNodeBinder {
 // the search is finished, it goes back to idle_loop() waiting for a new signal.
 class Thread {
    public:
-    Thread(Search::SharedState&,
+    Thread(const Search::SharedState&,
            std::unique_ptr<Search::ISearchManager>,
            size_t,
            size_t,
@@ -138,7 +138,7 @@ class ThreadPool {
     size_t num_threads() const;
     void   clear();
     void   set(const NumaConfig& numaConfig,
-               Search::SharedState,
+               const Search::SharedState&,
                const Search::SearchManager::UpdateContext&);
 
     Search::SearchManager* main_manager();

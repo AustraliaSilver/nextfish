@@ -67,7 +67,6 @@ void UCIEngine::print_info_string(std::string_view str) {
 UCIEngine::UCIEngine(int argc, char** argv) :
     engine(argv[0]),
     cli(argc, argv) {
-    std::cout << "DEBUG: UCIEngine constructor body started" << std::endl;
 
     engine.get_options().add_info_listener([](const std::optional<std::string>& str) {
         if (str.has_value())
@@ -75,7 +74,6 @@ UCIEngine::UCIEngine(int argc, char** argv) :
     });
 
     init_search_update_listeners();
-    std::cout << "DEBUG: UCIEngine constructor body finished" << std::endl;
 }
 
 void UCIEngine::init_search_update_listeners() {

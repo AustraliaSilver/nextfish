@@ -17,8 +17,6 @@
 */
 
 #include "thread.h"
-#include <iostream>
-
 
 #include <algorithm>
 #include <cassert>
@@ -44,7 +42,7 @@ namespace Stockfish {
 
 // Constructor launches the thread and waits until it goes to sleep
 // in idle_loop(). Note that 'searching' and 'exit' should be already set.
-Thread::Thread(Search::SharedState&                    sharedState,
+Thread::Thread(const Search::SharedState&              sharedState,
                std::unique_ptr<Search::ISearchManager> sm,
                size_t                                  n,
                size_t                                  numaN,
@@ -149,13 +147,11 @@ static size_t next_power_of_two(uint64_t count) { return count > 1 ? (2ULL << ms
 // Created and launched threads will immediately go to sleep in idle_loop.
 // Upon resizing, threads are recreated to allow for binding if necessary.
 void ThreadPool::set(const NumaConfig&                           numaConfig,
-                     Search::SharedState                         sharedState,
+                     const Search::SharedState&                  sharedState,
                      const Search::SearchManager::UpdateContext& updateContext) {
-    std::cout << "DEBUG: ThreadPool::set: started" << std::endl;
 
     if (threads.size() > 0)  // destroy any existing thread(s)
     {
-        std::cout << "DEBUG: ThreadPool::set: destroying existing threads" << std::endl;
         main_thread()->wait_for_search_finished();
 
         threads.clear();
@@ -164,7 +160,6 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
     }
 
     const size_t requested = sharedState.options["Threads"];
-    std::cout << "DEBUG: ThreadPool::set: requested = " << requested << std::endl;
 
     if (requested > 0)  // create new thread(s)
     {
@@ -185,7 +180,6 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             // numaPolicy == "system", or explicitly set by the user
             return true;
         }();
-        std::cout << "DEBUG: ThreadPool::set: doBindThreads = " << doBindThreads << std::endl;
 
         std::map<NumaIndex, size_t> counts;
         boundThreadToNumaNode = doBindThreads
@@ -217,7 +211,6 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
         auto threadsPerNode = counts;
         counts.clear();
 
-        std::cout << "DEBUG: ThreadPool::set: starting thread creation loop" << std::endl;
         while (threads.size() < requested)
         {
             const size_t    threadId      = threads.size();
@@ -235,11 +228,9 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                 auto binder = doBindThreads ? OptionalThreadToNumaNodeBinder(numaConfig, numaId)
                                                        : OptionalThreadToNumaNodeBinder(numaId);
 
-                std::cout << "DEBUG: ThreadPool::set: creating thread " << threadId << " on numa " << numaId << std::endl;
                 threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager),
                                                                          threadId, counts[numaId]++,
                                                                          threadsPerNode[numaId], binder));
-                std::cout << "DEBUG: ThreadPool::set: thread " << threadId << " created" << std::endl;
             };
 
             // Ensure the worker thread inherits the intended NUMA affinity at creation.
@@ -248,17 +239,11 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             else
                 create_thread();
         }
-        std::cout << "DEBUG: ThreadPool::set: thread creation loop finished" << std::endl;
 
-        std::cout << "DEBUG: ThreadPool::set: calling clear()" << std::endl;
         clear();
-        std::cout << "DEBUG: ThreadPool::set: clear() finished" << std::endl;
 
-        std::cout << "DEBUG: ThreadPool::set: waiting for search finished" << std::endl;
         main_thread()->wait_for_search_finished();
-        std::cout << "DEBUG: ThreadPool::set: wait_for_search_finished finished" << std::endl;
     }
-    std::cout << "DEBUG: ThreadPool::set: finished" << std::endl;
 }
 
 

@@ -267,7 +267,7 @@ class NullSearchManager: public ISearchManager {
 // of the search history, and storing data required for the search.
 class Worker {
    public:
-    Worker(SharedState&,
+    Worker(const SharedState&,
            std::unique_ptr<ISearchManager>,
            size_t,
            size_t,

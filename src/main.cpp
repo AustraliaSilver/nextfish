@@ -32,28 +32,16 @@ using namespace Stockfish;
 __attribute__((force_align_arg_pointer))
 #endif
 int main(int argc, char* argv[]) {
-    std::cout << "DEBUG: main starting" << std::endl;
     std::cout << engine_info() << std::endl;
 
-    std::cout << "DEBUG: Initializing Bitboards" << std::endl;
     Bitboards::init();
-    std::cout << "DEBUG: Bitboards initialized" << std::endl;
-
-    std::cout << "DEBUG: Initializing Position" << std::endl;
     Position::init();
-    std::cout << "DEBUG: Position initialized" << std::endl;
 
-    std::cout << "DEBUG: Creating UCIEngine" << std::endl;
     auto uci = std::make_unique<UCIEngine>(argc, argv);
-    std::cout << "DEBUG: UCIEngine created" << std::endl;
 
-    std::cout << "DEBUG: Initializing Tune" << std::endl;
     Tune::init(uci->engine_options());
-    std::cout << "DEBUG: Tune initialized" << std::endl;
 
-    std::cout << "DEBUG: Entering uci->loop()" << std::endl;
     uci->loop();
-    std::cout << "DEBUG: Exited uci->loop()" << std::endl;
 
     std::_Exit(0);
 }

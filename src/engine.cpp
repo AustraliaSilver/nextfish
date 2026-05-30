@@ -69,7 +69,6 @@ Engine::Engine(std::optional<std::string> path) :
              // Heap-allocate because sizeof(NN::Networks) is large
              std::make_unique<NN::Networks>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
                                             NN::EvalFile{EvalFileDefaultNameSmall, "None", ""})) {
-    std::cout << "DEBUG: Engine constructor starting" << std::endl;
     pos.set(StartFEN, false, &states->back());
 
     options.add(  //
@@ -159,18 +158,10 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Use HARE Time Management", Option(true));
     
     // Initialize HARENN controller
-    std::cout << "DEBUG: Initializing HARENN controller" << std::endl;
     HARENN::Controller::init();
-    std::cout << "DEBUG: HARENN controller initialized" << std::endl;
     
-    std::cout << "DEBUG: Loading networks" << std::endl;
     load_networks();
-    std::cout << "DEBUG: Networks loaded" << std::endl;
-    
-    std::cout << "DEBUG: Resizing threads" << std::endl;
     resize_threads();
-    std::cout << "DEBUG: Threads resized" << std::endl;
-    std::cout << "DEBUG: Engine constructor finished" << std::endl;
 }
 
 std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
@@ -263,28 +254,13 @@ void Engine::set_numa_config_from_option(const std::string& o) {
 }
 
 void Engine::resize_threads() {
-    std::cout << "DEBUG: resize_threads: wait_for_search_finished starting" << std::endl;
     threads.wait_for_search_finished();
-    std::cout << "DEBUG: resize_threads: wait_for_search_finished finished" << std::endl;
-    std::cout << "DEBUG: resize_threads: this = " << this << std::endl;
-    std::cout << "DEBUG: resize_threads: &options = " << &options << std::endl;
-    std::cout << "DEBUG: resize_threads: &threads = " << &threads << std::endl;
-    std::cout << "DEBUG: resize_threads: &tt = " << &tt << std::endl;
-    std::cout << "DEBUG: resize_threads: &sharedHists = " << &sharedHists << std::endl;
-    std::cout << "DEBUG: resize_threads: &networks = " << &networks << std::endl;
-    std::cout << "DEBUG: resize_threads: threads.set starting" << std::endl;
     threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, networks},
                 updateContext);
-    std::cout << "DEBUG: resize_threads: threads.set finished" << std::endl;
 
     // Reallocate the hash with the new threadpool size
-    std::cout << "DEBUG: resize_threads: set_tt_size starting" << std::endl;
     set_tt_size(options["Hash"]);
-    std::cout << "DEBUG: resize_threads: set_tt_size finished" << std::endl;
-    
-    std::cout << "DEBUG: resize_threads: ensure_network_replicated starting" << std::endl;
     threads.ensure_network_replicated();
-    std::cout << "DEBUG: resize_threads: ensure_network_replicated finished" << std::endl;
 }
 
 void Engine::set_tt_size(size_t mb) {

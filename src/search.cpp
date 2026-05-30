@@ -127,7 +127,7 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
 
 }  // namespace
 
-Search::Worker::Worker(SharedState&                    sharedState,
+Search::Worker::Worker(const SharedState&              sharedState,
                        std::unique_ptr<ISearchManager> sm,
                        size_t                          threadId,
                        size_t                          numaThreadId,
