@@ -1108,8 +1108,7 @@ config-sanity: net
 	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
 	 test "$(comp)" = "aarch64-linux-android21-clang")
 
-engine.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
-thread.o: override CXXFLAGS := $(filter-out -fprofile-generate% -fprofile-use% -O3,$(CXXFLAGS)) -O0
+# No overrides for engine.o and thread.o to allow full O3/PGO optimization
 
 $(EXE): $(OBJS)
 	+$(CXX) -o $@ $(OBJS) $(LDFLAGS)
