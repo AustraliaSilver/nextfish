@@ -266,6 +266,12 @@ void Engine::resize_threads() {
     std::cout << "DEBUG: resize_threads: wait_for_search_finished starting" << std::endl;
     threads.wait_for_search_finished();
     std::cout << "DEBUG: resize_threads: wait_for_search_finished finished" << std::endl;
+    std::cout << "DEBUG: resize_threads: this = " << this << std::endl;
+    std::cout << "DEBUG: resize_threads: &options = " << &options << std::endl;
+    std::cout << "DEBUG: resize_threads: &threads = " << &threads << std::endl;
+    std::cout << "DEBUG: resize_threads: &tt = " << &tt << std::endl;
+    std::cout << "DEBUG: resize_threads: &sharedHists = " << &sharedHists << std::endl;
+    std::cout << "DEBUG: resize_threads: &networks = " << &networks << std::endl;
     std::cout << "DEBUG: resize_threads: threads.set starting" << std::endl;
     threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, networks},
                 updateContext);
