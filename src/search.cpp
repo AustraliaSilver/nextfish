@@ -435,14 +435,14 @@ moves_loop:
         if (PvNode) (ss + 1)->pv = nullptr;
         extension = 0; capture = pos.capture_stage(move); movedPiece = pos.moved_piece(move); givesCheck = pos.gives_check(move);
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
-        if (false && useDEE && PvNode && depth >= 6 && depth <= 12 && givesCheck) {
+        if (useDEE && PvNode && depth >= 6 && depth <= 12 && givesCheck) {
             if (!harennQueried) {
                 harennResult = HARENN::Controller::get_rho_and_rs(pos, numaAccessToken);
                 harennQueried = true;
             }
-            const float rho_thresh = (us == BLACK) ? 0.55f : 0.65f;
-            const float rs_thresh = (us == BLACK) ? 0.08f : 0.05f;
-            if (harennResult.first > rho_thresh || harennResult.second < rs_thresh) {
+            const float threshold = (us == BLACK) ? 0.7060f : 0.8228f;
+            if (harennResult.first > threshold && harennResult.second < (1.0f - threshold)
+                && mainHistory[us][move.raw()] >= 0) {
                 extension += 1;
             }
         }
