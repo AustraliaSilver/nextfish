@@ -27,7 +27,7 @@
 // The implementation calls pthread_create() with the stack size parameter
 // equal to the Linux 8MB default, on platforms that support it.
 
-#if defined(__APPLE__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(USE_PTHREADS)
+#if (defined(__APPLE__) || defined(USE_PTHREADS)) && !defined(__MINGW32__) && !defined(__MINGW64__)
 
     #include <pthread.h>
     #include <functional>
