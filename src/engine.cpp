@@ -69,7 +69,7 @@ Engine::Engine(std::optional<std::string> path) :
              // Heap-allocate because sizeof(NN::Networks) is large
              std::make_unique<NN::Networks>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
                                             NN::EvalFile{EvalFileDefaultNameSmall, "None", ""})) {
-
+    std::cout << "DEBUG: Engine constructor starting" << std::endl;
     pos.set(StartFEN, false, &states->back());
 
     options.add(  //
@@ -159,10 +159,18 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Use HARE Time Management", Option(true));
     
     // Initialize HARENN controller
+    std::cout << "DEBUG: Initializing HARENN controller" << std::endl;
     HARENN::Controller::init();
+    std::cout << "DEBUG: HARENN controller initialized" << std::endl;
     
+    std::cout << "DEBUG: Loading networks" << std::endl;
     load_networks();
+    std::cout << "DEBUG: Networks loaded" << std::endl;
+    
+    std::cout << "DEBUG: Resizing threads" << std::endl;
     resize_threads();
+    std::cout << "DEBUG: Threads resized" << std::endl;
+    std::cout << "DEBUG: Engine constructor finished" << std::endl;
 }
 
 std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
