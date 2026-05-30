@@ -18,6 +18,7 @@
 
 #include <iostream>
 #include <memory>
+#include <cstdlib>
 
 #include "bitboard.h"
 #include "misc.h"
@@ -42,5 +43,5 @@ int main(int argc, char* argv[]) {
 
     uci->loop();
 
-    return 0;
+    std::_Exit(0);
 }
