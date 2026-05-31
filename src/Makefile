@@ -879,10 +879,9 @@ ifeq ($(debug), no)
 # To use LTO and static linking on Windows,
 # the tool chain requires gcc version 10.1 or later.
 	else ifeq ($(comp),mingw)
-		ifeq ($(findstring -fprofile-generate,$(EXTRACXXFLAGS)),)
-			CXXFLAGS += -flto -flto-partition=one
-			LDFLAGS += $(CXXFLAGS) -flto=jobserver
-		endif
+		# LTO is disabled on MinGW to prevent fprofile-generate segmentation faults
+		# CXXFLAGS += -flto -flto-partition=one
+		# LDFLAGS += $(CXXFLAGS) -save-temps
 	endif
 endif
 endif
