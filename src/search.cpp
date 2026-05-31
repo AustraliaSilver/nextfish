@@ -435,7 +435,7 @@ moves_loop:
         if (PvNode) (ss + 1)->pv = nullptr;
         extension = 0; capture = pos.capture_stage(move); movedPiece = pos.moved_piece(move); givesCheck = pos.gives_check(move);
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
-        if (useDEE && PvNode && depth >= 6 && depth <= 12 && givesCheck) {
+        if (false && useDEE && PvNode && depth >= 6 && depth <= 12 && givesCheck) {
             if (!harennQueried) {
                 harennResult = HARENN::Controller::get_rho_and_rs(pos, numaAccessToken);
                 harennQueried = true;
