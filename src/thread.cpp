@@ -115,6 +115,9 @@ void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); 
 // Thread gets parked here, blocked on the condition variable
 // when the thread has no work to do.
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((force_align_arg_pointer))
+#endif
 void Thread::idle_loop() {
     while (true)
     {
