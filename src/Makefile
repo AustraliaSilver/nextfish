@@ -627,8 +627,8 @@ ifeq ($(COMP),gcc)
 	endif
 endif
 
-### On mingw use Windows threads, otherwise POSIX
-ifneq ($(comp),mingw)
+### On Windows use standard C++ threads, otherwise POSIX
+ifeq ($(target_windows),no)
 	CXXFLAGS += -DUSE_PTHREADS
 	# On Android Bionic's C library comes with its own pthread implementation bundled in
 	ifneq ($(OS),Android)
