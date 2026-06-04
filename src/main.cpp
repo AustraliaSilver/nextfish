@@ -43,5 +43,5 @@ int main(int argc, char* argv[]) {
 
     uci->loop();
 
-    std::_Exit(0);
+    return 0;
 }
