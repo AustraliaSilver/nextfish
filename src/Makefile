@@ -478,7 +478,11 @@ ifeq ($(COMP),gcc)
 endif
 
 ifeq ($(target_windows),yes)
-	LDFLAGS += -static -Wl,--stack,8388608
+	ifeq ($(COMP),clang)
+		LDFLAGS += -static -Wl,-stack:8388608
+	else
+		LDFLAGS += -static -Wl,--stack,8388608
+	endif
 endif
 
 ifeq ($(COMP),mingw)
