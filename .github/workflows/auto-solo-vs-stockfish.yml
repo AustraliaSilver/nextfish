@@ -24,7 +24,7 @@ on:
       threads:
         description: "Threads per engine"
         required: false
-        default: "2"
+        default: "1"
       hash:
         description: "Hash MB per engine"
         required: false
@@ -46,7 +46,7 @@ jobs:
       TC: ${{ github.event.inputs.tc || '10+0.1' }}
       CONCURRENCY: ${{ github.event.inputs.concurrency || '1' }}
       THREADS: ${{ github.event.inputs.threads || '1' }}
-      HASH: ${{ github.event.inputs.hash || '128' }}
+      HASH: ${{ github.event.inputs.hash || '512' }}
 
     steps:
       - name: Checkout
@@ -153,7 +153,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Testing Nextfish initialization..."
-          $input_commands = "uci`nsetoption name Use DEE/HARENN value true`nsetoption name Use HARE Time Management value true`nisready`nquit"
+          $input_commands = "uci`nsetoption name Use DEE/HARENN value true`nsetoption name Use HARE Time Management value true`nsetoption name Use HARE Aspiration value true`nsetoption name Use HARE Reduction value false`nisready`nquit"
           Set-Content -Path "nextfish_input.txt" -Value $input_commands
           
           # Run Nextfish under cmd.exe standard redirection to avoid PowerShell pipe bugs
@@ -202,7 +202,7 @@ jobs:
           
           Write-Host "Running match with THREADS=$threads HASH=$hash TC=$tc GAMES=$games CONCURRENCY=$concurrency"
           
-          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish dir=. proto=uci option.Threads=$threads option.Hash=$hash option."Use DEE/HARENN"=true option."Use HARE Time Management"=true -engine cmd=./stockfish_built.exe name=Stockfish18 dir=. proto=uci option.Threads=$threads option.Hash=$hash -each tc=$tc -games $games -pgnout $pgn -concurrency $concurrency -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn -resign movecount=3 score=400 -draw movenumber=40 movecount=8 score=20 | Tee-Object -FilePath $log
+          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish dir=. proto=uci option.Threads=$threads option.Hash=$hash option."Use DEE/HARENN"=true option."Use HARE Time Management"=true option."Use HARE Aspiration"=true option."Use HARE Reduction"=false -engine cmd=./stockfish_built.exe name=Stockfish18 dir=. proto=uci option.Threads=$threads option.Hash=$hash -each tc=$tc -games $games -pgnout $pgn -concurrency $concurrency -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn -resign movecount=3 score=400 -draw movenumber=40 movecount=8 score=20 | Tee-Object -FilePath $log
           
           $score = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
           $elo = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1

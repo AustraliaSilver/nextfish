@@ -235,7 +235,7 @@ void Search::Worker::iterative_deepening() {
             }
             Value avg = rootMoves[pvIdx].averageScore;
             alpha = std::max(avg - delta, -VALUE_INFINITE); beta = std::min(avg + delta, VALUE_INFINITE);
-            int contempt = 12; int optimismBase = 142 * avg / (std::abs(avg) + 91);
+            int contempt = 8; int optimismBase = 142 * avg / (std::abs(avg) + 91);
             optimism[us] = optimismBase + contempt; optimism[~us] = -(optimismBase + contempt);
             int failedHighCnt = 0;
             while (true) {

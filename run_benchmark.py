@@ -69,33 +69,54 @@ def run_cutechess(tc, games, pgn_file, concurrency=2, use_harenn=False):
     print(f"\n=== Running Cute Chess Match (TC: {tc}, Games: {games}, Concurrency: {concurrency}, HARENN: {use_harenn}) ===")
     
     engine_path = "D:\\nextfish\\nextfish_improved.exe"
-    stockfish_path = "C:\\Users\\Admin\\Downloads\\stockfish-windows-x86-64-avx2\\stockfish\\stockfish-windows-x86-64-avx2.exe"
+    stockfish_path = "D:\\nextfish\\stockfish18.exe"
     cutechess_path = "C:\\Program Files (x86)\\Cute Chess\\cutechess-cli.exe"
     book_path = "D:\\nextfish\\UHO_2022_8mvs_+110_+119.pgn"
     
-    cmd = [
-        cutechess_path,
-        "-engine", "name=NextfishImproved", f"cmd={engine_path}", "dir=D:\\nextfish",
-            "option.EvalFile=D:\\nextfish\\nn-c288c895ea92.nnue",
-            "option.Move Overhead=150",
-            f"option.Use DEE/HARENN={'true' if use_harenn else 'false'}",
-            "option.Use DEE Capture Ordering=false",
-            "option.Use DEE Capture LMR=false",
-            "option.Use HARE Time Management=false",
-            "option.Use HARE Aspiration=false",
-            "option.Use HARE Reduction=false",
-            "option.Hash=256",
-            "proto=uci",
-        "-engine", "name=Stockfish", f"cmd={stockfish_path}",
-            "option.Move Overhead=150",
-            "option.Hash=128",
-            "proto=uci",
-        "-each", f"tc={tc}",
-        "-rounds", str(games // 2), "-repeat",
-        "-concurrency", str(concurrency),
-        "-openings", f"file={book_path}", "format=pgn", "order=random",
-        "-pgnout", pgn_file
-    ]
+    if use_harenn:
+        # Use HARENN options (only if engine supports them)
+        cmd = [
+            cutechess_path,
+            "-engine", "name=NextfishImproved", f"cmd={engine_path}", "dir=D:\\nextfish",
+                "option.EvalFile=D:\\nextfish\\nn-c288c895ea92.nnue",
+                f"option.Use DEE/HARENN={'true' if use_harenn else 'false'}",
+                "option.Use DEE Capture Ordering=false",
+                "option.Use DEE Capture LMR=false",
+                f"option.Use HARE Time Management={'true' if use_harenn else 'false'}",
+                f"option.Use HARE Aspiration={'true' if use_harenn else 'false'}",
+                "option.Use HARE Reduction=false",
+                f"option.Hash={512}",
+                f"option.Threads={2}",
+                "proto=uci",
+            "-engine", "name=Stockfish", f"cmd={stockfish_path}",
+                f"option.Hash={512}",
+                f"option.Threads={2}",
+                "proto=uci",
+            "-each", f"tc={tc}",
+            "-rounds", str(games // 2), "-repeat",
+            "-concurrency", str(concurrency),
+            "-openings", f"file={book_path}", "format=pgn", "order=random",
+            "-pgnout", pgn_file
+        ]
+    else:
+        # Use basic UCI options only
+        cmd = [
+            cutechess_path,
+            "-engine", "name=NextfishImproved", f"cmd={engine_path}", "dir=D:\\nextfish",
+                "option.EvalFile=D:\\nextfish\\nn-c288c895ea92.nnue",
+                f"option.Hash={512}",
+                f"option.Threads={2}",
+                "proto=uci",
+            "-engine", "name=Stockfish", f"cmd={stockfish_path}",
+                f"option.Hash={512}",
+                f"option.Threads={2}",
+                "proto=uci",
+            "-each", f"tc={tc}",
+            "-rounds", str(games // 2), "-repeat",
+            "-concurrency", str(concurrency),
+            "-openings", f"file={book_path}", "format=pgn", "order=random",
+            "-pgnout", pgn_file
+        ]
     
     print(f"Command: {' '.join(cmd)}")
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
