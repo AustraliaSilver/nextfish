@@ -156,6 +156,12 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("Use HARE Reduction", Option(true));
     options.add("Use HARE FailLow Verify", Option(true));
     options.add("Use HARE Time Management", Option(true));
+    options.add("HARE TM Center", Option(35, 20, 50));       // centi-tau: 35 = 0.35
+    options.add("HARE TM Slope", Option(143, 50, 300));       // deci-slope: 143 = 14.3
+    options.add("HARE TM Range Min", Option(95, 85, 100));    // integer %
+    options.add("HARE TM Range Max", Option(105, 100, 115));   // integer %
+    options.add("HARE Ext Threshold White", Option(823, 500, 950));  // thousandths: 823 = 0.823
+    options.add("HARE Ext Threshold Black", Option(706, 500, 950));  // thousandths: 706 = 0.706
     
     // Initialize HARENN controller
     HARENN::Controller::init();

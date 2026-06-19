@@ -188,6 +188,7 @@ void Search::Worker::iterative_deepening() {
     useDEECapturePruning = options["Use DEE Capture Pruning"];
     useHAREAspiration = options["Use HARE Aspiration"];
     useHAREReduction = options["Use HARE Reduction"];
+    HARENN::Controller::refresh_params(options);
 
     SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
     Move pv[MAX_PLY + 1];

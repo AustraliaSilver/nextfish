@@ -5,13 +5,20 @@
 #include "position.h"
 #include "harenn.h"
 
+#include <string>
+
 namespace Stockfish {
+
+class OptionsMap;
 
 namespace HARENN {
 
 class Controller {
 public:
     static void init();
+
+    // Load tunable parameters from UCI options (call at start of search)
+    static void refresh_params(const OptionsMap& options);
     
     // Phân tích AI tích hợp (Tau, Rho, Rs, Eval)
     static EvalResult get_analysis(const Position& pos, NumaReplicatedAccessToken numaToken);

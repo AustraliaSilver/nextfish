@@ -2,6 +2,7 @@
 #include "harenn.h"
 #include "bitboard.h"
 #include "position.h"
+#include "ucioption.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -11,8 +12,27 @@ namespace Stockfish {
 
 namespace HARENN {
 
+namespace {
+    // Tunable parameters, refreshed from UCI options at start of search
+    float tm_center      = 0.35f;
+    float tm_slope       = 14.3f;
+    float tm_range_min   = 95.0f;
+    float tm_range_max   = 105.0f;
+    float ext_threshold_white = 0.8228f;
+    float ext_threshold_black = 0.7060f;
+}
+
 void Controller::init() {
     GuidanceProvider::init();
+}
+
+void Controller::refresh_params(const OptionsMap& options) {
+    tm_center      = options["HARE TM Center"] * 0.01f;
+    tm_slope       = options["HARE TM Slope"] * 0.1f;
+    tm_range_min   = (float)(int)options["HARE TM Range Min"];
+    tm_range_max   = (float)(int)options["HARE TM Range Max"];
+    ext_threshold_white = options["HARE Ext Threshold White"] * 0.001f;
+    ext_threshold_black = options["HARE Ext Threshold Black"] * 0.001f;
 }
 
 EvalResult Controller::get_analysis(const Position& pos, NumaReplicatedAccessToken numaToken) {
@@ -77,7 +97,7 @@ int Controller::get_search_extension(const Position& pos, Move m, Depth depth, b
     // For Black (side to move), we lower the threshold slightly (rho > 0.70f or rs > 0.70f)
     // to search deeper in critical defensive situations.
     const bool isBlack = (pos.side_to_move() == BLACK);
-    const float threshold = isBlack ? 0.7060f : 0.8228f;
+    const float threshold = isBlack ? ext_threshold_black : ext_threshold_white;
     if (res.rho > threshold || res.rs < (1.0f - threshold)) {
         return 1;
     }
@@ -86,30 +106,12 @@ int Controller::get_search_extension(const Position& pos, Move m, Depth depth, b
 }
 
 int Controller::get_time_multiplier(const Position& pos) {
-    // V96: Symmetric time management with corrected middlegame centering
-    //
-    // History:
-    // - V94: Fixed feature encoding. But [93,107]/scale-200 TM centered at opening tau (0.255)
-    //   while middlegame tau is ~0.30-0.40 → consistently 107% → cumulative pressure -45.4 Elo.
-    // - V95: Neutralized.
-    // - V96: Center at middlegame average tau 0.35, gentle slope (14.3), tight range [95,105].
-    //   The key insight: with the center at middlegame average, the multiplier naturally
-    //   averages ~100% over a full game. Opening tau~0.255 → ~98.6% (save time buffer),
-    //   middlegame tau~0.35 → 100% (neutral), complex tau~0.50 → ~102% (spend).
-    // - Low-time safety: symmetric interpolation to 100% below 2000ms.
     if (!GuidanceProvider::is_model_loaded()) return 100;
 
     EvalResult res = get_analysis(pos, NumaReplicatedAccessToken(0));
 
-    // Conservative symmetric TM: center at 0.35, gentle slope 14.3, tight range [95,105].
-    // Best result in testing: +28 Elo relative to baseline at 10+0.1.
-    constexpr float CENTER   = 0.35f;
-    constexpr float SLOPE    = 14.3f;
-    constexpr float MIN_MULT = 95.0f;
-    constexpr float MAX_MULT = 105.0f;
-
-    float mult = 100.0f + (res.tau - CENTER) * SLOPE;
-    return int(std::clamp(mult, MIN_MULT, MAX_MULT));
+    float mult = 100.0f + (res.tau - tm_center) * tm_slope;
+    return int(std::clamp(mult, tm_range_min, tm_range_max));
 }
 
 } // namespace HARENN
