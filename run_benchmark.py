@@ -65,10 +65,11 @@ def compile_engine(pgo=False):
         print("Error: Compiled executable not found in src!")
         return False
 
-def run_cutechess(tc, games, pgn_file, concurrency=2, use_harenn=False):
+def run_cutechess(tc, games, pgn_file, concurrency=2, use_harenn=False, engine_path=None):
     print(f"\n=== Running Cute Chess Match (TC: {tc}, Games: {games}, Concurrency: {concurrency}, HARENN: {use_harenn}) ===")
     
-    engine_path = "D:\\nextfish\\nextfish_improved.exe"
+    if engine_path is None:
+        engine_path = "D:\\nextfish\\nextfish_improved.exe"
     stockfish_path = "D:\\nextfish\\stockfish18.exe"
     cutechess_path = "C:\\Program Files (x86)\\Cute Chess\\cutechess-cli.exe"
     book_path = "D:\\nextfish\\UHO_2022_8mvs_+110_+119.pgn"
@@ -158,6 +159,7 @@ def main():
     parser.add_argument("--pgn", type=str, default="result_match.pgn", help="Output PGN filename (default: result_match.pgn)")
     parser.add_argument("--skip-compile", action="store_true", help="Skip compilation, run benchmark on existing executable")
     parser.add_argument("--harenn", action="store_true", help="Enable Use DEE/HARENN option in cutechess")
+    parser.add_argument("--engine", type=str, help="Custom engine path (default: nextfish_improved.exe)")
     
     args = parser.parse_args()
     
@@ -170,7 +172,7 @@ def main():
         print("Skipping compilation as requested.")
         
     print("\nStarting benchmarks...")
-    w, l, d, elo, los = run_cutechess(args.tc, args.games, args.pgn, args.concurrency, args.harenn)
+    w, l, d, elo, los = run_cutechess(args.tc, args.games, args.pgn, args.concurrency, args.harenn, args.engine)
     
     print("\n" + "="*40)
     print(" BENCHMARK SUMMARY")

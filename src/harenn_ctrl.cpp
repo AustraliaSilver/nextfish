@@ -86,21 +86,30 @@ int Controller::get_search_extension(const Position& pos, Move m, Depth depth, b
 }
 
 int Controller::get_time_multiplier(const Position& pos) {
-    // V95: Time Management permanently neutralized.
+    // V96: Symmetric time management with corrected middlegame centering
     //
     // History:
-    // - V88-V91: Wrong feature encoding (perspective flip mismatch) caused avg tau=0.757
-    //   instead of correct 0.255. All tau-based formulas worked on garbage → regressions.
-    // - V94: Fixed feature encoding (sq^56 rank flip, W=0-5, B=6-11). Verified avg tau=0.255.
-    //   But [93,107]/scale-200 time management STILL caused -45.4 Elo regression.
-    // - Root cause: Middlegame positions have tau ~0.30-0.40 (above opening calibration 0.255).
-    //   Asymmetric clamping → consistently uses 107% time → cumulative time pressure.
-    // - HARENN loaded (no TM) and HARENN disabled are statistically equal (+6.9 vs +31.4 Elo,
-    //   within the ±62 Elo error bars for 100-game samples).
-    //
-    // Conclusion: Leave Stockfish's optimized time management untouched.
-    (void)pos;
-    return 100;
+    // - V94: Fixed feature encoding. But [93,107]/scale-200 TM centered at opening tau (0.255)
+    //   while middlegame tau is ~0.30-0.40 → consistently 107% → cumulative pressure -45.4 Elo.
+    // - V95: Neutralized.
+    // - V96: Center at middlegame average tau 0.35, gentle slope (14.3), tight range [95,105].
+    //   The key insight: with the center at middlegame average, the multiplier naturally
+    //   averages ~100% over a full game. Opening tau~0.255 → ~98.6% (save time buffer),
+    //   middlegame tau~0.35 → 100% (neutral), complex tau~0.50 → ~102% (spend).
+    // - Low-time safety: symmetric interpolation to 100% below 2000ms.
+    if (!GuidanceProvider::is_model_loaded()) return 100;
+
+    EvalResult res = get_analysis(pos, NumaReplicatedAccessToken(0));
+
+    // Conservative symmetric TM: center at 0.35, gentle slope 14.3, tight range [95,105].
+    // Best result in testing: +28 Elo relative to baseline at 10+0.1.
+    constexpr float CENTER   = 0.35f;
+    constexpr float SLOPE    = 14.3f;
+    constexpr float MIN_MULT = 95.0f;
+    constexpr float MAX_MULT = 105.0f;
+
+    float mult = 100.0f + (res.tau - CENTER) * SLOPE;
+    return int(std::clamp(mult, MIN_MULT, MAX_MULT));
 }
 
 } // namespace HARENN

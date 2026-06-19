@@ -138,11 +138,11 @@ void TimeManagement::init(Search::LimitsType& limits,
     {
         double mult = HARENN::Controller::get_time_multiplier(pos) / 100.0;
         double timeLeftMs = (double)limits.time[us];
-        // Safety: when clock is very low, always use 100% of calculated time
+        // Safety: symmetric interpolation to 100% below 2000ms
+        // Prevents both boosting AND starving at low time
         if (timeLeftMs < 2000.0) {
             double ratio = std::max(0.0, (timeLeftMs - 500.0) / 1500.0);
             mult = 1.0 + (mult - 1.0) * ratio;
-            if (mult > 1.0) mult = 1.0;
         }
         optimumTime = TimePoint(optimumTime * mult);
     }

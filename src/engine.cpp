@@ -148,8 +148,8 @@ Engine::Engine(std::optional<std::string> path) :
           return std::nullopt;
       }));
 
-    options.add("Use DEE/HARENN", Option(false));
-    options.add("Use DEE Capture Ordering", Option(false));
+    options.add("Use DEE/HARENN", Option(true));
+    options.add("Use DEE Capture Ordering", Option(true));
     options.add("Use DEE Capture Pruning", Option(false));
     options.add("Use DEE Capture LMR", Option(false));
     options.add("Use HARE Aspiration", Option(true));
