@@ -31,7 +31,7 @@ HISTORY_FILE  = ENGINE_DIR / "spsa_tuning_history.jsonl"
 REPORT_FILE   = ENGINE_DIR / "spsa_tuning_report.txt"
 
 CUTECHESS     = r"C:\Program Files (x86)\Cute Chess\cutechess-cli.exe"
-STOCKFISH     = r"C:\Users\Admin\Downloads\stockfish-windows-x86-64-avx2\stockfish\stockfish-windows-x86-64-avx2.exe"
+STOCKFISH     = r"D:\nextfish\stockfish18.exe"
 ENGINE_EXE    = r"D:\nextfish\nextfish_improved.exe"
 BOOK_FILE     = r"D:\nextfish\UHO_2022_8mvs_+110_+119.pgn"
 NNUE_FILE     = r"D:\nextfish\nn-c288c895ea92.nnue"
@@ -42,7 +42,7 @@ NNUE_FILE     = r"D:\nextfish\nn-c288c895ea92.nnue"
 ALPHA         = 0.602   # standard
 GAMMA         = 0.101   # standard
 A_CONST       = 10.0    # stability constant (prevents too large initial steps)
-A_INIT        = 0.020   # scale of update step
+A_INIT        = 0.50    # scale of update step (must be large enough to move int params by >=1)
 C_INIT        = 0.030   # scale of perturbation (fraction of param range)
 
 # Bounds for each parameter (value stored as int scale for UCI options)
@@ -71,7 +71,7 @@ PARAM_TO_UCI = {
 
 # Games per candidate evaluation (must be even for balanced opening pairs)
 GAMES_PER_EVAL = 40   # 20 rounds × 2 (repeat), higher for better signal
-CONCURRENCY    = 4
+CONCURRENCY    = 2     # reduced to avoid CPU throttling on this machine
 
 # ─── State Management ─────────────────────────────────────────────────────────
 DEFAULT_PARAMS = {"tm_center": 35, "tm_slope": 143, "tm_range_min": 95, "tm_range_max": 105, "white_threshold": 823, "black_threshold": 706}
@@ -90,11 +90,16 @@ def load_state():
             for k, v in defaults.items():
                 if k not in s:
                     s[k] = dict(DEFAULT_PARAMS) if isinstance(v, dict) else v
-            # migrate params to full set
+            # migrate params to full set (ints)
             for name, val in DEFAULT_PARAMS.items():
-                if name not in s["parameters"]:
+                if name in s["parameters"] and isinstance(s["parameters"][name], float):
+                    # old format: white_threshold=0.8228 (float) → 823 (int), black_threshold=0.706 → 706
+                    s["parameters"][name] = int(round(s["parameters"][name] * 1000))
+                elif name not in s["parameters"]:
                     s["parameters"][name] = val
-                if name not in s["best_params"]:
+                if name in s["best_params"] and isinstance(s["best_params"][name], float):
+                    s["best_params"][name] = int(round(s["best_params"][name] * 1000))
+                elif name not in s["best_params"]:
                     s["best_params"][name] = val
             return s
         except Exception:
@@ -282,21 +287,24 @@ def main():
         print(f"    => WinRate={y_minus*100:.1f}%  (+{wm} -{lm} ={dm})  Elo={elo_m:+.1f}  [{t_minus/60:.1f} min]")
 
         # SPSA gradient per parameter
+        # Standard SPSA: ĝ = (y₊ - y₋) / (2·cₖ·Δ) in continuous space.
+        # For integer params we need |Δθ| ≥ 1. Scale factor bridges the gap:
+        # raw_step = aₖ · ĝ · GRAD_SCALE → ~1-2 units at k=1-20.
+        GRAD_SCALE = 40.0
         gradients = {}
         new_params = dict(cur_params)
         for name in param_order:
             cur = cur_params[name]
             lo = param_info[name]["lo"]
             hi = param_info[name]["hi"]
-            # perturbation magnitude used in units of the parameter
             lo_h, hi_h = PARAM_BOUNDS[name]
             span_h = hi_h - lo_h
             delta_val = max(1, int(round(c_k * span_h)))
-            if delta_val == 0:
-                gradients[name] = 0.0
-            else:
-                gradients[name] = (y_plus - y_minus) / (2.0 * delta_val * deltas[name])
-            new_val = int(round(clamp(cur + a_k * gradients[name] * span_h, lo, hi)))
+            raw_gradient = (y_plus - y_minus) / (2.0 * c_k * deltas[name])
+            gradients[name] = raw_gradient
+            raw_step = a_k * raw_gradient * GRAD_SCALE
+            step = int(round(clamp(raw_step, -5, 5)))
+            new_val = int(round(clamp(cur + step, lo, hi)))
             new_params[name] = new_val
 
         # Track best
