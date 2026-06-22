@@ -315,7 +315,7 @@ EvalResult GuidanceProvider::query(const Position& pos, NumaReplicatedAccessToke
         Piece pc = pos.piece_on(sq);
         if (pc != NO_PIECE) {
             int py_sq = (int)sq ^ 56;  // Convert bottom-up to top-down (a1->a8 rank flip)
-            int py_pc = (pc <= W_KING) ? ((int)pc - 1) : ((int)pc - 3);  // W:0-5, B:6-11
+            int py_pc = (int)pc - 1;  // W:0-5, B:6-11
             active_features[count++] = py_sq * 12 + py_pc;
         }
     }
@@ -337,7 +337,7 @@ std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos, 
         Piece pc = pos.piece_on(sq);
         if (pc != NO_PIECE) {
             int py_sq = (int)sq ^ 56;
-            int py_pc = (pc <= W_KING) ? ((int)pc - 1) : ((int)pc - 3);
+            int py_pc = (int)pc - 1;
             active_features[count++] = py_sq * 12 + py_pc;
         }
     }
