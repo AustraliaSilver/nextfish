@@ -98,20 +98,45 @@ class ParallelGenerator:
             m26 = res26.get("pv", [None])[0]
 
             cp = res16_multi[0]["score"].relative.score(mate_score=10000) or 0
-            rho = 0.0
-            if m8 != m16 or m16 != m26:
-                rho = 1.0
-            else:
-                cp26 = res26["score"].relative.score(mate_score=10000) or 0
-                rho = min(abs(cp - cp26) / 200.0, 0.4)
-                if board.is_check(): rho += 0.25
-                if abs(cp) < 50: rho += 0.3
-                if len(board.piece_map()) < 16: rho += 0.2
+            # Improved HARENN labels (continuous, calibrated with harenn_ctrl thresholds)
+            # RHO: eval volatility + move instability + near-zero uncertainty
+            cp26 = res26["score"].relative.score(mate_score=10000) or 0
+            swing = max(abs(cp - cp26), abs((res16_multi[0]["score"].relative.score(mate_score=10000) or 0) - cp26))
+            rho_vol = min(swing / 250.0, 0.6)
+            rho = rho_vol
+            if m8 != m16:
+                rho += 0.15
+            if m16 != m26:
+                rho += 0.30
+            if abs(cp) < 30:
+                rho += 0.25
+            elif abs(cp) < 80:
+                rho += 0.10
+            if board.is_check():
+                rho += 0.15
+            rho = min(rho, 1.0)
 
+            # TAU: best-move instability + top3 overlap (if available)
             tau = 0.0
-            if len(res16_multi) > 1:
-                diffs = [abs(cp - (r["score"].relative.score(mate_score=10000) or 0)) for r in res16_multi[1:]]
-                tau = min((sum(diffs) / len(diffs)) / 100.0, 1.0)
+            if m8 != m16:
+                tau += 0.35
+            if m16 != m26:
+                tau += 0.45
+            # top3 overlap between 16 and 26 if multipv available
+            if len(res16_multi) >= 3:
+                # res16_multi has 3 PVs at depth 16, but we need top3 at depth 26 as well
+                # Use res16_multi top3 vs m26 single -> approximate
+                m16_top3 = [r["pv"][0].uci() for r in res16_multi[:3] if "pv" in r and r["pv"]]
+                # For m26 we only have single PV, so overlap at least 1 if m16==m26
+                overlap = 1 if m16 in m16_top3 and m16 == m26 else 0
+                if overlap == 0 and len(m16_top3) >= 2:
+                    tau += 0.15
+            else:
+                # Fallback: score volatility among multipv
+                if len(res16_multi) > 1:
+                    diffs = [abs(cp - (r["score"].relative.score(mate_score=10000) or 0)) for r in res16_multi[1:]]
+                    tau = max(tau, min((sum(diffs) / len(diffs)) / 120.0, 0.5))
+            tau = min(tau, 1.0)
 
             m16, l16 = [r["pv"][0].uci() for r in res16_multi], [self.move_to_label(board, r["pv"][0]) for r in res16_multi]
             m20, l20 = self.get_top_moves_safe(board, engine, 20)

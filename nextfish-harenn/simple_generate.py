@@ -334,11 +334,33 @@ class SimpleDataGenerator:
             material = self.count_material(board)
             piece_count = len(board.piece_map())
             
-            # Lightweight stability metrics that avoid heavy analyse() calls.
-            legal_count = len(list(board.legal_moves))
-            tau = min(legal_count / 50.0, 1.0)
-            rho = 1.0 if board.is_check() else (0.6 if abs(cp) < 80 else 0.3)
-            rs = self.calculate_rs(board, cp)
+            # Standard HARENN labels (continuous, calibrated with harenn_ctrl.cpp thresholds)
+            # Use real engine analysis if available, otherwise fallback to improved lightweight
+            if analysis_engine is not None and not self.engine_disabled:
+                # Delegate to real analysis for standard data
+                try:
+                    real = self.analyze_position_real(board.fen(), depth=16)
+                    tau = real["tau"]
+                    rho = real["rho"]
+                    rs = real["rs"]
+                    # Use real top moves as well
+                    best_moves_d16 = real["best_moves_d16"]
+                    best_moves_d20 = real["best_moves_d20"]
+                    best_moves_d24 = real["best_moves_d24"]
+                    best_move_labels_d16 = real["best_move_labels_d16"]
+                    best_move_labels_d20 = real["best_move_labels_d20"]
+                    best_move_labels_d24 = real["best_move_labels_d24"]
+                except Exception:
+                    # Fallback to improved lightweight
+                    legal_count = len(list(board.legal_moves))
+                    tau = min(legal_count / 45.0 + (0.1 if board.is_check() else 0), 1.0)
+                    rho = 1.0 if board.is_check() else (0.55 if abs(cp) < 50 else (0.35 if abs(cp) < 100 else 0.20))
+                    rs = self.calculate_rs(board, cp)
+            else:
+                legal_count = len(list(board.legal_moves))
+                tau = min(legal_count / 45.0 + (0.1 if board.is_check() else 0), 1.0)
+                rho = 1.0 if board.is_check() else (0.55 if abs(cp) < 50 else (0.35 if abs(cp) < 100 else 0.20))
+                rs = self.calculate_rs(board, cp)
             
             best_move_label = 0
             if best_move and best_move != chess.Move.null():
