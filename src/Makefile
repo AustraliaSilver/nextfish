@@ -514,7 +514,14 @@ ifeq ($(COMP),clang)
 	comp=clang
 	CXX=clang++
 	ifeq ($(target_windows),yes)
-		CXX=x86_64-w64-mingw32-clang++
+		# A cross compiler is named x86_64-w64-mingw32-clang++, but the MSYS2
+		# toolchain installs the plain clang++ in the mingw64 prefix. Use
+		# whichever of the two is actually available.
+		ifeq ($(shell which x86_64-w64-mingw32-clang++ 2> /dev/null),)
+			CXX=clang++
+		else
+			CXX=x86_64-w64-mingw32-clang++
+		endif
 	endif
 
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-prototypes \
@@ -696,7 +703,7 @@ ifeq ($(optimize),yes)
 
 	ifeq ($(comp),clang)
 		clangmajorversion := $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
-		ifeq ($(shell expr $(clangmajorversion) \< 16),1)
+		ifeq ($(shell expr $(clangmajorversion) \< 16 2>/dev/null),1)
 			CXXFLAGS += -fexperimental-new-pass-manager
 		endif
 	endif

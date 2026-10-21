@@ -131,12 +131,17 @@ jobs:
         with:
           msystem: MINGW64
           # make + the mingw-w64 clang toolchain (the PGO recipes in
-          # src/Makefile are POSIX shell scripts) + curl for scripts/net.sh
+          # src/Makefile are POSIX shell scripts) + curl for scripts/net.sh.
+          # lld is needed because the Makefile links with -fuse-ld=lld when
+          # COMP=clang and target_windows=yes, llvm provides llvm-profdata
+          # for the PGO profile merge.
           install: >-
             make
             curl
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-clang
+            mingw-w64-x86_64-lld
+            mingw-w64-x86_64-llvm
 
       - name: Check build toolchain
         shell: msys2 {0}
@@ -181,6 +186,22 @@ jobs:
           # Force a POSIX shell: the PGO recipes in src/Makefile use sh syntax
           # (> file 2>&1; val=$$?, rm -rf, if [ ... ]) and would break under cmd.exe.
           export SHELL=/bin/sh
+
+          # src/Makefile prefers the cross compiler x86_64-w64-mingw32-clang++
+          # for COMP=clang on Windows and falls back to the plain clang++ when
+          # that name does not exist. The compiler is passed in explicitly as
+          # COMPCXX so that the check and the build cannot disagree.
+          CXX_NAME=""
+          for candidate in x86_64-w64-mingw32-clang++ clang++ g++ x86_64-w64-mingw32-g++; do
+            if command -v "$candidate" >/dev/null 2>&1; then CXX_NAME="$candidate"; break; fi
+          done
+          if [ -z "$CXX_NAME" ]; then
+            echo "::error::No C++ compiler found in the MSYS2 environment (looked for x86_64-w64-mingw32-clang++, clang++, g++, x86_64-w64-mingw32-g++)."
+            exit 1
+          fi
+          echo "Using compiler: $CXX_NAME"
+          "$CXX_NAME" --version | head -n 1
+
           # The NNUE nets have to be in src/ for the PGO bench. "make net"
           # (scripts/net.sh) may drop them next to the Makefile, so normalise
           # the location before building.
@@ -189,7 +210,7 @@ jobs:
             if [ ! -f "$net" ] && [ -f "../$net" ]; then cp "../$net" "$net"; fi
           done
           ls -l nn-*.nnue
-          make -j4 profile-build ARCH=x86-64-avx2 COMP=clang SHELL=/bin/sh
+          make -j4 profile-build ARCH=x86-64-avx2 COMP=clang COMPCXX="$CXX_NAME" SHELL=/bin/sh
           if [ ! -f stockfish.exe ]; then
             echo "::error::Build finished but src/stockfish.exe does not exist."
             exit 1
