@@ -53,30 +53,38 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
-
-      - name: Download pre-built Stockfish 18
-        shell: pwsh
-        run: |
-          $url = "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-windows-x86-64-avx2.zip"
-          Invoke-WebRequest -Uri $url -OutFile "stockfish18.zip"
-          Expand-Archive -Path "stockfish18.zip" -DestinationPath "." -Force
-          Move-Item "stockfish/stockfish-windows-x86-64-avx2.exe" "stockfish_built.exe" -Force
-
-      - name: Setup MSVC compiler
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+        # No lfs: true - the repository has no root .gitattributes and no LFS
+        # objects (git lfs ls-files is empty), so the option is a no-op that
+        # only slows the checkout down.
 
       - name: Prepare directories
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
           New-Item -ItemType Directory -Force builds | Out-Null
           New-Item -ItemType Directory -Force matches | Out-Null
+
+      - name: Download pre-built Stockfish 18
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $url = "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-windows-x86-64-avx2.zip"
+          Invoke-WebRequest -Uri $url -OutFile "stockfish18.zip"
+          Expand-Archive -Path "stockfish18.zip" -DestinationPath "sf18" -Force
+          $exe = Get-ChildItem -Path "sf18" -Recurse -Filter "*.exe" -File | Select-Object -First 1
+          if (-not $exe) { Write-Error "Stockfish 18 binary not found in the downloaded archive"; exit 1 }
+          # The baseline engine lives next to the NNUE nets, like our own engine.
+          Move-Item $exe.FullName "builds/stockfish_built.exe" -Force
+          if (-not (Test-Path "builds/stockfish_built.exe")) { Write-Error "Failed to install builds/stockfish_built.exe"; exit 1 }
+          Write-Host "Stockfish 18 baseline installed as builds/stockfish_built.exe"
 
       - name: Ensure cutechess-cli
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
           $zip = "cutechess-cli-win64.zip"
           $urls = @(
             "https://github.com/cutechess/cutechess/releases/download/v1.3.1/cutechess-1.3.1-win64.zip",
@@ -90,123 +98,257 @@ jobs:
               break
             } catch { continue }
           }
+          if (-not $downloaded) { Write-Error "Could not download cutechess-cli from any known URL"; exit 1 }
           Expand-Archive -Path $zip -DestinationPath "." -Force
           $cli = Get-ChildItem -Path . -Recurse -Filter "cutechess-cli.exe" -File | Select-Object -First 1
+          if (-not $cli) { Write-Error "cutechess-cli.exe not found in the downloaded archive"; exit 1 }
           Copy-Item $cli.FullName ".\cutechess-cli.exe" -Force
           $cliDir = Split-Path -Path $cli.FullName -Parent
           Get-ChildItem -Path $cliDir -Filter "*.dll" -File | ForEach-Object { Copy-Item $_.FullName ".\" -Force }
           if (Test-Path (Join-Path $cliDir "platforms")) { Copy-Item (Join-Path $cliDir "platforms") ".\platforms" -Recurse -Force }
+          if (-not (Test-Path ".\cutechess-cli.exe")) { Write-Error "cutechess-cli.exe was not installed"; exit 1 }
 
       - name: Ensure shared NNUE files
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
           $nnueFiles = @("nn-c288c895ea92.nnue", "nn-37f18f62d772.nnue")
           foreach ($name in $nnueFiles) {
-            $url = "https://tests.stockfishchess.org/api/nn/$name"
-            if (-not (Test-Path "src/$name")) { Invoke-WebRequest -Uri $url -OutFile "src/$name" }
-            # Copy to root directory for runtime
-            if (-not (Test-Path "./$name")) { Copy-Item "src/$name" "./$name" -Force }
+            $target = "src/$name"
+            if ((-not (Test-Path $target)) -or ((Get-Item $target).Length -lt 1000000)) {
+              $url = "https://tests.stockfishchess.org/api/nn/$name"
+              Write-Host "Downloading $name"
+              Invoke-WebRequest -Uri $url -OutFile $target
+            }
+            if (-not (Test-Path $target)) { Write-Error "Failed to download $name"; exit 1 }
+            # The nets are loaded relative to the engine executable.
+            Copy-Item $target "builds/$name" -Force
           }
+
+      - name: Setup MSYS2 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          # make + the mingw-w64 clang toolchain (the PGO recipes in
+          # src/Makefile are POSIX shell scripts) + curl for scripts/net.sh
+          install: >-
+            make
+            curl
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-clang
+
+      - name: Check build toolchain
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          export SHELL=/bin/sh
+          echo "bash: $BASH_VERSION"
+          echo "SHELL: $SHELL"
+
+          MAKE=""
+          for candidate in make gmake mingw32-make; do
+            if command -v "$candidate" >/dev/null 2>&1; then MAKE="$(command -v "$candidate")"; break; fi
+          done
+          if [ -z "$MAKE" ]; then
+            echo "::error::No GNU make found in PATH. The Windows build needs a POSIX shell with make (MSYS2/Cygwin)."
+            exit 1
+          fi
+          echo "make: $MAKE"
+          "$MAKE" --version | head -n 1
+
+          CXX=""
+          for candidate in x86_64-w64-mingw32-clang++ clang++ g++ x86_64-w64-mingw32-g++; do
+            if command -v "$candidate" >/dev/null 2>&1; then CXX="$(command -v "$candidate")"; break; fi
+          done
+          if [ -z "$CXX" ]; then
+            echo "::error::No C++ compiler found (looked for x86_64-w64-mingw32-clang++, clang++, g++, x86_64-w64-mingw32-g++)."
+            exit 1
+          fi
+          echo "c++: $CXX"
+          "$CXX" --version | head -n 1
+
+          if [ ! -f scripts/net.sh ]; then
+            echo "::error::scripts/net.sh is missing - the NNUE nets cannot be fetched."
+            exit 1
+          fi
 
       - name: Build Nextfish
-        shell: pwsh
+        shell: msys2 {0}
         working-directory: src
         run: |
-          make -j4 profile-build ARCH=x86-64-avx2 COMP=clang COMPCXX=clang++
-          if (Test-Path "stockfish.exe") { Move-Item "stockfish.exe" "../nextfish_built.exe" }
+          set -euo pipefail
+          # Force a POSIX shell: the PGO recipes in src/Makefile use sh syntax
+          # (> file 2>&1; val=$$?, rm -rf, if [ ... ]) and would break under cmd.exe.
+          export SHELL=/bin/sh
+          # The NNUE nets have to be in src/ for the PGO bench. "make net"
+          # (scripts/net.sh) may drop them next to the Makefile, so normalise
+          # the location before building.
+          make net
+          for net in nn-c288c895ea92.nnue nn-37f18f62d772.nnue; do
+            if [ ! -f "$net" ] && [ -f "../$net" ]; then cp "../$net" "$net"; fi
+          done
+          ls -l nn-*.nnue
+          make -j4 profile-build ARCH=x86-64-avx2 COMP=clang SHELL=/bin/sh
+          if [ ! -f stockfish.exe ]; then
+            echo "::error::Build finished but src/stockfish.exe does not exist."
+            exit 1
+          fi
+          mv stockfish.exe ../builds/nextfish_built.exe
+          ls -l ../builds/nextfish_built.exe
 
-      - name: Ensure HARENN model file
+      - name: Install HARENN model next to the engines
         shell: pwsh
         run: |
-          # Copy HARENN model file from src directory
-          if (Test-Path "src/nextfish.harenn") {
-            Copy-Item "src/nextfish.harenn" "nextfish.harenn" -Force
-            Write-Host "HARENN model file copied to root directory for engine"
-          } else {
-            Write-Host "Warning: src/nextfish.harenn not found"
+          $ErrorActionPreference = "Stop"
+          # The engine resolves nextfish.harenn relative to its own directory,
+          # so the model has to live next to the executable (builds/).
+          if (-not (Test-Path "src/nextfish.harenn")) {
+            Write-Error "src/nextfish.harenn is missing - the HARENN model must be tracked in the repository."
+            exit 1
           }
+          Copy-Item "src/nextfish.harenn" "builds/nextfish.harenn" -Force
+          Write-Host "HARENN model installed as builds/nextfish.harenn"
 
-      - name: Verify model files
+      - name: Verify runtime files
         shell: pwsh
         run: |
-          # Verify HARENN model file
-          if (Test-Path "./nextfish.harenn") {
-            Write-Host "nextfish.harenn exists in root directory"
-            $size = (Get-Item "./nextfish.harenn").Length
-            Write-Host "nextfish.harenn size: $size bytes"
-          } else {
-            Write-Host "Warning: nextfish.harenn not found in root directory"
-          }
-          
-          # Verify NNUE files
-          $nnueFiles = @("nn-c288c895ea92.nnue", "nn-37f18f62d772.nnue")
-          foreach ($name in $nnueFiles) {
-            if (Test-Path "./$name") {
-              Write-Host "$name exists in root directory"
-            } else {
-              Write-Host "Warning: $name not found in root directory"
+          $ErrorActionPreference = "Stop"
+          $required = @(
+            "builds/nextfish_built.exe",
+            "builds/stockfish_built.exe",
+            "builds/nextfish.harenn",
+            "builds/nn-c288c895ea92.nnue",
+            "builds/nn-37f18f62d772.nnue"
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) {
+              Write-Error "Missing runtime file: $file"
+              exit 1
             }
+            $size = (Get-Item $file).Length
+            if ($size -le 0) {
+              Write-Error "Runtime file is empty: $file"
+              exit 1
+            }
+            Write-Host ("{0}: {1} bytes" -f $file, $size)
           }
 
       - name: Test engine initialization
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          Write-Host "Testing Nextfish initialization..."
-          $input_commands = "uci`nsetoption name Use DEE/HARENN value true`nsetoption name Use HARE Time Management value true`nsetoption name Use HARE Aspiration value true`nsetoption name Use HARE Reduction value false`nisready`nquit"
-          Set-Content -Path "nextfish_input.txt" -Value $input_commands
-          
-          # Run Nextfish under cmd.exe standard redirection to avoid PowerShell pipe bugs
-          cmd.exe /c "nextfish_built.exe < nextfish_input.txt > nextfish_test.log 2> nextfish_err.log"
-          $exit_code = $LASTEXITCODE
-          Write-Host "Nextfish exit code: $exit_code"
-          if (Test-Path "nextfish_test.log") {
-            Write-Host "--- Nextfish stdout ---"
-            Get-Content "nextfish_test.log"
-          }
-          if (Test-Path "nextfish_err.log") {
-            Write-Host "--- Nextfish stderr ---"
-            Get-Content "nextfish_err.log"
-          }
-          
-          if ($exit_code -ne 0) {
-            Write-Host "Nextfish crashed! Running under GDB to capture backtrace..."
-            cmd.exe /c "gdb -batch -ex run -ex bt --args nextfish_built.exe < nextfish_input.txt"
-            Write-Error "Nextfish crashed or failed to initialize!"
+          set +e
+          set -uo pipefail
+          export SHELL=/bin/sh
+
+          # Run the engine from its own directory so that nextfish.harenn and
+          # the NNUE nets are found next to the executable.
+          cd builds
+          {
+            echo "uci"
+            echo "isready"
+            echo "position startpos"
+            echo "go depth 8"
+            sleep 5
+            echo "stop"
+            sleep 1
+            echo "quit"
+          } | ./nextfish_built.exe > ../nextfish_test.log 2> ../nextfish_err.log
+          engine_exit=${PIPESTATUS[1]}
+          cd ..
+
+          echo "--- Nextfish stdout ---"
+          cat nextfish_test.log
+          if [ -s nextfish_err.log ]; then
+            echo "--- Nextfish stderr ---"
+            cat nextfish_err.log
+          fi
+          echo "Nextfish exit code: $engine_exit"
+
+          failed=0
+          if [ "$engine_exit" -ne 0 ]; then
+            echo "::error::Nextfish exited with code $engine_exit"
+            failed=1
+          fi
+          if ! grep -q "^uciok" nextfish_test.log; then
+            echo "::error::'uciok' not found in nextfish_test.log"
+            failed=1
+          fi
+          if ! grep -q "^readyok" nextfish_test.log; then
+            echo "::error::'readyok' not found in nextfish_test.log"
+            failed=1
+          fi
+          if ! grep -q "^bestmove " nextfish_test.log; then
+            echo "::error::No 'bestmove' in nextfish_test.log - the search path was not exercised"
+            failed=1
+          fi
+          if grep -q "Failed to load" nextfish_test.log; then
+            echo "::error::The HARENN model was not loaded (see nextfish_test.log)"
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
             exit 1
-          }
-          
-          Write-Host "Testing Stockfish18 initialization..."
-          $stockfish_proc = Start-Process -FilePath "./stockfish_built.exe" -ArgumentList "uci", "quit" -RedirectStandardOutput "stockfish_test.log" -PassThru
-          $stockfish_proc.WaitForExit()
-          Write-Host "Stockfish18 exit code: $($stockfish_proc.ExitCode)"
-          if ($stockfish_proc.ExitCode -ne 0) {
-            Write-Error "Stockfish18 crashed or failed to initialize!"
-            exit 1
-          }
+          fi
 
       - name: Run Elo match
         id: match
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          # Keep the native exit code in $LASTEXITCODE instead of letting
+          # PowerShell turn it into a terminating error.
+          $PSNativeCommandUseErrorActionPreference = $false
           $pgn = "matches/match.pgn"
           $log = "matches/match.log"
           $summary = "matches/summary.txt"
-          
+
           # Ensure env variables have defaults in pwsh to prevent empty option arguments
           $threads = if ($env:THREADS -and $env:THREADS -ne "") { $env:THREADS } else { 1 }
           $hash = if ($env:HASH -and $env:HASH -ne "") { $env:HASH } else { 128 }
           $tc = if ($env:TC -and $env:TC -ne "") { $env:TC } else { "10+0.1" }
           $games = if ($env:GAMES -and $env:GAMES -ne "") { $env:GAMES } else { 500 }
           $concurrency = if ($env:CONCURRENCY -and $env:CONCURRENCY -ne "") { $env:CONCURRENCY } else { 1 }
-          
+
           Write-Host "Running match with THREADS=$threads HASH=$hash TC=$tc GAMES=$games CONCURRENCY=$concurrency"
-          
-          ./cutechess-cli.exe -engine cmd=./nextfish_built.exe name=Nextfish dir=. proto=uci option.Threads=$threads option.Hash=$hash option."Use DEE/HARENN"=true option."Use HARE Time Management"=true option."Use HARE Aspiration"=true option."Use HARE Reduction"=false -engine cmd=./stockfish_built.exe name=Stockfish18 dir=. proto=uci option.Threads=$threads option.Hash=$hash -each tc=$tc -games $games -pgnout $pgn -concurrency $concurrency -openings file=UHO_2022_8mvs_+110_+119.pgn format=pgn -resign movecount=3 score=400 -draw movenumber=40 movecount=8 score=20 | Tee-Object -FilePath $log
-          
+
+          # The engines live in builds/ and are started with builds/ as their
+          # working directory, so they find nextfish.harenn and the NNUE nets.
+          $cutechessArgs = @(
+            "-engine", "cmd=builds/nextfish_built.exe", "name=Nextfish", "dir=builds", "proto=uci",
+            "option.Threads=$threads", "option.Hash=$hash", "option.Use DEE/HARENN=true",
+            "option.Use HARE Time Management=true",
+            "-engine", "cmd=builds/stockfish_built.exe", "name=Stockfish18", "dir=builds", "proto=uci",
+            "option.Threads=$threads", "option.Hash=$hash",
+            "-each", "tc=$tc",
+            "-games", "$games",
+            "-pgnout", $pgn,
+            "-concurrency", "$concurrency",
+            "-openings", "file=UHO_2022_8mvs_+110_+119.pgn", "format=pgn",
+            "-resign", "movecount=3", "score=400",
+            "-draw", "movenumber=40", "movecount=8", "score=20"
+          )
+
+          # Redirect into the log file and keep the real exit code of
+          # cutechess (a pipeline through Tee-Object would hide it).
+          & .\cutechess-cli.exe @cutechessArgs *> $log
+          $matchExit = $LASTEXITCODE
+          Get-Content $log
+
+          if ($matchExit -ne 0) {
+            Write-Error "cutechess-cli exited with code $matchExit - the match did not complete."
+            exit 1
+          }
+
           $score = Select-String -Path $log -Pattern '^Score of ' | Select-Object -Last 1
           $elo = Select-String -Path $log -Pattern '^Elo difference:' | Select-Object -Last 1
-          Set-Content $summary -Value @($score.Line, $elo.Line)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Elo Result`n- $($score.Line)`n- $($elo.Line)"
+          if (-not $score) {
+            Write-Error "No 'Score of ...' line in the cutechess log - the match produced no result."
+            exit 1
+          }
+          $scoreLine = $score.Line
+          if ($elo) { $eloLine = $elo.Line } else { $eloLine = "Elo difference: n/a" }
+          Set-Content $summary -Value @($scoreLine, $eloLine)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Elo Result`n- $scoreLine`n- $eloLine"
 
       - name: Upload artifacts
         if: always()

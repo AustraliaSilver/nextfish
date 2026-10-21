@@ -1,3 +1,21 @@
+/*
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Stockfish is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #ifndef DEE_H_INCLUDED
 #define DEE_H_INCLUDED
 
@@ -8,18 +26,6 @@ namespace Stockfish {
 
 namespace DEE {
 
-struct ExchangeCluster {
-    Square target;
-    int    pressure;
-    int    attacker_imbalance;
-    Value  static_score;
-};
-
-struct DEE_Result {
-    Value total_score;
-    int   threat_value;
-};
-
 class Evaluator {
 public:
     // Tie-breaker used in MovePicker for capture ordering
@@ -27,15 +33,6 @@ public:
 
     // QS Pruning Logic (V15)
     static bool should_prune_in_qs(const Position& pos, Move m, Value adjustedSee);
-
-    // Board-wide tactical metrics
-    static int tension_score(const Position& pos);
-    
-    static void
-    compute_both_attack_maps(const Position& pos, Bitboard& usAttacks, Bitboard& themAttacks);
-
-private:
-    static Value evaluate_king_safety(const Position& pos, Color c, Bitboard enemyAttacks);
 };
 
 }  // namespace DEE

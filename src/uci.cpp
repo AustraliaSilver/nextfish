@@ -598,7 +598,10 @@ std::string UCIEngine::move(Move m, bool chess960) {
 
 
 std::string UCIEngine::to_lower(std::string str) {
-    std::transform(str.begin(), str.end(), str.begin(), [](auto c) { return std::tolower(c); });
+    // The argument of std::tolower must be representable as unsigned char,
+    // otherwise the behaviour is undefined for bytes above 127.
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [](auto c) { return std::tolower(static_cast<unsigned char>(c)); });
 
     return str;
 }

@@ -18,6 +18,9 @@
 
 #include "ucioption.h"
 
+#include <charconv>
+#include <system_error>
+
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -153,9 +156,19 @@ Option& Option::operator=(const std::string& v) {
     assert(!type.empty());
 
     if ((type != "button" && type != "string" && v.empty())
-        || (type == "check" && v != "true" && v != "false")
-        || (type == "spin" && (std::stoi(v) < min || std::stoi(v) > max)))
+        || (type == "check" && v != "true" && v != "false"))
         return *this;
+
+    if (type == "spin")
+    {
+        // The value comes straight from the user, so it must be parsed
+        // without throwing: the engine is built with -fno-exceptions and an
+        // invalid value would abort the process.
+        int    parsed = 0;
+        auto [end, ec] = std::from_chars(v.data(), v.data() + v.size(), parsed);
+        if (ec != std::errc{} || end != v.data() + v.size()) return *this;
+        if (parsed < min || parsed > max) return *this;
+    }
 
     if (type == "combo")
     {

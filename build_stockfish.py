@@ -12,13 +12,53 @@ from pathlib import Path
 from datetime import datetime
 import json
 
-from build_optimizations import (
-    common_cxxflags,
-    pgo_gen_flags,
-    pgo_use_flags,
-    merge_flags,
-    default_pgo_profile_dir,
-)
+
+def common_cxxflags(sse_flag=None, enable_lto=False, enable_unroll=False,
+                    omit_frame_pointer=False, static_link=False):
+    """Common compiler flags, matching upstream Stockfish."""
+    flags = ["-O3", "-DNDEBUG", "-std=c++17", "-fno-exceptions"]
+    if sse_flag:
+        flags.append(f"-msse{sse_flag}")
+    if enable_lto:
+        flags += ["-flto=4", "-flto-partition=one"]
+    if enable_unroll:
+        flags.append("-funroll-loops")
+    if omit_frame_pointer:
+        flags.append("-fomit-frame-pointer")
+    if static_link:
+        flags.append("-static")
+    return flags
+
+
+def pgo_gen_flags(profile_dir=None):
+    """Flags used to generate the profile."""
+    flags = ["-fprofile-generate"]
+    if profile_dir:
+        flags.append(f"-fprofile-dir={profile_dir}")
+    return flags
+
+
+def pgo_use_flags(profile_dir=None):
+    """Flags used to consume the profile."""
+    flags = ["-fprofile-use"]
+    if profile_dir:
+        flags.append(f"-fprofile-dir={profile_dir}")
+    return flags
+
+
+def merge_flags(base, extra):
+    """Merge two flag lists without duplicates."""
+    merged = list(base)
+    for flag in extra:
+        if flag not in merged:
+            merged.append(flag)
+    return merged
+
+
+def default_pgo_profile_dir(base_dir, name=None, timestamp=None):
+    """Default PGO profile directory, as used by upstream Stockfish."""
+    return Path(base_dir) / "gprof"
+
 
 class StockfishBuilder:
     def __init__(self):
@@ -58,7 +98,7 @@ class StockfishBuilder:
                 flags = merge_flags(flags, pgo_use_flags(self.pgo_dir))
 
         self.cxxflags = flags
-        self.build_timeout_seconds = 10 * 60
+        self.build_timeout_seconds = 45 * 60
         
     def log(self, message):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
@@ -109,8 +149,7 @@ class StockfishBuilder:
             result = subprocess.run(
                 [self.cxx, "--version"],
                 capture_output=True,
-                text=True,
-                shell=True
+                text=True
             )
             if result.returncode == 0:
                 self.log(f"Compiler found: {result.stdout.split(chr(10))[0]}")
@@ -154,7 +193,6 @@ class StockfishBuilder:
                 cmd,
                 capture_output=True,
                 text=True,
-                shell=True,
                 cwd=str(self.src_dir),
                 timeout=self.build_timeout_seconds
             )

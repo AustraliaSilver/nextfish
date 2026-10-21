@@ -76,6 +76,11 @@ struct Stack {
     bool                        ttHit;
     int                         cutoffCnt;
     int                         reduction;
+
+    // Number of HARENN selective extensions already granted on the current
+    // principal variation. It bounds the extension so a chain of consecutive
+    // checking moves cannot keep the search depth constant.
+    int                         harennExtensions;
 };
 
 
@@ -363,8 +368,6 @@ class Worker {
     bool useDEECaptureOrdering = true;
     bool useDEECaptureLMR = false;
     bool useDEECapturePruning = false;
-    bool useHAREAspiration = true;
-    bool useHAREReduction = true;
 
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;

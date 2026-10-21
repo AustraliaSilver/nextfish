@@ -1,9 +1,28 @@
+/*
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Stockfish is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "harenn_ctrl.h"
 #include "harenn.h"
 #include "bitboard.h"
 #include "position.h"
 #include "ucioption.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -13,94 +32,49 @@ namespace Stockfish {
 namespace HARENN {
 
 namespace {
-    // Tunable parameters, refreshed from UCI options at start of search
-    float tm_center      = 0.35f;
-    float tm_slope       = 14.3f;
-    float tm_range_min   = 95.0f;
-    float tm_range_max   = 105.0f;
-    float ext_threshold_white = 0.8228f;
-    float ext_threshold_black = 0.7060f;
+    // Tunable parameters, refreshed from UCI options at start of search.
+    // They are atomic because the helper threads read them concurrently
+    // while the main thread publishes a refreshed set.
+    std::atomic<float> tm_center{0.35f};
+    std::atomic<float> tm_slope{14.3f};
+    std::atomic<float> tm_range_min{95.0f};
+    std::atomic<float> tm_range_max{105.0f};
+    std::atomic<float> ext_threshold_white{0.8228f};
+    std::atomic<float> ext_threshold_black{0.7060f};
 }
 
-void Controller::init() {
-    GuidanceProvider::init();
+void Controller::init(const std::string& binaryDirectory) {
+    GuidanceProvider::init(binaryDirectory);
 }
 
 void Controller::refresh_params(const OptionsMap& options) {
-    tm_center      = options["HARE TM Center"] * 0.01f;
-    tm_slope       = options["HARE TM Slope"] * 0.1f;
-    tm_range_min   = (float)(int)options["HARE TM Range Min"];
-    tm_range_max   = (float)(int)options["HARE TM Range Max"];
-    ext_threshold_white = options["HARE Ext Threshold White"] * 0.001f;
-    ext_threshold_black = options["HARE Ext Threshold Black"] * 0.001f;
+    tm_center.store(options["HARE TM Center"] * 0.01f, std::memory_order_relaxed);
+    tm_slope.store(options["HARE TM Slope"] * 0.1f, std::memory_order_relaxed);
+    tm_range_min.store((float) (int) options["HARE TM Range Min"], std::memory_order_relaxed);
+    tm_range_max.store((float) (int) options["HARE TM Range Max"], std::memory_order_relaxed);
+    ext_threshold_white.store(options["HARE Ext Threshold White"] * 0.001f, std::memory_order_relaxed);
+    ext_threshold_black.store(options["HARE Ext Threshold Black"] * 0.001f, std::memory_order_relaxed);
 }
 
 EvalResult Controller::get_analysis(const Position& pos, NumaReplicatedAccessToken numaToken) {
     return GuidanceProvider::query(pos, numaToken);
 }
 
-std::pair<float, float> Controller::get_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken) {
-    return GuidanceProvider::query_rho_and_rs(pos, numaToken);
-}
+int Controller::get_search_extension(const EvalResult& res, Color sideToMove) {
+    // The model reports two properties of the position:
+    //   rho - horizon risk, how likely it is that the position is still
+    //         unresolved further down the line,
+    //   rs  - resolution score, how settled the position already is.
+    // The position deserves more search when the horizon risk is high and the
+    // resolution score is still low. Either signal on its own is only weak
+    // evidence, but the horizon risk of the current model never reaches the
+    // threshold, so requiring both conditions would disable the extension
+    // completely. The condition is therefore a disjunction.
+    const float threshold =
+      sideToMove == BLACK ? ext_threshold_black.load(std::memory_order_relaxed)
+                          : ext_threshold_white.load(std::memory_order_relaxed);
 
-int Controller::get_smart_reduction(const Position& pos, Depth depth, Move m, int moveCount, int baseR, Value staticEval, Value rootScore) {
-    // V87: HARENN LMR completely neutralized. Large-scale 200 games verification of V83 LMR
-    // parameters dropped -77.7 Elo. Analysis shows model query overhead and depth instability
-    // from custom reductions/de-reductions consistently hurt search performance.
-    // Reverting to 100% pristine Stockfish LMR search loop.
-    (void)pos; (void)depth; (void)m; (void)moveCount; (void)staticEval; (void)rootScore;
-    return baseR;
-}
-
-int Controller::get_move_bonus(const Position& pos, Move m) {
-    (void)pos; (void)m;
-    return 0;
-}
-
-int Controller::adjust_aspiration(const Position& pos, int delta) {
-    // V86: Aspiration adjustment neutralized. Safe narrowing (delta-2) in calm positions (rho<0.20)
-    // caused search instability and dropped -52.5 Elo over 200 games.
-    // Reverted to default Stockfish behavior.
-    (void)pos;
-    return delta;
-}
-
-int Controller::get_qs_tactical_adjustment(const Position& pos, int standPat) {
-    // V89: Neural-Guided Quiescence Adjustments (Neutralized)
-    // Adjusting standPat based on rho resulted in a regression of -10.4 Elo.
-    // Keeping this neutralized to maintain the search loop 100% Stockfish pristine.
-    (void)pos;
-    return standPat;
-}
-
-int Controller::get_search_extension(const Position& pos, Move m, Depth depth, bool givesCheck, NumaReplicatedAccessToken numaToken) {
-    if (!GuidanceProvider::is_model_loaded()) {
-        return 0;
-    }
-
-    // Only apply to reasonable search depths to minimize evaluation overhead
-    if (depth < 6) {
-        return 0;
-    }
-
-    // Check if the move is a check or a capture first to avoid query overhead on non-tactical moves
-    if (!givesCheck && !pos.capture_stage(m)) {
-        return 0;
-    }
-
-    // Query the HARENN model
-    EvalResult res = get_analysis(pos, numaToken);
-
-    // If Horizon Risk (rho) or Resolution Score (rs) is very high,
-    // indicating high tactical volatility/danger, and this is a check
-    // or a capture, extend the search depth by 1 Ply to resolve instability.
-    // For Black (side to move), we lower the threshold slightly (rho > 0.70f or rs > 0.70f)
-    // to search deeper in critical defensive situations.
-    const bool isBlack = (pos.side_to_move() == BLACK);
-    const float threshold = isBlack ? ext_threshold_black : ext_threshold_white;
-    if (res.rho > threshold || res.rs < (1.0f - threshold)) {
-        return 1;
-    }
+    if (res.rho > threshold || res.rs < (1.0f - threshold)) return 1;
 
     return 0;
 }
@@ -110,8 +84,10 @@ int Controller::get_time_multiplier(const Position& pos) {
 
     EvalResult res = get_analysis(pos, NumaReplicatedAccessToken(0));
 
-    float mult = 100.0f + (res.tau - tm_center) * tm_slope;
-    return int(std::clamp(mult, tm_range_min, tm_range_max));
+    float mult = 100.0f + (res.tau - tm_center.load(std::memory_order_relaxed))
+                           * tm_slope.load(std::memory_order_relaxed);
+    return int(std::clamp(mult, tm_range_min.load(std::memory_order_relaxed),
+                          tm_range_max.load(std::memory_order_relaxed)));
 }
 
 } // namespace HARENN

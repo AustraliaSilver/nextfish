@@ -17,6 +17,7 @@ import re
 import sys
 import json
 import time
+import math
 import random
 import argparse
 import subprocess
@@ -42,7 +43,7 @@ NNUE_FILE     = r"D:\nextfish\nn-c288c895ea92.nnue"
 ALPHA         = 0.602   # standard
 GAMMA         = 0.101   # standard
 A_CONST       = 10.0    # stability constant (prevents too large initial steps)
-A_INIT        = 0.50    # scale of update step (must be large enough to move int params by >=1)
+A_INIT        = 0.50    # scale of update step
 C_INIT        = 0.030   # scale of perturbation (fraction of param range)
 
 # Bounds for each parameter (value stored as int scale for UCI options)
@@ -73,42 +74,65 @@ PARAM_TO_UCI = {
 GAMES_PER_EVAL = 40   # 20 rounds × 2 (repeat), higher for better signal
 CONCURRENCY    = 2     # reduced to avoid CPU throttling on this machine
 
+# Hard timeout for a single cutechess match
+MATCH_TIMEOUT  = 3600
+
+# Gradient scaling factor and relative step bound (fraction of the parameter span)
+GRAD_SCALE      = 40.0
+REL_STEP_BOUND  = 0.10
+
 # ─── State Management ─────────────────────────────────────────────────────────
 DEFAULT_PARAMS = {"tm_center": 35, "tm_slope": 143, "tm_range_min": 95, "tm_range_max": 105, "white_threshold": 823, "black_threshold": 706}
+
+
+class MatchError(RuntimeError):
+    """Raised when a match could not be evaluated (timeout, crash, no games)."""
+
 
 def load_state():
     defaults = {
         "iteration":   0,
         "parameters":  dict(DEFAULT_PARAMS),
-        "best_elo":    0.0,
+        "best_elo":    float("-inf"),
         "best_params": dict(DEFAULT_PARAMS),
+        "best_win_rate": -1.0,
     }
-    if STATE_FILE.exists():
+    if not STATE_FILE.exists():
+        return defaults
+
+    with open(STATE_FILE) as f:
         try:
-            with open(STATE_FILE) as f:
-                s = json.load(f)
-            for k, v in defaults.items():
-                if k not in s:
-                    s[k] = dict(DEFAULT_PARAMS) if isinstance(v, dict) else v
-            # migrate params to full set (ints)
-            for name, val in DEFAULT_PARAMS.items():
-                if name in s["parameters"] and isinstance(s["parameters"][name], float):
-                    # old format: white_threshold=0.8228 (float) → 823 (int), black_threshold=0.706 → 706
-                    s["parameters"][name] = int(round(s["parameters"][name] * 1000))
-                elif name not in s["parameters"]:
-                    s["parameters"][name] = val
-                if name in s["best_params"] and isinstance(s["best_params"][name], float):
-                    s["best_params"][name] = int(round(s["best_params"][name] * 1000))
-                elif name not in s["best_params"]:
-                    s["best_params"][name] = val
-            return s
-        except Exception:
-            pass
-    return defaults
+            s = json.load(f)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Corrupt state file {STATE_FILE}: {e}") from e
+
+    for k, v in defaults.items():
+        if k not in s:
+            s[k] = dict(DEFAULT_PARAMS) if isinstance(v, dict) else v
+
+    # migrate params to full set (ints) and clamp them into their bounds
+    for name, val in DEFAULT_PARAMS.items():
+        lo, hi = PARAM_BOUNDS[name]
+        for section in ("parameters", "best_params"):
+            if section not in s or not isinstance(s[section], dict):
+                s[section] = dict(DEFAULT_PARAMS)
+            raw = s[section].get(name, val)
+            if isinstance(raw, float):
+                # old format: white_threshold=0.8228 (float) → 823 (int), black_threshold=0.706 → 706
+                raw = int(round(raw * 1000))
+            s[section][name] = int(clamp(int(raw), lo, hi))
+
+    if s.get("best_elo") is None:
+        s["best_elo"] = float("-inf")
+    return s
 
 def save_state(state):
-    with open(STATE_FILE, "w") as f:
+    tmp_file = STATE_FILE.with_name(STATE_FILE.name + ".tmp")
+    with open(tmp_file, "w") as f:
         json.dump(state, f, indent=4)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_file, STATE_FILE)
 
 def log_iteration(data):
     with open(HISTORY_FILE, "a") as f:
@@ -162,56 +186,115 @@ def cleanup_pgns():
         try: p.unlink()
         except Exception: pass
 
+# ─── Openings ─────────────────────────────────────────────────────────────────
+def build_openings_file(iteration, out_path):
+    """Deterministically pick a slice of the book, identical for both candidates."""
+    games = []
+    block = []
+    with open(BOOK_FILE, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            block.append(line)
+            if not line.strip():
+                if any(l.startswith("[Event") for l in block):
+                    games.append("".join(block))
+                block = []
+    if block and any(l.startswith("[Event") for l in block):
+        games.append("".join(block))
+
+    if not games:
+        raise MatchError(f"Opening book {BOOK_FILE} does not contain any game")
+
+    rng = random.Random(iteration)
+    rng.shuffle(games)
+
+    needed = max(1, GAMES_PER_EVAL // 2)
+    chosen = []
+    while len(chosen) < needed:
+        chosen.extend(games)
+    chosen = chosen[:needed]
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        for game in chosen:
+            f.write(game if game.endswith("\n") else game + "\n")
+            f.write("\n")
+    return out_path
+
 # ─── Run Match ────────────────────────────────────────────────────────────────
-def run_match(params, pgn_name):
+def run_match(params, pgn_name, openings_file):
     """Run match with given parameter dict of int UCI option values."""
-    cmd = [
-        CUTECHESS,
-        "-engine", "name=NextfishImproved", f"cmd={ENGINE_EXE}", "dir=D:\\nextfish",
-            f"option.EvalFile={NNUE_FILE}",
-            "option.Move Overhead=150",
-            "option.Use DEE/HARENN=true",
-            "option.Use DEE Capture Ordering=true",
-            "option.Use DEE Capture LMR=false",
-            "option.Use HARE Time Management=true",
-            "option.Use HARE Aspiration=true",
-            "option.Use HARE Reduction=true",
-            "option.Hash=256",
-            "proto=uci",
-        "-engine", "name=Stockfish", f"cmd={STOCKFISH}",
-            "option.Move Overhead=150",
-            "option.Hash=128",
-            "proto=uci",
+    nextfish_block = [
+        "name=NextfishImproved", f"cmd={ENGINE_EXE}", f"dir={ENGINE_DIR}",
+        f"option.EvalFile={NNUE_FILE}",
+        "option.Move Overhead=150",
+        "option.Use DEE/HARENN=true",
+        "option.Use DEE Capture Ordering=true",
+        "option.Use DEE Capture LMR=false",
+        "option.Use DEE Capture Pruning=false",
+        "option.Use HARE Time Management=true",
+        "option.Hash=256",
+        "proto=uci",
     ]
-    # Add tunable parameter options
+
+    # Add tunable parameter options to the Nextfish engine block only
     for key, val in params.items():
         uci_name = PARAM_TO_UCI[key]
-        cmd.insert(-1, f"option.{uci_name}={val}")
+        nextfish_block.insert(-1, f"option.{uci_name}={val}")
 
-    cmd += [
+    stockfish_block = [
+        "name=Stockfish", f"cmd={STOCKFISH}",
+        "option.Move Overhead=150",
+        "option.Hash=128",
+        "proto=uci",
+    ]
+
+    cmd = [CUTECHESS, "-engine"] + nextfish_block + ["-engine"] + stockfish_block + [
         "-each", "tc=10+0.1",
         "-rounds", str(GAMES_PER_EVAL // 2), "-repeat",
         "-concurrency", str(CONCURRENCY),
-        "-openings", f"file={BOOK_FILE}", "format=pgn", "order=random",
+        "-openings", f"file={openings_file}", "format=pgn", "order=sequential",
         "-pgnout", str(ENGINE_DIR / pgn_name),
     ]
 
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=MATCH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise MatchError(f"cutechess timed out after {MATCH_TIMEOUT} seconds")
+
+    if r.returncode != 0:
+        raise MatchError(f"cutechess failed with return code {r.returncode}: {r.stderr[-500:]}")
+
     wins = losses = draws = 0
     elo = 0.0
     for line in r.stdout.splitlines():
         m = re.search(r"Score of NextfishImproved vs Stockfish:\s+(\d+)\s+-\s+(\d+)\s+-\s+(\d+)", line)
         if m:
             wins, losses, draws = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        m = re.search(r"Elo difference:\s+([-+]?\d*\.?\d+)", line)
+        m = re.search(r"Elo difference:\s*([-+]?(?:inf|\d*\.?\d+))", line, re.IGNORECASE)
         if m:
-            elo = float(m.group(1))
+            elo = parse_elo(m.group(1))
+
+    if wins + losses + draws == 0:
+        raise MatchError("cutechess produced no games (w=l=d=0)")
     return wins, losses, draws, elo
 
-def evaluate(params, pgn_name):
-    w, l, d, elo = run_match(params, pgn_name)
+def parse_elo(text):
+    """Parse an Elo value, handling the +/-inf values cutechess prints."""
+    value = text.strip().lower()
+    if value in ("inf", "+inf"):
+        return float("inf")
+    if value == "-inf":
+        return float("-inf")
+    try:
+        return float(value)
+    except ValueError:
+        return 0.0
+
+def evaluate(params, pgn_name, openings_file):
+    w, l, d, elo = run_match(params, pgn_name, openings_file)
     total = w + l + d
-    win_rate = (w + 0.5 * d) / total if total > 0 else 0.5
+    if total <= 0:
+        raise MatchError(f"no games played for {pgn_name}")
+    win_rate = (w + 0.5 * d) / total
     return win_rate, w, l, d, elo
 
 # ─── Main SPSA Loop ───────────────────────────────────────────────────────────
@@ -237,7 +320,7 @@ def main():
         a_k = A_INIT / (k + A_CONST) ** ALPHA
         c_k = C_INIT / k ** GAMMA
 
-        cur_params = {k: state["parameters"].get(k, DEFAULT_PARAMS[k]) for k in PARAM_BOUNDS}
+        cur_params = {name: state["parameters"].get(name, DEFAULT_PARAMS[name]) for name in PARAM_BOUNDS}
 
         # Shrink bounds around best params
         shrink_factor = max(0.4, 1.0 - (k / 80.0))
@@ -257,11 +340,15 @@ def main():
         print(f" Current: {param_str(cur_params)}")
         print(f"{'='*50}")
 
+        # Same openings for both candidates of this iteration
+        openings_file = build_openings_file(k, ENGINE_DIR / f"spsa_iter_{k}_openings.pgn")
+
         # Bernoulli perturbation per parameter
         deltas = {name: random.choice([-1, 1]) for name in param_order}
 
         plus_params  = {}
         minus_params = {}
+        applied_delta = {}
         for name in param_order:
             cur = cur_params[name]
             lo = param_info[name]["lo"]
@@ -269,49 +356,64 @@ def main():
             span = hi - lo
             # perturbation in integer units
             delta_val = max(1, int(round(c_k * span)))
+            applied_delta[name] = delta_val
             plus_params[name]  = int(round(clamp(cur + delta_val * deltas[name], lo, hi)))
             minus_params[name] = int(round(clamp(cur - delta_val * deltas[name], lo, hi)))
 
         # Evaluate (+) candidate
         print(f"\n[+] Evaluating: {param_str(plus_params)}")
         t0 = time.time()
-        y_plus, wp, lp, dp, elo_p = evaluate(plus_params, f"spsa_iter_{k}_plus.pgn")
+        try:
+            y_plus, wp, lp, dp, elo_p = evaluate(plus_params, f"spsa_iter_{k}_plus.pgn", openings_file)
+        except MatchError as e:
+            print(f"    !! Aborting iteration: {e}")
+            break
         t_plus = time.time() - t0
         print(f"    => WinRate={y_plus*100:.1f}%  (+{wp} -{lp} ={dp})  Elo={elo_p:+.1f}  [{t_plus/60:.1f} min]")
 
         # Evaluate (-) candidate
         print(f"\n[-] Evaluating: {param_str(minus_params)}")
         t0 = time.time()
-        y_minus, wm, lm, dm, elo_m = evaluate(minus_params, f"spsa_iter_{k}_minus.pgn")
+        try:
+            y_minus, wm, lm, dm, elo_m = evaluate(minus_params, f"spsa_iter_{k}_minus.pgn", openings_file)
+        except MatchError as e:
+            print(f"    !! Aborting iteration: {e}")
+            break
         t_minus = time.time() - t0
         print(f"    => WinRate={y_minus*100:.1f}%  (+{wm} -{lm} ={dm})  Elo={elo_m:+.1f}  [{t_minus/60:.1f} min]")
 
         # SPSA gradient per parameter
-        # Standard SPSA: ĝ = (y₊ - y₋) / (2·cₖ·Δ) in continuous space.
-        # For integer params we need |Δθ| ≥ 1. Scale factor bridges the gap:
-        # raw_step = aₖ · ĝ · GRAD_SCALE → ~1-2 units at k=1-20.
-        GRAD_SCALE = 40.0
+        # Standard SPSA: g = (y₊ - y₋) / (2·Δθ·Δ) with Δθ the applied perturbation.
+        # The step is scaled by the parameter span so that every parameter moves
+        # by the same relative amount, and is bounded relative to its own span.
         gradients = {}
         new_params = dict(cur_params)
         for name in param_order:
             cur = cur_params[name]
             lo = param_info[name]["lo"]
             hi = param_info[name]["hi"]
-            lo_h, hi_h = PARAM_BOUNDS[name]
-            span_h = hi_h - lo_h
-            delta_val = max(1, int(round(c_k * span_h)))
-            raw_gradient = (y_plus - y_minus) / (2.0 * c_k * deltas[name])
+            span = max(1, hi - lo)
+            delta_val = applied_delta[name]
+            raw_gradient = (y_plus - y_minus) / (2.0 * delta_val * deltas[name])
             gradients[name] = raw_gradient
-            raw_step = a_k * raw_gradient * GRAD_SCALE
-            step = int(round(clamp(raw_step, -5, 5)))
+            raw_step = a_k * raw_gradient * GRAD_SCALE * span
+            step = int(round(clamp(raw_step, -REL_STEP_BOUND * span, REL_STEP_BOUND * span)))
             new_val = int(round(clamp(cur + step, lo, hi)))
             new_params[name] = new_val
 
-        # Track best
+        # Track best (only parameters that were actually measured are eligible)
         mean_elo = (elo_p + elo_m) / 2.0
-        if mean_elo > state["best_elo"]:
-            state["best_elo"]    = round(mean_elo, 1)
-            state["best_params"] = dict(new_params)
+        mean_wr = (y_plus + y_minus) / 2.0
+        best_candidate = plus_params if y_plus >= y_minus else minus_params
+        prev_elo = state.get("best_elo", float("-inf"))
+        prev_wr = state.get("best_win_rate", -1.0)
+        better = mean_elo > prev_elo
+        if not better and not math.isfinite(mean_elo) and not math.isfinite(prev_elo):
+            better = mean_wr > prev_wr
+        if better:
+            state["best_elo"]      = round(mean_elo, 1)
+            state["best_params"]   = dict(best_candidate)
+            state["best_win_rate"] = mean_wr
             print(f"  ** New best Elo: {mean_elo:+.1f}")
 
         state["iteration"]       = k

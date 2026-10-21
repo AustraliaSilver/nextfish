@@ -137,17 +137,21 @@ class ValueList {
     std::size_t size() const { return size_; }
     int         ssize() const { return int(size_); }
     void        push_back(const T& value) {
-        assert(size_ < MaxSize);
+        // The list is a fixed capacity buffer. Dropping an element is
+        // preferable to writing past its end, which would corrupt the heap.
+        if (size_ >= MaxSize) return;
         values_[size_++] = value;
     }
     const T* begin() const { return values_; }
     const T* end() const { return values_ + size_; }
     const T& operator[](int index) const { return values_[index]; }
 
+    // Reserves 'count' slots and returns a pointer to them, or nullptr when
+    // the list has not enough room left.
     T* make_space(size_t count) {
+        if (count > MaxSize - size_) return nullptr;
         T* result = &values_[size_];
         size_ += count;
-        assert(size_ <= MaxSize);
         return result;
     }
 

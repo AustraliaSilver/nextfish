@@ -70,8 +70,8 @@ class MovePicker {
     ExtMove *                    cur, *endCur, *endBadCaptures, *endCaptures, *endGenerated;
     int                          stage;
     int                          threshold;
-    Depth                        depth;
-    int                          ply;
+    Depth                        depth = 0;
+    int                          ply = 0;
     bool                         skipQuiets = false;
     bool                         useDeeCaptureOrdering = false;
     ExtMove                      moves[MAX_MOVES];

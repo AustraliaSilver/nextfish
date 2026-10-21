@@ -1,15 +1,15 @@
 {
     "resign": {
-        "move_count": 1,
-        "score": 0,
+        "move_count": 3,
+        "score": 400,
         "twosided": false,
-        "enabled": false
+        "enabled": true
     },
     "draw": {
-        "move_number": 0,
-        "move_count": 1,
-        "score": 0,
-        "enabled": false
+        "move_number": 40,
+        "move_count": 8,
+        "score": 20,
+        "enabled": true
     },
     "maxmoves": {
         "move_count": 1,
@@ -22,8 +22,8 @@
         "enabled": false
     },
     "opening": {
-        "file": "nextfish-harenn/openings.epd",
-        "format": 0,
+        "file": "UHO_2022_8mvs_+110_+119.pgn",
+        "format": 1,
         "order": 0,
         "plies": -1,
         "start": 1
@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "",
+        "file": "matches/match.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -51,12 +51,12 @@
         "append_file": true
     },
     "sprt": {
-        "alpha": 0.0,
-        "beta": 0.0,
+        "alpha": 0.05,
+        "beta": 0.05,
         "elo0": 0.0,
-        "elo1": 0.0,
+        "elo1": 5.0,
         "model": "normalized",
-        "enabled": false
+        "enabled": true
     },
     "config_name": "config.json",
     "output": 0,
@@ -69,8 +69,8 @@
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 40,
-    "concurrency": 4,
+    "rounds": 250,
+    "concurrency": 1,
     "force_concurrency": false,
     "recover": false,
     "noswap": false,
@@ -79,7 +79,7 @@
     "affinity": false,
     "show_latency": false,
     "log": {
-        "file": "",
+        "file": "matches/match.log",
         "level": 2,
         "append_file": true,
         "compress": false,
@@ -89,16 +89,16 @@
     "engines": [
         {
             "name": "Nextfish",
-            "dir": "",
-            "cmd": "nextfish.exe",
+            "dir": "builds",
+            "cmd": "builds/nextfish_built.exe",
             "args": "",
             "restart": false,
             "options": [],
             "limit": {
                 "tc": {
-                    "increment": 10,
+                    "increment": 0.1,
                     "fixed_time": 0,
-                    "time": 1000,
+                    "time": 10,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -108,17 +108,17 @@
             "variant": 0
         },
         {
-            "name": "Baseline",
-            "dir": "",
-            "cmd": "_c2e3d37_baseline.exe",
+            "name": "Stockfish18",
+            "dir": "builds",
+            "cmd": "builds/stockfish_built.exe",
             "args": "",
             "restart": false,
             "options": [],
             "limit": {
                 "tc": {
-                    "increment": 10,
+                    "increment": 0.1,
                     "fixed_time": 0,
-                    "time": 1000,
+                    "time": 10,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -127,18 +127,5 @@
             },
             "variant": 0
         }
-    ],
-    "stats": {
-        "Nextfish vs Baseline": {
-            "wins": 32,
-            "losses": 30,
-            "draws": 18,
-            "penta_WW": 2,
-            "penta_WD": 9,
-            "penta_WL": 19,
-            "penta_DD": 0,
-            "penta_LD": 9,
-            "penta_LL": 1
-        }
-    }
+    ]
 }

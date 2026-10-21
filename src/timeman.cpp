@@ -113,14 +113,14 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // Calculate time constants based on current time left.
         double logTimeInSec = std::log10(scaledTime / 1000.0);
-        double optConstant  = std::min(0.0035116 + 0.000351123 * logTimeInSec, 0.00558017);
-        double maxConstant  = std::max(3.5977 + 3.23950 * logTimeInSec, 3.14761);
+        double optConstant  = std::min(0.0032116 + 0.000351123 * logTimeInSec, 0.00508017);
+        double maxConstant  = std::max(3.3977 + 3.23950 * logTimeInSec, 2.94761);
 
-        optScale = std::min(0.0131431 + std::pow(ply + 3.14693, 0.481073) * optConstant,
-                            0.233035 * limits.time[us] / timeLeft)
+        optScale = std::min(0.0121431 + std::pow(ply + 3.14693, 0.481073) * optConstant,
+                            0.213035 * limits.time[us] / timeLeft)
                  * originalTimeAdjust;
 
-        maxScale = std::min(7.07704, maxConstant + ply / 10.9847);
+        maxScale = std::min(6.67704, maxConstant + ply / 10.9847);
     }
 
     // x moves in y seconds (+ z increment)
@@ -137,7 +137,10 @@ void TimeManagement::init(Search::LimitsType& limits,
     if (options["Use DEE/HARENN"] && options["Use HARE Time Management"])
     {
         double mult = HARENN::Controller::get_time_multiplier(pos) / 100.0;
-        double timeLeftMs = (double)limits.time[us];
+        // scaledTime is always expressed in milliseconds, while limits.time[us]
+        // holds a node count in 'nodes as time' mode. Using the raw value
+        // would silently disable the low-time safety ramp.
+        double timeLeftMs = (double) scaledTime;
         // Safety: symmetric interpolation to 100% below 2000ms
         // Prevents both boosting AND starving at low time
         if (timeLeftMs < 2000.0) {

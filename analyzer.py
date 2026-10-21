@@ -22,8 +22,11 @@ class PositionAnalyzer:
         
         # 3. King Safety (Số lượng quân tấn công quanh ô Vua)
         our_king_sq = board.king(us)
-        enemy_attackers = board.attackers(them, our_king_sq)
-        king_pressure = len(enemy_attackers) / 4.0
+        if our_king_sq is None:
+            king_pressure = 0.0
+        else:
+            enemy_attackers = board.attackers(them, our_king_sq)
+            king_pressure = len(enemy_attackers) / 4.0
         
         # 4. Material Tension (Tổng giá trị các quân đang bị đe dọa)
         tension = 0

@@ -51,6 +51,13 @@ namespace {
 
 constexpr int SEARCHEDLIST_CAPACITY = 32;
 constexpr int mainHistoryDefault    = 68;
+
+// Maximum number of HARENN selective extensions granted along a single
+// principal variation. The extension keeps the depth of the child equal to
+// the depth of its parent, so without this bound a sequence of consecutive
+// checking moves would descend at a constant depth. The bound caps the depth
+// overshoot of a principal variation to this number of plies.
+constexpr int MaxHarennExtensions = 8;
 using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
 
 int correction_value(const Worker& w, const Position& pos, const Stack* const ss) {
@@ -113,8 +120,7 @@ void update_all_stats(const Position& pos,
                       SearchedList&   capturesSearched,
                       Depth           depth,
                       Move            TTMove,
-                      int             moveCount,
-                      bool            useHarenn);
+                      int             moveCount);
 
 bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
     if (pos.capture_stage(move) || pos.rule50_count() < 10)
@@ -154,6 +160,11 @@ void Search::Worker::ensure_network_replicated() {
 void Search::Worker::start_searching() {
     accumulatorStack.reset();
     if (!is_mainthread()) { iterative_deepening(); return; }
+    // Publish the HARENN parameters before the time manager is initialised:
+    // the time manager consults the model to compute its multiplier, so it
+    // must see the user settings of this search and not the compiled-in
+    // defaults.
+    HARENN::Controller::refresh_params(options);
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust, rootPos);
     tt.new_search();
@@ -186,8 +197,6 @@ void Search::Worker::iterative_deepening() {
     useDEECaptureOrdering = options["Use DEE Capture Ordering"];
     useDEECaptureLMR = options["Use DEE Capture LMR"];
     useDEECapturePruning = options["Use DEE Capture Pruning"];
-    useHAREAspiration = options["Use HARE Aspiration"];
-    useHAREReduction = options["Use HARE Reduction"];
     HARENN::Controller::refresh_params(options);
 
     SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
@@ -203,8 +212,10 @@ void Search::Worker::iterative_deepening() {
         (ss - i)->continuationHistory = &continuationHistory[0][0][NO_PIECE][0];
         (ss - i)->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
         (ss - i)->staticEval = VALUE_NONE;
+        (ss - i)->harennExtensions = 0;
     }
     for (int i = 0; i <= MAX_PLY + 2; ++i) (ss + i)->ply = i;
+    ss->harennExtensions = 0;
     ss->pv = pv;
     if (mainThread) {
         if (mainThread->bestPreviousScore == VALUE_INFINITE) mainThread->iterValue.fill(VALUE_ZERO);
@@ -231,12 +242,9 @@ void Search::Worker::iterative_deepening() {
             }
             selDepth = 0;
             delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
-            if (useHAREAspiration) {
-                delta = HARENN::Controller::adjust_aspiration(rootPos, delta);
-            }
             Value avg = rootMoves[pvIdx].averageScore;
             alpha = std::max(avg - delta, -VALUE_INFINITE); beta = std::min(avg + delta, VALUE_INFINITE);
-            int contempt = 8; int optimismBase = 142 * avg / (std::abs(avg) + 91);
+            int contempt = int(options["Contempt"]); int optimismBase = 142 * avg / (std::abs(avg) + 91);
             optimism[us] = optimismBase + contempt; optimism[~us] = -(optimismBase + contempt);
             int failedHighCnt = 0;
             while (true) {
@@ -279,12 +287,11 @@ void Search::Worker::iterative_deepening() {
             double bestMoveInstability = 1.02 + 2.14 * totBestMoveChanges / threads.size();
             double highBestMoveEffort = nodesEffort >= 93340 ? 0.76 : 1.0;
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction * bestMoveInstability * highBestMoveEffort;
-            if (rootMoves.size() == 1) totalTime = std::min(502.0, totalTime);
             auto elapsedTime = elapsed();
             if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))) {
                 if (mainThread->ponder) mainThread->stopOnPonderhit = true;
                 else threads.stop = true;
-            } else threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.70;
+            } else threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.50;
         }
         mainThread->iterValue[iterIdx] = bestValue; iterIdx = (iterIdx + 1) & 3;
     }
@@ -329,9 +336,15 @@ template<NodeType nodeType>
 Value Search::Worker::search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode) {
     constexpr bool PvNode = nodeType != NonPV; constexpr bool rootNode = nodeType == Root; const bool allNode = !(PvNode || cutNode);
     if (depth <= 0) return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
+    // Limit the depth if extensions made it too large
     depth = std::min(depth, MAX_PLY - 1);
     if (!rootNode && alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply)) { alpha = value_draw(nodes); if (alpha >= beta) return alpha; }
+    assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
+    assert(PvNode || (alpha == beta - 1));
+    assert(0 < depth && depth < MAX_PLY);
+    assert(!(PvNode && cutNode));
     Move pv[MAX_PLY + 1]; StateInfo st; Key posKey; Move move, excludedMove, bestMove; Depth extension, newDepth; Value bestValue, value, eval, maxValue, probCutBeta; bool givesCheck, improving, priorCapture, opponentWorsening, capture, ttCapture; int priorReduction; Piece movedPiece; SearchedList capturesSearched, quietsSearched;
+    assert(0 <= ss->ply && ss->ply < MAX_PLY);
     ss->inCheck = pos.checkers(); priorCapture = pos.captured_piece(); Color us = pos.side_to_move(); ss->moveCount = 0; bestValue = -VALUE_INFINITE; maxValue = VALUE_INFINITE;
     if (is_mainthread()) main_manager()->check_time(*this);
     if (PvNode && selDepth < ss->ply + 1) selDepth = ss->ply + 1;
@@ -415,6 +428,7 @@ Value Search::Worker::search(Position& pos, Stack* ss, Value alpha, Value beta, 
         while ((move = mp.next_move()) != Move::none()) {
             if (move == excludedMove || !pos.legal(move)) continue;
             do_move(pos, move, st, ss);
+            (ss + 1)->harennExtensions = ss->harennExtensions;
             value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
             if (value >= probCutBeta && probCutDepth > 0) value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1, probCutDepth, !cutNode);
             undo_move(pos, move);
@@ -427,6 +441,10 @@ moves_loop:
     const PieceToHistory* contHist[] = { (ss - 1)->continuationHistory, (ss - 2)->continuationHistory, (ss - 3)->continuationHistory, (ss - 4)->continuationHistory, (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
     MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist, &sharedHistory, ss->ply, useDEE && useDEECaptureOrdering);
     value = bestValue; int moveCount = 0;
+    // The HARENN analysis only depends on the position, not on the move, so
+    // it is queried at most once per node and shared by every candidate.
+    HARENN::EvalResult harennEval{0.0f, 0.0f, 0.0f, 0.0f};
+    bool harennQueried = false;
     while ((move = mp.next_move()) != Move::none()) {
         if (move == excludedMove || !pos.legal(move)) continue;
         if (rootNode && !std::count(rootMoves.begin() + pvIdx, rootMoves.begin() + pvLast, move)) continue;
@@ -435,8 +453,18 @@ moves_loop:
         if (PvNode) (ss + 1)->pv = nullptr;
         extension = 0; capture = pos.capture_stage(move); movedPiece = pos.moved_piece(move); givesCheck = pos.gives_check(move);
         newDepth = depth - 1; int delta = beta - alpha; Depth r = reduction(improving, depth, moveCount, delta);
-        if (useDEE && PvNode && depth >= 6 && depth <= 12 && givesCheck)
-            extension += HARENN::Controller::get_search_extension(pos, move, depth, givesCheck, numaAccessToken);
+        // The extension keeps the depth of the child equal to the depth of
+        // the parent, so it is only granted a limited number of times along
+        // a principal variation. Without that bound a chain of consecutive
+        // checks would descend at a constant depth up to MAX_PLY.
+        if (useDEE && PvNode && depth >= 6 && depth <= 12 && givesCheck
+            && ss->harennExtensions < MaxHarennExtensions) {
+            if (!harennQueried) {
+                harennEval = HARENN::Controller::get_analysis(pos, numaAccessToken);
+                harennQueried = true;
+            }
+            extension += HARENN::Controller::get_search_extension(harennEval, us);
+        }
         if (ss->ttPv) r += 946;
         if (useDEECaptureLMR && capture && depth >= 2 && moveCount > 1) {
             if (depth < 12) {
@@ -473,6 +501,7 @@ moves_loop:
             } else if (value >= beta && !is_decisive(value)) { ttMoveHistory << std::max(-400 - 100 * depth, -4000); return value; }
             else if (ttData.value >= beta) extension = -3; else if (cutNode) extension = -2;
         }
+        (ss + 1)->harennExtensions = ss->harennExtensions + (extension > 0 ? 1 : 0);
         do_move(pos, move, st, givesCheck, ss); newDepth += extension; uint64_t nodeCount = rootNode ? uint64_t(nodes) : 0;
         if (ss->ttPv) r -= 2719 + PvNode * 983 + (ttData.value > alpha) * 922 + (ttData.depth >= depth) * (934 + cutNode * 1011);
         r += 714; r -= moveCount * 73; r -= std::abs(correctionValue) / 30370;
@@ -518,13 +547,13 @@ moves_loop:
         }
         if (move != bestMove && moveCount <= SEARCHEDLIST_CAPACITY) { if (capture) capturesSearched.push_back(move); else quietsSearched.push_back(move); }
     }
+    assert(moveCount || !ss->inCheck || excludedMove || !MoveList<LEGAL>(pos).size());
     if (bestValue >= beta && !is_decisive(bestValue) && !is_decisive(alpha)) bestValue = (bestValue * depth + beta) / (depth + 1);
     if (!moveCount) bestValue = excludedMove ? alpha : ss->inCheck ? mated_in(ss->ply) : VALUE_DRAW;
     else if (bestMove) {
-        update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth, ttData.move, moveCount, useDEE);
+        update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth, ttData.move, moveCount);
         if (!PvNode) ttMoveHistory << (bestMove == ttData.move ? 809 : -865);
-    } else if (!priorCapture && prevSq != SQ_NONE) {
-        int bonusScale = -215; bonusScale -= (ss - 1)->statScore / 100; bonusScale += std::min(56 * depth, 489); bonusScale += 184 * ((ss - 1)->moveCount > 8); bonusScale += 147 * (!ss->inCheck && bestValue <= ss->staticEval - 107); bonusScale += 156 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 65);
+    } else if (!priorCapture && prevSq != SQ_NONE) {        int bonusScale = -215; bonusScale -= (ss - 1)->statScore / 100; bonusScale += std::min(56 * depth, 489); bonusScale += 184 * ((ss - 1)->moveCount > 8); bonusScale += 147 * (!ss->inCheck && bestValue <= ss->staticEval - 107); bonusScale += 156 * (!(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 65);
         bonusScale = std::max(bonusScale, 0); const int scaledBonus = std::min(141 * depth - 87, 1351) * bonusScale;
         update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq, scaledBonus * 406 / 32768);
         mainHistory[~us][((ss - 1)->currentMove).raw()] << scaledBonus * 243 / 32768;
@@ -537,15 +566,19 @@ moves_loop:
         auto bonus = std::clamp(int(bestValue - ss->staticEval) * depth / (bestMove ? 10 : 8), -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
         update_correction_history(pos, ss, *this, bonus);
     }
+    assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
     return bestValue;
 }
 
 template<NodeType nodeType>
 Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta) {
     static_assert(nodeType != Root); constexpr bool PvNode = nodeType == PV;
+    assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
+    assert(PvNode || (alpha == beta - 1));
     if (alpha < VALUE_DRAW && pos.upcoming_repetition(ss->ply)) { alpha = value_draw(nodes); if (alpha >= beta) return alpha; }
     Move pv[MAX_PLY + 1]; StateInfo st; Key posKey; Move move, bestMove; Value bestValue, value, futilityBase; bool pvHit, givesCheck, capture; int moveCount;
     if (PvNode) { (ss + 1)->pv = pv; ss->pv[0] = Move::none(); }
+    assert(0 <= ss->ply && ss->ply < MAX_PLY);
     bestMove = Move::none(); ss->inCheck = pos.checkers(); moveCount = 0;
     if (PvNode && selDepth < ss->ply + 1) selDepth = ss->ply + 1;
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY) return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
@@ -586,14 +619,28 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     }
     if (ss->inCheck && bestValue == -VALUE_INFINITE) return mated_in(ss->ply);
     if (!is_decisive(bestValue) && bestValue > beta) bestValue = (bestValue + beta) / 2;
+    // Detect stalemate in the quiescence search. Without this check a
+    // stalemate is scored with the static evaluation, which is typically far
+    // from a draw and gets stored in the transposition table.
+    Color stalemateUs = pos.side_to_move();
+    if (!ss->inCheck && !moveCount && !pos.non_pawn_material(stalemateUs)
+        && type_of(pos.captured_piece()) >= ROOK) {
+        if (!((stalemateUs == WHITE ? shift<NORTH>(pos.pieces(stalemateUs, PAWN))
+                                    : shift<SOUTH>(pos.pieces(stalemateUs, PAWN)))
+               & ~pos.pieces())) {
+            pos.state()->checkersBB = Rank1BB;  // search for legal king-moves only
+            if (!MoveList<LEGAL>(pos).size())    // stalemate
+                bestValue = VALUE_DRAW;
+            pos.state()->checkersBB = 0;
+        }
+    }
     ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit, bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove, unadjustedStaticEval, tt.generation());
     return bestValue;
 }
 
 Depth Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     int reductionScale = reductions[d] * reductions[mn];
-    int depthBonus = (d > 16) ? (d - 16) * 12 : 0;
-    return std::max(0, reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182 - depthBonus);
+    return reductionScale - delta * 608 / rootDelta + !i * reductionScale * 238 / 512 + 1182;
 }
 
 TimePoint Search::Worker::elapsed() const { return main_manager()->tm.elapsed([this]() { return threads.nodes_searched(); }); }
@@ -612,7 +659,7 @@ Value value_from_tt(Value v, int ply, int r50c) {
     return v;
 }
 void update_pv(Move* pv, Move move, const Move* childPv) { for (*pv++ = move; childPv && *childPv != Move::none();) *pv++ = *childPv++; *pv = Move::none(); }
-void update_all_stats(const Position& pos, Stack* ss, Search::Worker& workerThread, Move bestMove, Square prevSq, SearchedList& quietsSearched, SearchedList& capturesSearched, Depth depth, Move ttMove, int moveCount, bool useHarenn) {
+void update_all_stats(const Position& pos, Stack* ss, Search::Worker& workerThread, Move bestMove, Square prevSq, SearchedList& quietsSearched, SearchedList& capturesSearched, Depth depth, Move ttMove, int moveCount) {
     CapturePieceToHistory& captureHistory = workerThread.captureHistory; Piece movedPiece = pos.moved_piece(bestMove); PieceType capturedPiece;
     int bonus = std::min(116 * depth - 81, 1515) + 347 * (bestMove == ttMove) + (ss - 1)->statScore / 32;
     int malus = std::min(848 * depth - 207, 2446) - 17 * moveCount;

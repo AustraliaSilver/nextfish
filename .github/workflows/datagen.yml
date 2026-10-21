@@ -8,6 +8,13 @@ on:
     - cron: '0 */5 * * *' # Every 5 hours
   workflow_dispatch:
 
+# Only one data-generation run may touch the "data" branch at a time.
+# cancel-in-progress: false -> a queued run waits instead of killing a run
+# that is in the middle of pushing to the data branch.
+concurrency:
+  group: harenn-datagen
+  cancel-in-progress: false
+
 jobs:
   data-generation:
     runs-on: ubuntu-latest
@@ -19,50 +26,106 @@ jobs:
 
       - name: Setup environment
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y g++ make python3-pip
-          pip install python-chess numpy
+          sudo apt-get install -y g++ make python3-pip curl
+          # Modern Ubuntu ships a PEP-668 "externally managed" Python: the
+          # system pip refuses to install into it without --break-system-packages.
+          python3 -m pip install --break-system-packages python-chess numpy
+          python3 -c "import chess, numpy; print('python-chess', chess.__version__)"
 
       - name: Build HARENN Engine (PGO Optimized)
         run: |
+          set -euo pipefail
           cd src
-          curl -L -O https://tests.stockfishchess.org/api/nn/nn-3dd094f3dfcf.nnue
-          curl -L -O https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue
-          
-          # Fix possible ambiguity in search.cpp by using explicit namespace
-          sed -i 's/HARENN::GuidanceProvider/Stockfish::HARENN::GuidanceProvider/g' search.cpp
-          sed -i 's/HARENN::EvalResult/Stockfish::HARENN::EvalResult/g' search.cpp
-          sed -i 's/DEE::Evaluator/Stockfish::DEE::Evaluator/g' search.cpp
-          sed -i 's/HARENN::GuidanceProvider/Stockfish::HARENN::GuidanceProvider/g' main.cpp
-          
-          # Thực hiện PGO Build
-          make ARCH=x86-64-avx2 profile-build -j$(nproc)
-          
+
+          # "make net" runs scripts/net.sh, which downloads the two NNUE nets
+          # referenced by src/evaluate.h (EvalFileDefaultNameBig / Small).
+          make net
+          for net in nn-c288c895ea92.nnue nn-37f18f62d772.nnue; do
+            if [ ! -f "$net" ]; then
+              if [ -f "../$net" ]; then
+                cp "../$net" "$net"
+              else
+                echo "Downloading $net"
+                curl -fsSL -o "$net" "https://tests.stockfishchess.org/api/nn/$net"
+              fi
+            fi
+          done
+          ls -l nn-*.nnue
+
+          # NOTE: the old "sed -i" namespace patches were removed on purpose.
+          # Three of the four patterns (HARENN::GuidanceProvider, HARENN::EvalResult
+          # in search.cpp, HARENN::GuidanceProvider in main.cpp) match nothing in
+          # the current sources, and the fourth only rewrites code that already
+          # compiles. If a real qualification is needed it has to be fixed in
+          # src/ (owned elsewhere), not patched by this workflow.
+
+          make ARCH=x86-64-avx2 profile-build -j"$(nproc)"
+          test -f stockfish
           mv stockfish ../harenn_engine
           cd ..
           chmod +x harenn_engine
-          chmod +x parallel_generate.py
+
+          # The engine resolves nextfish.harenn and the NNUE nets relative to
+          # its own directory, so they have to sit next to the executable.
+          cp src/nextfish.harenn ./nextfish.harenn
+          cp src/nn-c288c895ea92.nnue src/nn-37f18f62d772.nnue ./
+          ls -l harenn_engine nextfish.harenn nn-*.nnue
 
       - name: Generate Data
         run: |
+          set -euo pipefail
           mkdir -p data
           echo "Starting data generation..."
-          
-          python3 parallel_generate.py --engine ./harenn_engine --output ./data --games 5 --concurrency 2
+
+          # The generator lives in nextfish-harenn/, there is no copy in the
+          # repository root. Its CLI is: --engine/--output/--games/--concurrency
+          chmod +x nextfish-harenn/parallel_generate.py
+          python3 nextfish-harenn/parallel_generate.py \
+            --engine ./harenn_engine \
+            --output ./data \
+            --games 5 \
+            --concurrency 2
 
       - name: Commit and Push Data
         run: |
+          set -euo pipefail
           git config --global user.name "HARENN Data Bot"
           git config --global user.email "harenn-bot@users.noreply.github.com"
-          
-          # Force checkout or create data branch
-          git fetch origin data || true
-          git checkout data || git checkout -b data
-          
-          # Merge main changes if needed to keep build scripts up to date
-          git merge main -m "Merge main into data [skip ci]" || true
-          
-          git add -f data/*.json
+
+          git fetch origin main
+          if git fetch origin data:refs/remotes/origin/data 2>/dev/null; then
+            git checkout -B data origin/data
+          else
+            echo "No remote data branch yet, creating it from main"
+            git checkout -B data
+          fi
+
+          # Merge main into the data branch. A conflicting merge must fail the
+          # job: committing a half-merged tree would corrupt the data branch.
+          if ! git merge origin/main -m "Merge main into data [skip ci]"; then
+            echo "::error::Merging main into data failed (conflicts?). Aborting without committing."
+            git merge --abort || true
+            exit 1
+          fi
+
+          # The data branch tracks both the *.json and the *.jsonl batches.
+          shopt -s nullglob
+          data_files=(data/*.json data/*.jsonl)
+          if [ ${#data_files[@]} -gt 0 ]; then
+            git add -f "${data_files[@]}"
+          else
+            echo "::error::No data files found in data/ - nothing to commit"
+            exit 1
+          fi
+
           timestamp=$(date +%Y%m%d_%H%M%S)
-          git commit -m "Add HARENN training data $timestamp [skip ci]" || echo "No changes to commit"
+          # Distinguish "nothing to commit" from "the commit failed".
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add HARENN training data $timestamp [skip ci]"
+          fi
+
           git push origin data

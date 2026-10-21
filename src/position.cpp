@@ -1084,27 +1084,46 @@ void write_multiple_dirties(const Position& p,
       40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18,
       17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
 
-    const int dt_count = popcount(mask);
-    assert(dt_count <= 16);
-
     const __m512i template_v = _mm512_set1_epi32(dt_template.raw());
-    auto*         write      = dts->list.make_space(dt_count);
 
-    // Extract the list of squares and upconvert to 32 bits. There are never more than 16
-    // incoming threats so this is sufficient.
-    __m512i threat_squares = _mm512_maskz_compress_epi8(mask, AllSquares);
-    threat_squares         = _mm512_cvtepi8_epi32(_mm512_castsi512_si128(threat_squares));
+    // The number of threats is not bounded by 16: a queen attacks up to 27
+    // occupied squares. The mask is therefore processed in chunks of 16.
+    while (mask)
+    {
+        std::uint64_t chunk_mask = 0;
+        int           chunk_count = 0;
+        Bitboard      remaining  = mask;
 
-    __m512i threat_pieces =
-      _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, threat_squares, board);
+        while (remaining && chunk_count < 16)
+        {
+            const Bitboard sq = remaining & -remaining;
+            chunk_mask |= 1ULL << lsb(sq);
+            remaining &= remaining - 1;
+            ++chunk_count;
+        }
+        mask = remaining;
 
-    // Shift the piece and square into place
-    threat_squares = _mm512_slli_epi32(threat_squares, SqShift);
-    threat_pieces  = _mm512_slli_epi32(threat_pieces, PcShift);
+        auto* write = dts->list.make_space(chunk_count);
+        if (!write) return;  // The list is full, drop the remaining threats.
 
-    const __m512i dirties =
-      _mm512_ternarylogic_epi32(template_v, threat_squares, threat_pieces, 254 /* A | B | C */);
-    _mm512_storeu_si512(reinterpret_cast<__m512i*>(write), dirties);
+        // Extract the list of squares and upconvert to 32 bits.
+        __m512i threat_squares = _mm512_maskz_compress_epi8(chunk_mask, AllSquares);
+        threat_squares         = _mm512_cvtepi8_epi32(_mm512_castsi512_si128(threat_squares));
+
+        __m512i threat_pieces =
+          _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, threat_squares, board);
+
+        // Shift the piece and square into place
+        threat_squares = _mm512_slli_epi32(threat_squares, SqShift);
+        threat_pieces  = _mm512_slli_epi32(threat_pieces, PcShift);
+
+        const __m512i dirties =
+          _mm512_ternarylogic_epi32(template_v, threat_squares, threat_pieces, 254 /* A | B | C */);
+
+        // Store only the lanes that belong to this chunk.
+        const __mmask16 store_mask = (__mmask16) ((1u << chunk_count) - 1);
+        _mm512_mask_storeu_epi32(reinterpret_cast<__m512i*>(write), store_mask, dirties);
+    }
 }
 #endif
 

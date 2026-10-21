@@ -1,7 +1,36 @@
 # .git-blame-ignore-revs
+# Revisions listed here are ignored by "git blame".
+# Format: one full object name per line, "#" starts a comment.
+
 # Ignore commit which added clang-format
 2d0237db3f0e596fb06e3ffbadba84dcc4e018f6
 
 # Post commit formatting fixes
 0fca5605fa2e5e7240fde5e1aae50952b2612231
 08ed4c90db31959521b7ef3186c026edd1e90307
+
+# Fork: mechanical whole-tree rewrites (no meaningful line attribution).
+# Integrate HARENN, DEE, DQRS and AAW-X advanced search features
+01146483dac5a69f294460d50f786f480991bb88
+# Relocate source to root /src and apply LTC optimizations
+3ad9be8d27b803b05a351b0edfba5b9192d47391
+# Restore full Stockfish directory structure (nnue, syzygy, incbin) in /src
+b7879ec2beaa68c962a235bfdbc951597832e09a
+# Full restoration of source code structure to root /src
+cc648eb371c2281aed138b14c9b998e9924de0ca
+# LTC optimizations: refined LMR, singular extension margins, HARENN impact
+e8be083bff9d668add8e58321351f9e1fd65ff62
+# Fix Windows build (bypass net.sh and config-sanity) and add local test script
+36cd3a37847a5664c71b4e58d18895a4fe392b0a
+# HARENN V72 centered dynamic time orchestration (large tree rewrite)
+82142a8f7e822a3b79a95878cb1776158104e91b
+# Sync repository with the latest local nextfish code
+a54c598b3ed0b9649404a14310301b9f453fd42b
+# Add nextfish-dev engine code
+e88113350da218b57169186b3ff833e30a7412c9
+# Initialize Nextfish Overlord v1.0 with Auto-Elo-CI
+8325ea8517d281789fc55a5f215f6fd05a464571
+# Keep only the auto elo workflow (bulk CI tree removal)
+5f961ff8a8f492a049516e9de7eb3d9827d73c2b
+# Whitelist and include the opening book PGN (bulk data import)
+0d5dd507e649f1caa34f1aa368abbe5be7597365

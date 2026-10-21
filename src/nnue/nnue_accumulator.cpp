@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 #include <new>
 #include <type_traits>
 
@@ -155,19 +156,36 @@ void AccumulatorStack::evaluate(const Position&                       pos,
         evaluate_side<ThreatFeatureSet>(BLACK, pos, featureTransformer, cache);
 }
 
+namespace {
+    // Diagnostic switch. When the environment variable NEXTFISH_FULL_REFRESH
+    // is set, the threat accumulator is always recomputed from scratch
+    // instead of being updated incrementally. Comparing the benchmark hash of
+    // both modes proves whether the incremental update is exact.
+    bool force_full_threat_refresh() {
+        static const bool value = std::getenv("NEXTFISH_FULL_REFRESH") != nullptr;
+        return value;
+    }
+}
+
 template<typename FeatureSet, IndexType Dimensions>
 void AccumulatorStack::evaluate_side(Color                                 perspective,
                                      const Position&                       pos,
                                      const FeatureTransformer<Dimensions>& featureTransformer,
                                      AccumulatorCaches::Cache<Dimensions>& cache) noexcept {
 
-    const auto last_usable_accum =
+    const auto last_usable_acc =
       find_last_usable_accumulator<FeatureSet, Dimensions>(perspective);
 
-    if ((accumulators<FeatureSet>()[last_usable_accum].template acc<Dimensions>())
-          .computed[perspective])
+    const bool have_computed =
+      (accumulators<FeatureSet>()[last_usable_acc].template acc<Dimensions>()).computed[perspective];
+
+    const bool use_incremental = have_computed
+                                 && !(std::is_same_v<FeatureSet, ThreatFeatureSet>
+                                      && force_full_threat_refresh());
+
+    if (use_incremental)
         forward_update_incremental<FeatureSet>(perspective, pos, featureTransformer,
-                                               last_usable_accum);
+                                               last_usable_acc);
 
     else
     {
@@ -179,7 +197,7 @@ void AccumulatorStack::evaluate_side(Color                                 persp
                                             mut_latest<ThreatFeatureSet>());
 
         backward_update_incremental<FeatureSet>(perspective, pos, featureTransformer,
-                                                last_usable_accum);
+                                                last_usable_acc);
     }
 }
 

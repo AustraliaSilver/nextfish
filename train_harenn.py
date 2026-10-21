@@ -6,22 +6,23 @@ Network: 768-dim piece-square input → 512 → 256 → 4 heads (eval, tau, rho,
 Architecture matches C++ inference engine.
 
 Usage:
-    python train_harenn.py --data D:/nextfish/backup_harenn_data --epochs 20 --batch-size 4096
+    python train_harenn.py --data data --epochs 20 --batch-size 4096
 """
 
 import argparse
-import os
 import json
-import time
-import struct
+import math
+import os
 import random
+import struct
+import time
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 
 torch.manual_seed(42)
 np.random.seed(42)
@@ -32,8 +33,38 @@ PIECE_MAP = {
     'p': 6, 'n': 7, 'b': 8, 'r': 9, 'q': 10, 'k': 11
 }
 
+REQUIRED_KEYS = ("fen", "tau", "rho", "rs", "eval_score")
+TASKS = ("eval", "tau", "rho", "rs")
 
-def fen_to_features(fen: str, stm: int) -> np.ndarray:
+
+def fen_side_to_move(fen: str) -> int:
+    """0 = white to move, 1 = black to move."""
+    parts = fen.split()
+    if len(parts) < 2:
+        raise ValueError(f"Malformed FEN: {fen!r}")
+    return 0 if parts[1] == 'w' else 1
+
+
+def fen_move_number(fen: str) -> Optional[int]:
+    parts = fen.split()
+    if len(parts) < 6:
+        return None
+    try:
+        return int(parts[5])
+    except ValueError:
+        return None
+
+
+def game_id_from_name(stem: str) -> str:
+    """Derive a game identifier from a data file name (w0_g7_b3_... -> g7)."""
+    parts = stem.split('_')
+    for part in parts:
+        if part.startswith('g') and part[1:].isdigit():
+            return f"g{part[1:]}"
+    return stem
+
+
+def fen_to_features(fen: str) -> np.ndarray:
     """
     Convert FEN to 768-dim piece-square feature vector.
     Encoding matches C++ extract_features:
@@ -41,7 +72,7 @@ def fen_to_features(fen: str, stm: int) -> np.ndarray:
       py_pc = piece - 1  (W:0-5, B:6-11)
       feat  = py_sq * 12 + py_pc
     """
-    board_part, side_part = fen.split()[:2]
+    board_part = fen.split()[0]
 
     features = np.zeros(768, dtype=np.float32)
     squares = board_part.split('/')
@@ -62,8 +93,11 @@ def fen_to_features(fen: str, stm: int) -> np.ndarray:
 
 
 class HARENNDataset(Dataset):
+    """HARENN corpus loaded from *.json ({"positions": [...]}) and *.jsonl files."""
+
     def __init__(self, data_dir: str):
-        self.data = []
+        self.records: List[Dict[str, float]] = []
+        self.game_ids: List[str] = []
         self._load_data(data_dir)
 
     def _load_data(self, data_dir: str):
@@ -71,38 +105,104 @@ class HARENNDataset(Dataset):
         if not data_path.exists():
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
 
-        json_files = list(data_path.glob("*.json"))
-        print(f"Loading data from {len(json_files)} files...")
-
+        json_files = sorted(data_path.glob("*.json"))
+        jsonl_files = sorted(data_path.glob("*.jsonl"))
         total_positions = 0
         for json_file in json_files:
-            try:
-                with open(json_file, 'r') as f:
-                    file_data = json.load(f)
-                    if 'positions' in file_data:
-                        for pos_data in file_data['positions']:
-                            self.data.append(pos_data)
-                            total_positions += 1
-            except Exception as e:
-                print(f"Error loading {json_file}: {e}")
+            total_positions += self._load_json_file(json_file)
+        for jsonl_file in jsonl_files:
+            total_positions += self._load_jsonl_file(jsonl_file)
 
-        print(f"Loaded {total_positions} positions from {len(json_files)} files")
+        print(f"Loaded {total_positions} positions from {len(json_files) + len(jsonl_files)} files "
+              f"({len(json_files)} json, {len(jsonl_files)} jsonl)")
+
+    def _load_json_file(self, json_file: Path) -> int:
+        try:
+            with open(json_file, 'r') as f:
+                file_data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{json_file}: invalid JSON: {e}") from e
+
+        if not isinstance(file_data, dict) or 'positions' not in file_data:
+            raise ValueError(f"{json_file}: expected a JSON object containing a 'positions' list")
+
+        game_id = game_id_from_name(json_file.stem)
+        for index, pos in enumerate(file_data['positions']):
+            self._add_record(pos, game_id, f"{json_file}[{index}]")
+        return len(file_data['positions'])
+
+    def _load_jsonl_file(self, jsonl_file: Path) -> int:
+        game_id = jsonl_file.stem
+        game_index = 0
+        prev_move_number = None
+        count = 0
+        with open(jsonl_file, 'r') as f:
+            for lineno, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    pos = json.loads(line)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"{jsonl_file}:{lineno}: invalid JSON: {e}") from e
+
+                move_number = fen_move_number(pos.get("fen", "")) if isinstance(pos, dict) else None
+                if (move_number is not None and prev_move_number is not None
+                        and move_number < prev_move_number - 1):
+                    game_index += 1
+                if move_number is not None:
+                    prev_move_number = move_number
+
+                self._add_record(pos, f"{game_id}#{game_index}", f"{jsonl_file}:{lineno}")
+                count += 1
+        return count
+
+    def _add_record(self, pos, game_id: str, where: str):
+        if not isinstance(pos, dict):
+            raise ValueError(f"{where}: expected a JSON object")
+        missing = [key for key in REQUIRED_KEYS if key not in pos]
+        if missing:
+            raise ValueError(f"{where}: missing required field(s): {', '.join(missing)}")
+
+        fen = pos['fen']
+        if 'stm' in pos and pos['stm'] is not None:
+            stm = int(pos['stm'])
+        else:
+            stm = fen_side_to_move(fen)
+
+        eval_score = float(pos['eval_score'])
+        if stm == 1:
+            eval_score = -eval_score
+
+        self.records.append({
+            'fen': fen,
+            'eval': eval_score / 100.0,
+            'tau': float(pos['tau']),
+            'rho': float(pos['rho']),
+            'rs': float(pos['rs']),
+        })
+        self.game_ids.append(game_id)
 
     def __len__(self):
-        return len(self.data)
+        return len(self.records)
 
     def __getitem__(self, idx):
-        pos = self.data[idx]
-        features = fen_to_features(pos['fen'], pos['stm'])
-
-        labels = {
-            'eval': torch.tensor(pos['eval_score'] / 100.0, dtype=torch.float32),
-            'tau': torch.tensor(pos['tau'], dtype=torch.float32),
-            'rho': torch.tensor(pos['rho'], dtype=torch.float32),
-            'rs': torch.tensor(pos['rs'], dtype=torch.float32)
-        }
-
+        rec = self.records[idx]
+        features = fen_to_features(rec['fen'])
+        labels = {task: torch.tensor(rec[task], dtype=torch.float32) for task in TASKS}
         return torch.tensor(features, dtype=torch.float32), labels
+
+    def label_stats(self) -> Dict[str, Tuple[float, float]]:
+        """Per-task (mean, std) of the raw targets plus the initial variance."""
+        stats = {}
+        for task in TASKS:
+            values = np.array([rec[task] for rec in self.records], dtype=np.float64)
+            mean = float(values.mean())
+            std = float(values.std())
+            if std <= 0.0:
+                std = 1.0
+            stats[task] = (mean, std)
+        return stats
 
 
 class PreprocessedHARENNDataset(Dataset):
@@ -130,6 +230,36 @@ class PreprocessedHARENNDataset(Dataset):
         }
         return feats, labels
 
+    def label_stats(self) -> Dict[str, Tuple[float, float]]:
+        stats = {}
+        for task, array in (('eval', self.labels_eval), ('tau', self.labels_tau),
+                             ('rho', self.labels_rho), ('rs', self.labels_rs)):
+            values = np.asarray(array, dtype=np.float64)
+            mean = float(values.mean())
+            std = float(values.std())
+            if std <= 0.0:
+                std = 1.0
+            stats[task] = (mean, std)
+        return stats
+
+
+def split_by_game(dataset, val_split: float, seed: int = 42):
+    """Group-wise split: whole games go to either train or validation."""
+    game_ids = list(getattr(dataset, "game_ids", []))
+    if not game_ids:
+        indices = list(range(len(dataset)))
+        rng = random.Random(seed)
+        rng.shuffle(indices)
+        val_size = int(len(indices) * val_split)
+        return indices[val_size:], indices[:val_size]
+
+    unique_games = sorted(set(game_ids))
+    random.Random(seed).shuffle(unique_games)
+    val_games = set(unique_games[:max(1, int(round(len(unique_games) * val_split)))])
+    train_indices = [i for i, gid in enumerate(game_ids) if gid not in val_games]
+    val_indices = [i for i, gid in enumerate(game_ids) if gid in val_games]
+    return train_indices, val_indices
+
 
 class HARENNNetwork(nn.Module):
     """
@@ -149,8 +279,9 @@ class HARENNNetwork(nn.Module):
         self.rs_head = nn.Linear(256, 1, bias=True)
 
     def forward(self, x):
-        h = torch.clamp(self.fc1(x), min=0.0)
-        h = torch.clamp(self.fc2(h), min=0.0)
+        # The C++ inference clamps fc1 to [0,128] and fc2 to [0,16384], i.e. [0,1]
+        h = torch.clamp(self.fc1(x), min=0.0, max=1.0)
+        h = torch.clamp(self.fc2(h), min=0.0, max=1.0)
 
         return {
             'eval': self.eval_head(h).squeeze(-1),
@@ -172,15 +303,21 @@ class HARENNNetwork(nn.Module):
 
 
 class MultiTaskLoss(nn.Module):
-    def __init__(self):
+    """Per-task uncertainty weighted loss on normalised targets."""
+
+    def __init__(self, stats: Dict[str, Tuple[float, float]]):
         super().__init__()
-        self.log_var_eval = nn.Parameter(torch.zeros(1))
-        self.log_var_tau = nn.Parameter(torch.zeros(1))
-        self.log_var_rho = nn.Parameter(torch.zeros(1))
-        self.log_var_rs = nn.Parameter(torch.zeros(1))
+        self.register_buffer('eval_mean', torch.tensor(stats['eval'][0], dtype=torch.float32))
+        self.register_buffer('eval_std', torch.tensor(stats['eval'][1], dtype=torch.float32))
+        # the eval target is normalised, so its initial variance is 1
+        self.log_var_eval = nn.Parameter(torch.tensor([math.log(1.0)]))
+        self.log_var_tau = nn.Parameter(torch.tensor([math.log(max(stats['tau'][1] ** 2, 1e-6))]))
+        self.log_var_rho = nn.Parameter(torch.tensor([math.log(max(stats['rho'][1] ** 2, 1e-6))]))
+        self.log_var_rs = nn.Parameter(torch.tensor([math.log(max(stats['rs'][1] ** 2, 1e-6))]))
 
     def forward(self, outputs, labels):
-        loss_eval = ((outputs['eval'] - labels['eval']) ** 2) / torch.exp(self.log_var_eval) + self.log_var_eval
+        eval_target = (labels['eval'] - self.eval_mean) / self.eval_std
+        loss_eval = ((outputs['eval'] - eval_target) ** 2) / torch.exp(self.log_var_eval) + self.log_var_eval
         loss_tau = ((torch.sigmoid(outputs['tau']) - labels['tau']) ** 2) / torch.exp(self.log_var_tau) + self.log_var_tau
         loss_rho = ((torch.sigmoid(outputs['rho']) - labels['rho']) ** 2) / torch.exp(self.log_var_rho) + self.log_var_rho
         loss_rs = ((torch.sigmoid(outputs['rs']) - labels['rs']) ** 2) / torch.exp(self.log_var_rs) + self.log_var_rs
@@ -197,12 +334,13 @@ class MultiTaskLoss(nn.Module):
 
 
 class HARENNTrainer:
-    def __init__(self, model, train_loader, val_loader, device):
+    def __init__(self, model, train_loader, val_loader, device, stats):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
-        self.criterion = MultiTaskLoss().to(device)
+        self.stats = stats
+        self.criterion = MultiTaskLoss(stats).to(device)
 
         self.optimizer = optim.Adam([
             {'params': self.model.fc1.parameters(), 'lr': 1e-4},
@@ -286,7 +424,7 @@ class HARENNTrainer:
 
         return avg_loss
 
-    def export_weights(self, filename: str):
+    def export_weights(self, filename: str, eval_mean: float, eval_std: float):
         """
         Export weights to .harenn binary format matching C++ loader.
 
@@ -307,10 +445,8 @@ class HARENNTrainer:
         with open(filename, 'wb') as f:
             f.write(b"HNN4")
 
-            eval_mean = 0.0
-            eval_std = 1.0
-            f.write(struct.pack('<f', eval_mean))
-            f.write(struct.pack('<f', eval_std))
+            f.write(struct.pack('<f', float(eval_mean)))
+            f.write(struct.pack('<f', float(eval_std)))
 
             layers = [
                 (self.model.fc1.weight, self.model.fc1.bias, 128, 128, True, True),
@@ -333,13 +469,22 @@ class HARENNTrainer:
                 f.write(struct.pack('<i', rows))
                 f.write(struct.pack('<i', cols))
 
-                weights_int16 = (w_np * w_scale).astype(np.int16)
+                scaled = np.round(w_np.astype(np.float64) * w_scale)
+                max_abs = float(np.max(np.abs(scaled))) if scaled.size else 0.0
+                assert max_abs <= 32767, (
+                    f"quantised weight magnitude {max_abs} exceeds the int16 range"
+                )
+                weights_int16 = np.clip(scaled, -32767, 32767).astype(np.int16)
                 f.write(weights_int16.tobytes())
 
-                if bias_size_is_cols:
-                    bias_int32 = (b_np * b_scale).astype(np.int32)
-                else:
-                    bias_int32 = (b_np * b_scale).astype(np.int32)
+                bias_int32 = np.clip(np.round(b_np.astype(np.float64) * b_scale),
+                                     -2147483647, 2147483647).astype(np.int32)
+                expected = cols if bias_size_is_cols else rows
+                if bias_int32.size != expected:
+                    sized = np.zeros(expected, dtype=np.int32)
+                    count = min(expected, bias_int32.size)
+                    sized[:count] = bias_int32[:count]
+                    bias_int32 = sized
 
                 f.write(bias_int32.tobytes())
 
@@ -348,13 +493,14 @@ class HARENNTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description='HARENN Training Pipeline')
-    parser.add_argument('--data', type=str, required=True, help='Data directory (JSON files or preprocessed .npy)')
+    parser.add_argument('--data', type=str, required=True, help='Data directory (JSON/JSONL files or preprocessed .npy)')
     parser.add_argument('--epochs', type=int, default=20, help='Number of training epochs')
     parser.add_argument('--batch-size', type=int, default=4096, help='Batch size')
     parser.add_argument('--val-split', type=float, default=0.1, help='Validation split ratio')
     parser.add_argument('--output', type=str, default='src/nextfish.harenn', help='Output model file')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use (cuda/cpu)')
     parser.add_argument('--preprocessed', action='store_true', help='Use preprocessed .npy files')
+    parser.add_argument('--patience', type=int, default=0, help='Early stopping patience in epochs (0 = disabled)')
 
     args = parser.parse_args()
 
@@ -367,6 +513,7 @@ def main():
     print(f"Validation split: {args.val_split}")
     print(f"Output file: {args.output}")
     print(f"Device: {args.device}")
+    print(f"Early stopping patience: {args.patience}")
     print("=" * 60)
 
     if not Path(args.data).exists():
@@ -383,13 +530,13 @@ def main():
         print("ERROR: No data loaded")
         return
 
-    train_size = int((1 - args.val_split) * len(dataset))
-    val_size = len(dataset) - train_size
+    stats = dataset.label_stats()
+    print(f"Label stats: " + ", ".join(
+        f"{task}={stats[task][0]:.4f}/{stats[task][1]:.4f}" for task in TASKS))
 
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, [train_size, val_size],
-        generator=torch.Generator().manual_seed(42)
-    )
+    train_indices, val_indices = split_by_game(dataset, args.val_split)
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
 
     print(f"Train samples: {len(train_dataset)}")
     print(f"Validation samples: {len(val_dataset)}")
@@ -425,15 +572,22 @@ def main():
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
 
-    trainer = HARENNTrainer(model, train_loader, val_loader, device)
+    trainer = HARENNTrainer(model, train_loader, val_loader, device, stats)
+
+    output_path = Path(args.output)
+    checkpoint_dir = output_path.parent if str(output_path.parent) else Path(".")
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     print("\nStarting training...")
     best_val_loss = float('inf')
+    best_state = None
+    best_epoch = 0
+    epochs_without_improvement = 0
 
     for epoch in range(1, args.epochs + 1):
         print(f"\n{'=' * 60}")
         print(f"Epoch {epoch}/{args.epochs}")
-        print(f"{'=' * 60}")
+        print('=' * 60)
 
         train_loss = trainer.train_epoch(epoch)
         val_loss = trainer.validate()
@@ -442,25 +596,42 @@ def main():
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_epoch = epoch
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            epochs_without_improvement = 0
             print(f"\n*** New best validation loss: {val_loss:.4f} ***")
 
-            checkpoint_path = f"harenn_checkpoint_epoch{epoch}.pt"
+            checkpoint_path = checkpoint_dir / f"harenn_checkpoint_epoch{epoch}.pt"
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': trainer.optimizer.state_dict(),
                 'scheduler_state_dict': trainer.scheduler.state_dict(),
                 'val_loss': val_loss,
+                'eval_mean': stats['eval'][0],
+                'eval_std': stats['eval'][1],
             }, checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
+        else:
+            epochs_without_improvement += 1
+            print(f"No improvement (val loss {val_loss:.4f} vs best {best_val_loss:.4f})")
+
+        if args.patience > 0 and epochs_without_improvement >= args.patience:
+            print(f"\nEarly stopping: {args.patience} epochs without improvement.")
+            break
+
+    if best_state is not None:
+        print(f"\nRestoring best weights from epoch {best_epoch} (val loss {best_val_loss:.4f})")
+        model.load_state_dict(best_state)
 
     print("\n" + "=" * 60)
     print("Training complete!")
     print("=" * 60)
-    trainer.export_weights(args.output)
+    trainer.export_weights(args.output, stats['eval'][0], stats['eval'][1])
 
     print(f"\nTraining summary:")
-    print(f"Best validation loss: {best_val_loss:.4f}")
+    print(f"Best validation loss: {best_val_loss:.4f} (epoch {best_epoch})")
+    print(f"Eval normalisation: mean={stats['eval'][0]:.6f} std={stats['eval'][1]:.6f}")
     print(f"Model exported to: {args.output}")
 
 

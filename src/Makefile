@@ -478,11 +478,10 @@ ifeq ($(COMP),gcc)
 endif
 
 ifeq ($(target_windows),yes)
-	ifeq ($(COMP),clang)
-		LDFLAGS += -static -Wl,-stack:8388608
-	else
-		LDFLAGS += -static -Wl,--stack,8388608
-	endif
+	# The deep search needs a large stack. GNU ld accepts --stack=<bytes> and
+	# lld accepts it as well, so the flag does not depend on which of the two
+	# linkers the selected compiler ends up using.
+	LDFLAGS += -static -Wl,--stack=8388608
 endif
 
 ifeq ($(COMP),mingw)
@@ -632,7 +631,7 @@ ifeq ($(COMP),gcc)
 endif
 
 ### On Windows use standard C++ threads, otherwise POSIX
-ifeq ($(target_windows),no)
+ifneq ($(target_windows),yes)
 	CXXFLAGS += -DUSE_PTHREADS
 	# On Android Bionic's C library comes with its own pthread implementation bundled in
 	ifneq ($(OS),Android)
@@ -984,13 +983,13 @@ endif
 	clang-profile-use clang-profile-make FORCE \
 	format analyze
 
-analyze: net objclean
+analyze: net objclean config-sanity
 	$(MAKE) -k ARCH=$(ARCH) COMP=$(COMP) $(OBJS)
 
-build: net
+build: net config-sanity
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
 
-profile-build: net objclean profileclean
+profile-build: net objclean profileclean config-sanity
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
@@ -1033,7 +1032,7 @@ profileclean:
 
 # evaluation network (nnue)
 net:
-	@echo "Skip net.sh"
+	@$(SHELL) ../scripts/net.sh
 
 format:
 	$(CLANG-FORMAT) -i $(SRCS) $(HEADERS) -style=file

@@ -50,7 +50,7 @@ private:
 
 class GuidanceProvider {
 public:
-    static void init();
+    static void init(const std::string& binaryDirectory);
     static EvalResult query(const Position& pos, NumaReplicatedAccessToken numaToken);
     static std::pair<float, float> query_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken);
     static bool is_model_loaded();

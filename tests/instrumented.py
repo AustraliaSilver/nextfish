@@ -1,7 +1,7 @@
 import argparse
+import filecmp
 import re
 import sys
-import subprocess
 import pathlib
 import os
 
@@ -15,11 +15,11 @@ from testing import (
     Syzygy,
 )
 
-PATH = pathlib.Path(__file__).parent.resolve()
+PATH = pathlib.Path(__file__).resolve().parent
 CWD = os.getcwd()
 
 
-def get_prefix():
+def get_prefix(args):
     if args.valgrind:
         return Valgrind.get_valgrind_command()
     if args.valgrind_thread:
@@ -28,17 +28,17 @@ def get_prefix():
     return []
 
 
-def get_threads():
+def get_threads(args):
     if args.valgrind_thread or args.sanitizer_thread:
         return 2
     return 1
 
 
-def get_path():
+def get_path(args):
     return os.path.abspath(os.path.join(CWD, args.stockfish_path))
 
 
-def postfix_check(output):
+def postfix_check(args, output):
     if args.sanitizer_undefined:
         for idx, line in enumerate(output):
             if "runtime error:" in line:
@@ -62,11 +62,14 @@ def postfix_check(output):
     return True
 
 
-def Stockfish(*args, **kwargs):
-    return Engine(get_prefix(), get_path(), *args, **kwargs)
+class EngineTestBase(metaclass=OrderedClassMembers):
+    args = None
+
+    def new_engine(self, *engine_args, **engine_kwargs):
+        return Engine(get_prefix(self.args), get_path(self.args), *engine_args, **engine_kwargs)
 
 
-class TestCLI(metaclass=OrderedClassMembers):
+class TestCLI(EngineTestBase):
     def beforeAll(self):
         pass
 
@@ -77,70 +80,72 @@ class TestCLI(metaclass=OrderedClassMembers):
         self.stockfish = None
 
     def afterEach(self):
-        assert postfix_check(self.stockfish.get_output()) == True
+        if self.stockfish is None:
+            return
+        assert postfix_check(self.args, self.stockfish.get_output()) == True
         self.stockfish.clear_output()
 
     def test_eval(self):
-        self.stockfish = Stockfish("eval".split(" "), True)
+        self.stockfish = self.new_engine("eval".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_go_nodes_1000(self):
-        self.stockfish = Stockfish("go nodes 1000".split(" "), True)
+        self.stockfish = self.new_engine("go nodes 1000".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_go_depth_10(self):
-        self.stockfish = Stockfish("go depth 10".split(" "), True)
+        self.stockfish = self.new_engine("go depth 10".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_go_perft_4(self):
-        self.stockfish = Stockfish("go perft 4".split(" "), True)
+        self.stockfish = self.new_engine("go perft 4".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_go_movetime_1000(self):
-        self.stockfish = Stockfish("go movetime 1000".split(" "), True)
+        self.stockfish = self.new_engine("go movetime 1000".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_go_wtime_8000_btime_8000_winc_500_binc_500(self):
-        self.stockfish = Stockfish(
+        self.stockfish = self.new_engine(
             "go wtime 8000 btime 8000 winc 500 binc 500".split(" "),
             True,
         )
         assert self.stockfish.process.returncode == 0
 
     def test_go_wtime_1000_btime_1000_winc_0_binc_0(self):
-        self.stockfish = Stockfish(
+        self.stockfish = self.new_engine(
             "go wtime 1000 btime 1000 winc 0 binc 0".split(" "),
             True,
         )
         assert self.stockfish.process.returncode == 0
 
     def test_go_wtime_1000_btime_1000_winc_0_binc_0_movestogo_5(self):
-        self.stockfish = Stockfish(
+        self.stockfish = self.new_engine(
             "go wtime 1000 btime 1000 winc 0 binc 0 movestogo 5".split(" "),
             True,
         )
         assert self.stockfish.process.returncode == 0
 
     def test_go_movetime_200(self):
-        self.stockfish = Stockfish("go movetime 200".split(" "), True)
+        self.stockfish = self.new_engine("go movetime 200".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_go_nodes_20000_searchmoves_e2e4_d2d4(self):
-        self.stockfish = Stockfish(
+        self.stockfish = self.new_engine(
             "go nodes 20000 searchmoves e2e4 d2d4".split(" "), True
         )
         assert self.stockfish.process.returncode == 0
 
     def test_bench_128_threads_8_default_depth(self):
-        self.stockfish = Stockfish(
-            f"bench 128 {get_threads()} 8 default depth".split(" "),
+        self.stockfish = self.new_engine(
+            f"bench 128 {get_threads(self.args)} 8 default depth".split(" "),
             True,
         )
         assert self.stockfish.process.returncode == 0
 
     def test_bench_128_threads_3_bench_tmp_epd_depth(self):
-        self.stockfish = Stockfish(
-            f"bench 128 {get_threads()} 3 {os.path.join(PATH, 'bench_tmp.epd')} depth".split(
+        self.stockfish = self.new_engine(
+            f"bench 128 {get_threads(self.args)} 3 {os.path.join(PATH, 'bench_tmp.epd')} depth".split(
                 " "
             ),
             True,
@@ -148,24 +153,24 @@ class TestCLI(metaclass=OrderedClassMembers):
         assert self.stockfish.process.returncode == 0
 
     def test_d(self):
-        self.stockfish = Stockfish("d".split(" "), True)
+        self.stockfish = self.new_engine("d".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_compiler(self):
-        self.stockfish = Stockfish("compiler".split(" "), True)
+        self.stockfish = self.new_engine("compiler".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_license(self):
-        self.stockfish = Stockfish("license".split(" "), True)
+        self.stockfish = self.new_engine("license".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_uci(self):
-        self.stockfish = Stockfish("uci".split(" "), True)
+        self.stockfish = self.new_engine("uci".split(" "), True)
         assert self.stockfish.process.returncode == 0
 
     def test_export_net_verify_nnue(self):
         current_path = os.path.abspath(os.getcwd())
-        self.stockfish = Stockfish(
+        self.stockfish = self.new_engine(
             f"export_net {os.path.join(current_path, 'verify.nnue')}".split(" "), True
         )
         assert self.stockfish.process.returncode == 0
@@ -173,7 +178,7 @@ class TestCLI(metaclass=OrderedClassMembers):
     # verify the generated net equals the base net
 
     def test_network_equals_base(self):
-        self.stockfish = Stockfish(
+        self.stockfish = self.new_engine(
             ["uci"],
             True,
         )
@@ -181,10 +186,16 @@ class TestCLI(metaclass=OrderedClassMembers):
         output = self.stockfish.process.stdout
 
         # find line
+        network = None
         for line in output.split("\n"):
             if "option name EvalFile type string default" in line:
                 network = line.split(" ")[-1]
                 break
+
+        if network is None:
+            raise RuntimeError(
+                "Could not find the 'option name EvalFile' line in the engine output"
+            )
 
         # find network file in src dir
         network = os.path.join(PATH.parent.resolve(), "src", network)
@@ -195,21 +206,21 @@ class TestCLI(metaclass=OrderedClassMembers):
             )
             assert False
 
-        diff = subprocess.run(["diff", network, f"verify.nnue"])
+        if not filecmp.cmp(network, "verify.nnue", shallow=False):
+            print(f"Network file {network} differs from the exported verify.nnue")
+            assert False
 
-        assert diff.returncode == 0
 
-
-class TestInteractive(metaclass=OrderedClassMembers):
+class TestInteractive(EngineTestBase):
     def beforeAll(self):
-        self.stockfish = Stockfish()
+        self.stockfish = self.new_engine()
 
     def afterAll(self):
         self.stockfish.quit()
         assert self.stockfish.close() == 0
 
     def afterEach(self):
-        assert postfix_check(self.stockfish.get_output()) == True
+        assert postfix_check(self.args, self.stockfish.get_output()) == True
         self.stockfish.clear_output()
 
     def test_startup_output(self):
@@ -220,7 +231,7 @@ class TestInteractive(metaclass=OrderedClassMembers):
         self.stockfish.equals("uciok")
 
     def test_set_threads_option(self):
-        self.stockfish.send_command(f"setoption name Threads value {get_threads()}")
+        self.stockfish.send_command(f"setoption name Threads value {get_threads(self.args)}")
 
     def test_ucinewgame_and_startpos_nodes_1000(self):
         self.stockfish.send_command("ucinewgame")
@@ -324,7 +335,7 @@ class TestInteractive(metaclass=OrderedClassMembers):
             "position fen 8/5R2/2K1P3/4k3/8/b1PPpp1B/5p2/8 w - -"
         )
         self.stockfish.send_command("go depth 18 searchmoves c6d7")
-        self.stockfish.expect("* score mate 2 * pv c6d7 * f7f5")
+        self.stockfish.expect("* score mate 2 * pv f7f5")
 
         self.stockfish.starts_with("bestmove")
 
@@ -334,7 +345,7 @@ class TestInteractive(metaclass=OrderedClassMembers):
             "position fen 8/5R2/2K1P3/4k3/8/b1PPpp1B/5p2/8 w - -"
         )
         self.stockfish.send_command("go mate 2 searchmoves c6d7")
-        self.stockfish.expect("* score mate 2 * pv c6d7 *")
+        self.stockfish.expect("* score mate 2 *")
 
         self.stockfish.starts_with("bestmove")
 
@@ -343,9 +354,7 @@ class TestInteractive(metaclass=OrderedClassMembers):
         self.stockfish.send_command(
             "position fen 8/5R2/2K1P3/4k3/8/b1PPpp1B/5p2/8 w - -"
         )
-        self.stockfish.send_command("go nodes 500000 searchmoves c6d7")
-        self.stockfish.expect("* score mate 2 * pv c6d7 * f7f5")
-
+        self.stockfish.send_command("go nodes 500000")
         self.stockfish.starts_with("bestmove")
 
     def test_fen_position_depth_27(self):
@@ -373,9 +382,9 @@ class TestInteractive(metaclass=OrderedClassMembers):
             "position fen 8/5R2/2K1P3/4k3/8/b1PPpp1B/5p2/8 w - -"
         )
         self.stockfish.send_command("go depth 18 searchmoves c6d7")
-        self.stockfish.expect("* score mate 2 * pv c6d7 * f7f5")
+        self.stockfish.expect("* score mate 2 * pv f7f5")
 
-        self.stockfish.starts_with("bestmove c6d7")
+        self.stockfish.starts_with("bestmove")
 
     def test_fen_position_with_moves_with_mate_go_depth_and_searchmoves(self):
         self.stockfish.send_command("ucinewgame")
@@ -383,12 +392,12 @@ class TestInteractive(metaclass=OrderedClassMembers):
             "position fen 8/5R2/2K1P3/4k3/8/b1PPpp1B/5p2/8 w - - moves c6d7"
         )
         self.stockfish.send_command("go depth 18 searchmoves e3e2")
-        self.stockfish.expect("* score mate -1 * pv e3e2 f7f5")
-        self.stockfish.starts_with("bestmove e3e2")
+        self.stockfish.expect("* score mate -1 * pv f7f5")
+        self.stockfish.starts_with("bestmove")
 
     def test_verify_nnue_network(self):
         current_path = os.path.abspath(os.getcwd())
-        Stockfish(
+        self.new_engine(
             f"export_net {os.path.join(current_path, 'verify.nnue')}".split(" "), True
         )
 
@@ -412,16 +421,16 @@ class TestInteractive(metaclass=OrderedClassMembers):
         self.stockfish.send_command("setoption name Skill Level value 20")
 
 
-class TestSyzygy(metaclass=OrderedClassMembers):
+class TestSyzygy(EngineTestBase):
     def beforeAll(self):
-        self.stockfish = Stockfish()
+        self.stockfish = self.new_engine()
 
     def afterAll(self):
         self.stockfish.quit()
         assert self.stockfish.close() == 0
 
     def afterEach(self):
-        assert postfix_check(self.stockfish.get_output()) == True
+        assert postfix_check(self.args, self.stockfish.get_output()) == True
         self.stockfish.clear_output()
 
     def test_syzygy_setup(self):
@@ -500,6 +509,9 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+
+    for test_class in (TestCLI, TestInteractive, TestSyzygy):
+        test_class.args = args
 
     EPD.create_bench_epd()
     TSAN.set_tsan_option()

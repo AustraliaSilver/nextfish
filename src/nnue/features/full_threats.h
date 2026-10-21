@@ -74,8 +74,11 @@ class FullThreats {
         Square dp2removed;
     };
 
-    // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 128;
+    // Maximum number of simultaneously active features, and of the feature
+    // indices produced when the changes of a move are merged. A single move
+    // can produce up to 192 dirty threats, and the double extension merges the
+    // changes of two moves, so the list must hold twice that many indices.
+    static constexpr IndexType MaxActiveDimensions = 384;
     using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
     using DiffType                                 = DirtyThreats;
 

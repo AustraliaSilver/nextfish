@@ -131,20 +131,36 @@ def timeout_decorator(timeout: float):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(func, *args, **kwargs)
-                try:
-                    result = future.result(timeout=timeout)
-                except concurrent.futures.TimeoutError:
-                    raise TimeoutException(
-                        f"Function {func.__name__} timed out after {timeout} seconds",
-                        timeout,
-                    )
-            return result
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(func, *args, **kwargs)
+            try:
+                return future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                kill_engine_process(args[0] if args else None)
+                raise TimeoutException(
+                    f"Function {func.__name__} timed out after {timeout} seconds",
+                    timeout,
+                )
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 
         return wrapper
 
     return decorator
+
+
+def kill_engine_process(target):
+    """Kill the engine process owned by a test subject (if any)."""
+    process = getattr(target, "process", None)
+    if process is None:
+        return
+    try:
+        if hasattr(process, "kill"):
+            process.kill()
+        elif hasattr(process, "terminate"):
+            process.terminate()
+    except Exception:
+        pass
 
 
 class MiniTestFramework:
@@ -207,6 +223,7 @@ class MiniTestFramework:
 
         buffer = io.StringIO()
         fails = 0
+        buffer_printed = False
 
         try:
             t0 = time.time()
@@ -235,11 +252,13 @@ class MiniTestFramework:
 
             if self.stop_on_failure:
                 self.__print_buffer_output(buffer)
+                buffer_printed = True
                 raise e
 
             fails += 1
         finally:
-            self.__print_buffer_output(buffer)
+            if not buffer_printed:
+                self.__print_buffer_output(buffer)
 
         return fails
 
@@ -285,12 +304,12 @@ class Stockfish:
         self,
         prefix: List[str],
         path: str,
-        args: List[str] = [],
+        args: List[str] = None,
         cli: bool = False,
     ):
         self.path = path
         self.process = None
-        self.args = args
+        self.args = list(args) if args else []
         self.cli = cli
         self.prefix = prefix
         self.output = []
@@ -308,6 +327,7 @@ class Stockfish:
                 self.prefix + [self.path] + self.args,
                 capture_output=True,
                 text=True,
+                timeout=MAX_TIMEOUT,
             )
 
             if self.process.returncode != 0:
@@ -377,7 +397,11 @@ class Stockfish:
 
         while True:
             self._check_process_alive()
-            line = self.process.stdout.readline().strip()
+            raw_line = self.process.stdout.readline()
+            if not raw_line:
+                # EOF: the pipe is closed, stop instead of yielding empty lines
+                break
+            line = raw_line.strip()
             self.output.append(line)
 
             yield line
@@ -392,9 +416,15 @@ class Stockfish:
         self.send_command("quit")
 
     def close(self):
-        if self.process:
+        if not self.process:
+            return 0
+
+        if self.cli:
+            return self.process.returncode
+
+        try:
             self.process.stdin.close()
             self.process.stdout.close()
-            return self.process.wait()
-
-        return 0
+        except Exception:
+            pass
+        return self.process.wait()
