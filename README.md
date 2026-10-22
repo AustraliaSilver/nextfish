@@ -55,9 +55,33 @@ Instead of modifying Stockfish's highly optimized search reductions (LMR) and as
 | **Nextfish V72 (PGO)** vs Stockfish 18 (PGO), `10s+0.1`, 40 games | 13 | 11 | 16 | +17.4 | 65.8% | Unverified, retracted |
 | **Nextfish V72 (non-PGO)** vs Stockfish 18 (PGO), `2s+0.1`, 20 games | 6 | 2 | 2 | +147.2 | 92.1% | Invalid (cross-build), retracted |
 
-### Sanity check performed with the bug fixes
+### Measured with the full CI protocol
 
-The following numbers were produced with `run_match.py` at a **fixed 100 ms per move**,
+These numbers come from the `auto-solo-vs-stockfish.yml` workflow, which runs the protocol
+described below: 500 games, `10+0.1`, 1 thread, 512 MB hash, the UHO 2022 opening book,
+`builds/nextfish_built.exe` (PGO, Windows) against the official Stockfish 18 `sf_18` build.
+
+| Run | Result | Score | Elo diff | LOS |
+| :--- | :---: | :---: | :---: | :---: |
+| revision `be7b8af` (before the fixes) | 104W - 99L - 297D | 50.5% | +3.5 +/- 19.4 | 63.7% |
+| revision `8ffb2a1`, branch `main` | 99W - 107L - 294D | 49.2% | -5.6 +/- 19.5 | 28.9% |
+| revision `8ffb2a1`, branch `master` | 102W - 100L - 298D | 50.2% | +1.4 +/- 19.3 | 55.6% |
+
+The two runs of the fixed build add up to 201W - 207L - 592D over 1000 games, which is
+49.7% and **-2.1 +/- 13.8 Elo**. The difference to the previous revision is about 5 Elo
+with an uncertainty of roughly 24 Elo, so **the bug fixes did not change the strength of
+the engine**. They removed a wrong piece encoding that read past the end of the weight
+matrix, a search extension that could no longer decrease the depth, and a build that did
+not compile without AVX2.
+
+The draw ratio is close to 60% because of the adjudication rules of the protocol
+(`-draw movenumber=40 movecount=8 score=20`), and almost every decisive game ends by
+resignation rather than by mate. A protocol with fewer draws would measure the strength
+difference between two engines much more precisely.
+
+### Sanity check at a fixed time per move
+
+The numbers below were produced with `run_match.py` at a **fixed 100 ms per move**,
 single threaded, against the official Stockfish 18 `sf_18` build. They are **not** a
 benchmark, they only show that the bug fixes did not cost strength. With 40 to 60 games
 the error bar is roughly +/-60 Elo, so only differences of that size mean anything.
@@ -66,11 +90,6 @@ the error bar is roughly +/-60 Elo, so only differences of that size mean anythi
 | :--- | :--- | :---: | :---: | :---: |
 | Nextfish, revision `fa0d737` (before the fixes) | Stockfish 18 | 19W - 11L - 10D (40 games) | 60.0% | +70.4 +/- 56 |
 | Nextfish, with the fixes | Stockfish 18 | 24W - 15L - 21D (60 games) | 57.5% | +52.5 +/- 45 |
-
-The two results agree within their error bars, so the fixes did not cost strength. They do
-remove a wrong piece encoding that read past the end of the weight matrix, a search
-extension that could no longer decrease the depth, and a build that did not compile
-without AVX2.
 
 Reproduce with:
 
