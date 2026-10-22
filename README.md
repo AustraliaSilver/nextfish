@@ -79,24 +79,45 @@ The draw ratio is close to 60% because of the adjudication rules of the protocol
 resignation rather than by mate. A protocol with fewer draws would measure the strength
 difference between two engines much more precisely.
 
-### Sanity check at a fixed time per move
+### Measured at a fixed 100 ms per move
 
 The numbers below were produced with `run_match.py` at a **fixed 100 ms per move**,
-single threaded, against the official Stockfish 18 `sf_18` build. They are **not** a
-benchmark, they only show that the bug fixes did not cost strength. With 40 to 60 games
-the error bar is roughly +/-60 Elo, so only differences of that size mean anything.
+single threaded, against the official Stockfish 18 `sf_18` build, using the UHO 2022
+opening book. Four independent matches of 100 games were played in parallel and added up:
+
+| Match | Result | Score | Elo |
+| :--- | :---: | :---: | :---: |
+| 1 | 37W - 31L - 32D | 53.0% | +20.9 +/- 34.8 |
+| 2 | 38W - 31L - 31D | 53.5% | +24.4 +/- 34.8 |
+| 3 | 31W - 33L - 36D | 49.0% | -6.9 +/- 34.7 |
+| 4 | 30W - 33L - 36D | 48.5% | -10.5 +/- 34.9 |
+| **total** | **136W - 128L - 135D (399 games)** | **51.0%** | **+7.0 +/- 17.4** |
+
+**Nextfish is level with Stockfish 18 at 100 ms per move.** The 95% confidence interval
+is roughly -27 to +41 Elo.
+
+The spread between the four matches (+24.4 to -10.5) is fully explained by the sampling
+error of a 100 game match, so the engine is not sensitive to the particular openings it
+gets. This measurement also supersedes the much smaller samples that were taken earlier:
 
 | Build | Opponent | Result | Score | Elo |
 | :--- | :--- | :---: | :---: | :---: |
 | Nextfish, revision `fa0d737` (before the fixes) | Stockfish 18 | 19W - 11L - 10D (40 games) | 60.0% | +70.4 +/- 56 |
-| Nextfish, with the fixes | Stockfish 18 | 24W - 15L - 21D (60 games) | 57.5% | +52.5 +/- 45 |
+| Nextfish, revision `e92e954` (after the fixes) | Stockfish 18 | 136W - 128L - 135D (399 games) | 51.0% | +7.0 +/- 17.4 |
+
+The 40 game result is compatible with the 399 game result, its confidence interval simply
+reaches much further.
+
+Note that `run_match.py` plays every game to a mate or to the 500 ply limit and applies
+no adjudication rules, so its draw ratio of about 34% is lower than the 59% of the CI
+protocol. That is why the two protocols are not directly comparable.
 
 Reproduce with:
 
 ```bash
 python3 run_match.py --engine src/stockfish \
                      --engine2 /path/to/stockfish-ubuntu-x86-64-avx2 \
-                     --book temp/book_fens.json --games 60 --movetime 100
+                     --book temp/book_fens.json --games 100 --movetime 100
 ```
 
 ### What a valid benchmark looks like

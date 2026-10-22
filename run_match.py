@@ -172,6 +172,7 @@ def run_match(engine_path, book_path, games, movetime=None, tc=None, engine2=Non
 
     results = {"1-0": 0, "0-1": 0, "1/2-1/2": 0}
     aborted = 0
+    counted = 0
     games_as_white = 0
     games_as_black = 0
     total_ply = 0
@@ -229,6 +230,7 @@ def run_match(engine_path, book_path, games, movetime=None, tc=None, engine2=Non
         if game_aborted:
             aborted += 1
         else:
+            counted += 1
             try:
                 board = chess.Board(fen)
                 for m in moves:
@@ -256,6 +258,12 @@ def run_match(engine_path, book_path, games, movetime=None, tc=None, engine2=Non
 
     w, l, d = results.get("1-0", 0), results.get("0-1", 0), results.get("1/2-1/2", 0)
     n = w + l + d
+    # Every game has to end up either in the result table or in the aborted
+    # counter. A game that is counted nowhere would silently shrink the
+    # sample, so it is reported instead.
+    if n + aborted != games:
+        print(f"::warning::{games - n - aborted} game(s) were neither scored nor aborted",
+              flush=True)
     print("\n" + "=" * 60, flush=True)
     print(f"RESULTS: {w}W - {l}L - {d}D in {n} games", flush=True)
     print(f"Colours: {games_as_white} white / {games_as_black} black", flush=True)
