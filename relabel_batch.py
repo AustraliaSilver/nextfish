@@ -1,6 +1,5 @@
 import json
 import chess
-import sys
 import os
 import argparse
 from multiprocessing import Pool

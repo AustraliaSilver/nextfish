@@ -1,7 +1,6 @@
 import os
 import subprocess
 import threading
-import time
 import glob
 import shutil
 
@@ -32,11 +31,14 @@ FALLBACK_POSITIONS = [
 ]
 
 
-def run_cmd(cmd, desc, cwd=None, timeout=CMD_TIMEOUT):
+def run_cmd(cmd, desc, cwd=None, timeout=CMD_TIMEOUT, env=None):
+    """Chạy một lệnh.
+
+    cmd là một DANH SÁCH tham số, lệnh không bao giờ được truyền cho shell
+    nên không có khả năng bị chèn lệnh tùy ý qua nội dung của tham số.
+    """
     print(f"\n[🚀] {desc}...")
-    if "wget " in cmd:
-        cmd = cmd.replace("wget ", "wget -L -q ")
-    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd, env=env)
     timer = threading.Timer(timeout, process.kill)
     timer.start()
     try:
@@ -86,9 +88,9 @@ def setup_chess_env():
 
     # 1. Cài đặt Fastchess
     if not os.path.exists("fastchess"):
-        if not run_cmd(f"wget {FASTCHESS_URL} -O fastchess.tar", "Tải Fastchess"):
+        if not run_cmd(["wget", "-L", "-q", FASTCHESS_URL, "-O", "fastchess.tar"], "Tải Fastchess"):
             return False
-        if not run_cmd("tar -xf fastchess.tar", "Giải nén Fastchess"):
+        if not run_cmd(["tar", "-xf", "fastchess.tar"], "Giải nén Fastchess"):
             return False
         if not find_and_move("fastchess", "fastchess"):
             print("[❌] LỖI: Không tìm thấy binary fastchess sau khi giải nén!")
@@ -96,9 +98,9 @@ def setup_chess_env():
 
     # 2. Cài đặt Stockfish đối thủ (Standard)
     if not os.path.exists("stockfish_base"):
-        if not run_cmd(f"wget {STOCKFISH_BASE_URL} -O sf_base.tar", "Tải Stockfish đối thủ"):
+        if not run_cmd(["wget", "-L", "-q", STOCKFISH_BASE_URL, "-O", "sf_base.tar"], "Tải Stockfish đối thủ"):
             return False
-        if not run_cmd("tar -xf sf_base.tar", "Giải nén Stockfish đối thủ"):
+        if not run_cmd(["tar", "-xf", "sf_base.tar"], "Giải nén Stockfish đối thủ"):
             return False
         if not find_and_move("stockfish-ubuntu*", "stockfish_base"):
             if not find_and_move("stockfish*", "stockfish_base"):
@@ -134,23 +136,27 @@ def start_tournament():
 
     # Lệnh Fastchess với LD_LIBRARY_PATH để kích hoạt GPU
     # concurrency 1: Dành toàn bộ GPU cho 1 ván duy nhất để đạt sức mạnh tối đa
-    cmd = (
-        f"LD_LIBRARY_PATH={ONNX_LIB}:$LD_LIBRARY_PATH ./fastchess "
-        f"-engine cmd={NEXTFISH_BIN} name=Nextfish "
-        f"option.Lc0Policy_ModelPath={MODEL_PATH} "
-        f"option.Lc0Policy_Active=true "
-        f"-engine cmd=./stockfish_base name=Stockfish_Standard "
-        f"-each tc=10+0.1 "
-        f"-rounds 25 -repeat "
-        f"-concurrency 1 "
-        f"-openings file={book} format=pgn order=random "
-        f"-draw movenumber=40 movecount=8 score=8 "
-        f"-resign movecount=3 score=600 "
-        f"-output pgn=nextfish_battle_report.pgn "
-        f"-log file=fastchess.log"
-    )
+    cmd = [
+        "./fastchess",
+        "-engine", f"cmd={NEXTFISH_BIN}", "name=Nextfish",
+        f"option.Lc0Policy_ModelPath={MODEL_PATH}",
+        "option.Lc0Policy_Active=true",
+        "-engine", "cmd=./stockfish_base", "name=Stockfish_Standard",
+        "-each", "tc=10+0.1",
+        "-rounds", "25", "-repeat",
+        "-concurrency", "1",
+        "-openings", f"file={book}", "format=pgn", "order=random",
+        "-draw", "movenumber=40", "movecount=8", "score=8",
+        "-resign", "movecount=3", "score=600",
+        "-output", "pgn=nextfish_battle_report.pgn",
+        "-log", "file=fastchess.log",
+    ]
+    # LD_LIBRARY_PATH được đặt qua biến môi trường thay vì tiền tố của
+    # lệnh, để lệnh không cần tới shell.
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = f"{ONNX_LIB}:{env.get('LD_LIBRARY_PATH', '')}"
 
-    return run_cmd(cmd, "Đang thi đấu (50 ván)")
+    return run_cmd(cmd, "Đang thi đấu (50 ván)", env=env)
 
 
 if __name__ == "__main__":

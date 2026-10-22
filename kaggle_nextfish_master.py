@@ -17,9 +17,14 @@ ONNX_LIB = os.path.join(ONNX_DIR, "lib")
 CMD_TIMEOUT = 1800
 
 
-def run_cmd(cmd, desc, cwd=None, timeout=CMD_TIMEOUT):
+def run_cmd(cmd, desc, cwd=None, timeout=CMD_TIMEOUT, env=None):
+    """Chạy một lệnh.
+
+    cmd là một DANH SÁCH tham số, lệnh không bao giờ được truyền cho shell
+    nên không có khả năng bị chèn lệnh tùy ý qua nội dung của tham số.
+    """
     print(f"\n[🚀] {desc}...")
-    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd, env=env)
     timer = threading.Timer(timeout, process.kill)
     timer.start()
     try:
@@ -54,19 +59,24 @@ def main():
 
     # 1. Chuẩn bị ONNX Runtime (GPU)
     if not os.path.exists(ONNX_LIB):
-        if not run_cmd(f"wget {ONNX_LIB_URL} -O onnx.tgz && tar -zxvf onnx.tgz", "Tải ONNX Runtime (GPU)"):
+        if not run_cmd(["wget", ONNX_LIB_URL, "-O", "onnx.tgz"], "Tải ONNX Runtime (GPU)"):
             print("[❌] Không tải được ONNX Runtime. Dừng.")
+            return
+        if not run_cmd(["tar", "-zxf", "onnx.tgz"], "Giải nén ONNX Runtime"):
+            print("[❌] Không giải nén được ONNX Runtime. Dừng.")
             return
     if not os.path.isdir(ONNX_LIB):
         print(f"[❌] Không tìm thấy thư viện ONNX Runtime tại {ONNX_LIB}. Dừng.")
         return
 
-    # 2. Tải & Vá lỗi mã nguồn (Fix Makefile)
+    # 2. Tải mã nguồn
+    # Bản Makefile trong repo cần được vá để liên kết với ONNX Runtime
+    # (thêm -L/-lonnxruntime và rpath), việc này làm patch_makefile().
     repo_dir = os.path.join(WORKING_DIR, "nextfish")
     if os.path.exists(repo_dir):
-        if not run_cmd(f"rm -rf {repo_dir}", "Dọn dẹp"):
+        if not run_cmd(["rm", "-rf", repo_dir], "Dọn dẹp"):
             return
-    if not run_cmd(f"git clone {REPO_URL} {repo_dir}", "Tải mã nguồn"):
+    if not run_cmd(["git", "clone", REPO_URL, repo_dir], "Tải mã nguồn"):
         print("[❌] Không clone được mã nguồn. Dừng.")
         return
 
@@ -80,22 +90,27 @@ def main():
     patch_makefile(src_dir)
 
     # 3. Xử lý Model
-    if not run_cmd(f"wget {MODEL_URL} -O model_raw.pb.gz && gunzip -f model_raw.pb.gz", "Chuẩn bị Model", cwd=WORKING_DIR):
+    if not run_cmd(["wget", MODEL_URL, "-O", "model_raw.pb.gz"], "Tải model .pb", cwd=WORKING_DIR):
         print("[❌] Không tải được model .pb. Dừng.")
+        return
+    if not run_cmd(["gunzip", "-f", "model_raw.pb.gz"], "Giải nén model", cwd=WORKING_DIR):
+        print("[❌] Không giải nén được model .pb. Dừng.")
         return
     pb_file = next((f for f in os.listdir(WORKING_DIR) if f.endswith(".pb")), None)
     if not pb_file:
         print("[❌] Không tìm thấy file .pb sau khi tải. Dừng.")
         return
-    if not run_cmd("pip install tf2onnx", "Cài AI tools", cwd=WORKING_DIR):
+    if not run_cmd(["pip", "install", "tf2onnx"], "Cài AI tools", cwd=WORKING_DIR):
         print("[❌] Không cài được tf2onnx. Dừng.")
         return
     # Chuyển đổi Model sang định dạng chuẩn 112 planes
+    convert_env = dict(os.environ, CUDA_VISIBLE_DEVICES="")
     if not run_cmd(
-        f"CUDA_VISIBLE_DEVICES='' python -m tf2onnx.convert --input {pb_file} --output {MODEL_PATH} "
-        "--inputs input:0 --outputs policy_output/Softmax:0,value_output/Tanh:0 --fold_const",
+        ["python", "-m", "tf2onnx.convert", "--input", pb_file, "--output", MODEL_PATH,
+         "--inputs", "input:0", "--outputs", "policy_output/Softmax:0,value_output/Tanh:0", "--fold_const"],
         "Convert Model",
         cwd=WORKING_DIR,
+        env=convert_env,
     ):
         print("[❌] Chuyển đổi model sang ONNX thất bại. Dừng.")
         return
@@ -105,9 +120,9 @@ def main():
 
     # 4. Biên dịch
     os.chdir(src_dir)
-    make_flags = f"ARCH={ARCH} COMP=gcc CXXFLAGS='-I{ONNX_INC}'"
 
-    if run_cmd(f"make -j$(nproc) build {make_flags}", "Biên dịch Nextfish"):
+    if run_cmd(["make", "-j", str(os.cpu_count() or 1), "build",
+                f"ARCH={ARCH}", "COMP=gcc", f"CXXFLAGS=-I{ONNX_INC}"], "Biên dịch Nextfish"):
         engine_path = os.path.join(src_dir, "stockfish")
         print("\n" + "="*60)
         print(f"✅ THÀNH CÔNG! Engine tại: {engine_path}")

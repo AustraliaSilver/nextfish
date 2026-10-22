@@ -7,7 +7,6 @@ engine binary, then updates the default UCI option value if a better candidate
 is found.
 """
 
-from __future__ import annotations
 
 import argparse
 import json

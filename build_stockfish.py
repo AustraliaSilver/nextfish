@@ -7,10 +7,8 @@ For fair comparison testing
 import subprocess
 import sys
 import os
-import shutil
 from pathlib import Path
 from datetime import datetime
-import json
 
 
 def common_cxxflags(sse_flag=None, enable_lto=False, enable_unroll=False,

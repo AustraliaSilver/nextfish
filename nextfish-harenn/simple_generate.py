@@ -224,12 +224,16 @@ class SimpleDataGenerator:
                     risk += 0.15
 
                 # 5. Material imbalance risk
-                piece_count = len(board.piece_map())
+                piece_count = chess.popcount(board.occupied)
                 if piece_count < 16:
                     risk += 0.2  # Fewer pieces = more decisive
 
                 # 6. Hanging pieces
-                for sq, piece in board.piece_map().items():
+                # Duyệt qua bitboard thay vì tạo dict piece_map().
+                hanging = board.occupied
+                while hanging:
+                    sq = hanging.bit_length() - 1
+                    hanging &= hanging - 1
                     if board.is_attacked_by(not board.turn, sq) and not board.is_attacked_by(board.turn, sq):
                         risk += 0.1
 
@@ -243,7 +247,7 @@ class SimpleDataGenerator:
     def calculate_rs(self, board: chess.Board, eval_score: int) -> float:
         """Calculate endgame/quiet factor (rs) based on game phase"""
         try:
-            piece_count = len(board.piece_map())
+            piece_count = chess.popcount(board.occupied)
             material = self.count_material(board)
 
             # 1. Endgame detection
@@ -332,7 +336,7 @@ class SimpleDataGenerator:
                 best_move = legal_moves[0] if legal_moves else None
 
             material = self.count_material(board)
-            piece_count = len(board.piece_map())
+            piece_count = chess.popcount(board.occupied)
             
             # Standard HARENN labels (continuous, calibrated with harenn_ctrl.cpp thresholds)
             # Use real engine analysis if available, otherwise fallback to improved lightweight
@@ -352,12 +356,12 @@ class SimpleDataGenerator:
                     best_move_labels_d24 = real["best_move_labels_d24"]
                 except Exception:
                     # Fallback to improved lightweight
-                    legal_count = len(list(board.legal_moves))
+                    legal_count = board.legal_moves.count()
                     tau = min(legal_count / 45.0 + (0.1 if board.is_check() else 0), 1.0)
                     rho = 1.0 if board.is_check() else (0.55 if abs(cp) < 50 else (0.35 if abs(cp) < 100 else 0.20))
                     rs = self.calculate_rs(board, cp)
             else:
-                legal_count = len(list(board.legal_moves))
+                legal_count = board.legal_moves.count()
                 tau = min(legal_count / 45.0 + (0.1 if board.is_check() else 0), 1.0)
                 rho = 1.0 if board.is_check() else (0.55 if abs(cp) < 50 else (0.35 if abs(cp) < 100 else 0.20))
                 rs = self.calculate_rs(board, cp)
@@ -425,7 +429,7 @@ class SimpleDataGenerator:
         analysis_engine = None
         board = chess.Board(fen)
         material = self.count_material(board)
-        piece_count = len(board.piece_map())
+        piece_count = chess.popcount(board.occupied)
 
         def _extract_top3(info):
             moves, labels = [], []
@@ -556,7 +560,7 @@ class SimpleDataGenerator:
         """Check if position meets quality criteria - FAST checks only"""
 
         # 1. Not in endgame (need at least 10 pieces total)
-        if len(board.piece_map()) < 10:
+        if chess.popcount(board.occupied) < 10:
             return False
 
         # 2. Should have both kings

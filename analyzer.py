@@ -1,6 +1,4 @@
 import chess
-import json
-import numpy as np
 
 class PositionAnalyzer:
     @staticmethod
@@ -30,16 +28,20 @@ class PositionAnalyzer:
         
         # 4. Material Tension (Tổng giá trị các quân đang bị đe dọa)
         tension = 0
-        for sq, piece in board.piece_map().items():
-            if piece.color == us:
-                # Quân mình có bị quân nó nhìn thấy không?
-                attackers = board.attackers(them, sq)
-                if attackers:
-                    defenders = board.attackers(us, sq)
-                    if len(attackers) > len(defenders):
-                        tension += piece.piece_type # Pawn=1, Knight=2, ..., King=6
-                    elif len(attackers) > 0:
-                        tension += 0.5 # Có sự dòm ngó
+        # Duyệt qua bitboard của quân bên ta thay vì tạo dict piece_map().
+        our_pieces = board.occupied_co[us]
+        while our_pieces:
+            sq = our_pieces.bit_length() - 1
+            our_pieces &= our_pieces - 1
+            piece = board.piece_at(sq)
+            # Quân mình có bị quân nó nhìn thấy không?
+            attackers = board.attackers(them, sq)
+            if attackers:
+                defenders = board.attackers(us, sq)
+                if len(attackers) > len(defenders):
+                    tension += piece.piece_type # Pawn=1, Knight=2, ..., King=6
+                elif len(attackers) > 0:
+                    tension += 0.5 # Có sự dòm ngó
         tension_score = min(1.0, tension / 10.0)
         
         # Công thức tổng hợp (Weighted Average)
@@ -64,7 +66,7 @@ class PositionAnalyzer:
         Tính toán độ phân giải (Resolution Score). 
         Tiến trình của ván đấu (Cờ tàn = RS cao).
         """
-        piece_count = len(board.piece_map())
+        piece_count = chess.popcount(board.occupied)
         rs = 1.0 - (piece_count / 32.0)
         return min(1.0, max(0.0, rs))
 

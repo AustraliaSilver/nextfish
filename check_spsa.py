@@ -4,19 +4,40 @@ import json
 HISTORY_FILE = os.environ.get("SPSA_HISTORY_FILE", "spsa_tuning_history.jsonl")
 STATE_FILE = os.environ.get("SPSA_STATE_FILE", "spsa_tuning_state.json")
 
-if os.path.exists(HISTORY_FILE):
-    iters = []
-    with open(HISTORY_FILE) as f:
+
+def load_history(path):
+    """Read the iteration history.
+
+    A line that is not valid JSON is skipped instead of aborting the whole
+    report, so a truncated file written by an interrupted run does not make
+    the report unusable.
+    """
+    iterations = []
+    skipped = 0
+    if not os.path.exists(path):
+        return iterations, skipped
+    with open(path) as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
-                iters.append(json.loads(line))
+                iterations.append(json.loads(line))
             except json.JSONDecodeError:
-                continue
-    print(f'Total iterations done: {len(iters)}')
-    for d in iters:
+                skipped += 1
+    return iterations, skipped
+
+
+def main():
+    iterations, skipped = load_history(HISTORY_FILE)
+    if not os.path.exists(HISTORY_FILE):
+        print('No history file yet')
+        return
+
+    print(f'Total iterations done: {len(iterations)}')
+    if skipped:
+        print(f'Skipped {skipped} line(s) with invalid JSON')
+    for d in iterations:
         it = d['iteration']
         nc = d.get('new_center', {})
         p = d.get('plus_candidate', {})
@@ -41,5 +62,7 @@ if os.path.exists(HISTORY_FILE):
         print(f'Best Elo: {best_elo}, Best params: {best_params}')
     else:
         print(f'No state file at {STATE_FILE}')
-else:
-    print('No history file yet')
+
+
+if __name__ == "__main__":
+    main()

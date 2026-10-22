@@ -1,7 +1,6 @@
 import chess
 import chess.engine
 import random
-import json
 
 
 def play_game(engine1_path, engine2_path, time_control=0.1, increment=0.01):
