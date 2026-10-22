@@ -145,8 +145,15 @@ def elo_error(score, games):
 
 
 def result_for_model(result, model_white):
-    """board.result() is White's perspective; convert it to the model's perspective."""
-    if result == "1/2-1/2":
+    """board.result() is White's perspective; convert it to the model's perspective.
+
+    board.result() returns "*" when the game is still running, which happens
+    when it hit the ply limit without a mate, a stalemate, a repetition or a
+    fifty move draw. Such a game counts as a draw. Treating it as anything
+    else would either drop the game from the tally or, worse, count it as a
+    win for the model.
+    """
+    if result in ("1/2-1/2", "*"):
         return "1/2-1/2"
     if model_white:
         return result

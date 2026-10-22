@@ -154,6 +154,43 @@ class TestGameIdFromName(unittest.TestCase):
         self.assertEqual(harenn_fen.game_id_from_name("corpus"), "corpus")
 
 
+class TestResultForModel(unittest.TestCase):
+    """run_match.result_for_model"""
+
+    def setUp(self):
+        import run_match
+        self.convert = run_match.result_for_model
+
+    def test_white_win_as_white(self):
+        self.assertEqual(self.convert("1-0", True), "1-0")
+
+    def test_black_win_as_white_is_a_loss(self):
+        self.assertEqual(self.convert("0-1", True), "0-1")
+
+    def test_white_win_as_black_is_a_loss(self):
+        self.assertEqual(self.convert("1-0", False), "0-1")
+
+    def test_black_win_as_black(self):
+        self.assertEqual(self.convert("0-1", False), "1-0")
+
+    def test_draw_keeps_draw(self):
+        self.assertEqual(self.convert("1/2-1/2", True), "1/2-1/2")
+        self.assertEqual(self.convert("1/2-1/2", False), "1/2-1/2")
+
+    def test_unfinished_game_is_a_draw(self):
+        # board.result() returns "*" when the game is still running. It must
+        # not fall through to the win/loss conversion, which would drop the
+        # game from the tally or count it as a win for the model.
+        self.assertEqual(self.convert("*", True), "1/2-1/2")
+        self.assertEqual(self.convert("*", False), "1/2-1/2")
+
+    def test_every_result_maps_to_a_counted_key(self):
+        for result in ("1-0", "0-1", "1/2-1/2", "*"):
+            for model_white in (True, False):
+                self.assertIn(self.convert(result, model_white),
+                              ("1-0", "0-1", "1/2-1/2"))
+
+
 class TestLoadHistory(unittest.TestCase):
     """check_spsa.load_history"""
 
