@@ -35,7 +35,7 @@ CUTECHESS     = r"C:\Program Files (x86)\Cute Chess\cutechess-cli.exe"
 STOCKFISH     = r"D:\nextfish\stockfish18.exe"
 ENGINE_EXE    = r"D:\nextfish\nextfish_improved.exe"
 BOOK_FILE     = r"D:\nextfish\UHO_2022_8mvs_+110_+119.pgn"
-NNUE_FILE     = r"D:\nextfish\nn-c288c895ea92.nnue"
+TC            = "10+0.1"
 
 # ─── SPSA Hyper-parameters ────────────────────────────────────────────────────
 # Standard SPSA: theta_{k+1} = theta_k + a_k * g_k
@@ -224,8 +224,6 @@ def run_match(params, pgn_name, openings_file):
     """Run match with given parameter dict of int UCI option values."""
     nextfish_block = [
         "name=NextfishImproved", f"cmd={ENGINE_EXE}", f"dir={ENGINE_DIR}",
-        f"option.EvalFile={NNUE_FILE}",
-        "option.Move Overhead=150",
         "option.Use DEE/HARENN=true",
         "option.Use DEE Capture Ordering=true",
         "option.Use DEE Capture LMR=false",
@@ -242,13 +240,12 @@ def run_match(params, pgn_name, openings_file):
 
     stockfish_block = [
         "name=Stockfish", f"cmd={STOCKFISH}",
-        "option.Move Overhead=150",
         "option.Hash=128",
         "proto=uci",
     ]
 
     cmd = [CUTECHESS, "-engine"] + nextfish_block + ["-engine"] + stockfish_block + [
-        "-each", "tc=10+0.1",
+        "-each", f"tc={TC}",
         "-rounds", str(GAMES_PER_EVAL // 2), "-repeat",
         "-concurrency", str(CONCURRENCY),
         "-openings", f"file={openings_file}", "format=pgn", "order=sequential",
@@ -299,9 +296,62 @@ def evaluate(params, pgn_name, openings_file):
 
 # ─── Main SPSA Loop ───────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser()
+    global CUTECHESS, STOCKFISH, ENGINE_EXE, ENGINE_DIR, SRC_DIR, STATE_FILE, HISTORY_FILE
+    global REPORT_FILE, BOOK_FILE, TC, GAMES_PER_EVAL, CONCURRENCY
+
+    parser = argparse.ArgumentParser(description="SPSA tuner for the HARENN parameters")
     parser.add_argument("--max-iter", type=int, default=0, help="Max iterations (0 = run forever)")
+    parser.add_argument("--cutechess", default=CUTECHESS, help="Path to the cutechess-cli binary")
+    parser.add_argument("--engine", default=ENGINE_EXE, help="Path to the Nextfish binary")
+    parser.add_argument("--engine-dir", default=str(ENGINE_DIR),
+                        help="Working directory of the engine. It has to contain nextfish.harenn "
+                             "and the NNUE nets, the engine resolves them relative to its own "
+                             "directory.")
+    parser.add_argument("--stockfish", default=STOCKFISH, help="Path to the Stockfish 18 binary")
+    parser.add_argument("--book", default=BOOK_FILE, help="Path to the opening book in PGN format")
+    parser.add_argument("--tc", default=TC,
+                        help="Time control of a single game, for example 2+0.1. A short time "
+                             "control makes an iteration much faster at the price of a noisier "
+                             "gradient.")
+    parser.add_argument("--games-per-eval", type=int, default=GAMES_PER_EVAL,
+                        help="Number of games per evaluated candidate")
+    parser.add_argument("--concurrency", type=int, default=CONCURRENCY,
+                        help="Number of games played in parallel by cutechess")
     args = parser.parse_args()
+
+    CUTECHESS = args.cutechess
+    ENGINE_EXE = args.engine
+    STOCKFISH = args.stockfish
+    BOOK_FILE = args.book
+    TC = args.tc
+    GAMES_PER_EVAL = args.games_per_eval
+    CONCURRENCY = args.concurrency
+
+    ENGINE_DIR = Path(args.engine_dir)
+    SRC_DIR = ENGINE_DIR / "src"
+    STATE_FILE = ENGINE_DIR / "spsa_tuning_state.json"
+    HISTORY_FILE = ENGINE_DIR / "spsa_tuning_history.jsonl"
+    REPORT_FILE = ENGINE_DIR / "spsa_tuning_report.txt"
+
+    for path, what in ((CUTECHESS, "cutechess"), (ENGINE_EXE, "engine"), (STOCKFISH, "stockfish"),
+                       (BOOK_FILE, "opening book")):
+        if not Path(path).exists():
+            print(f"error: the {what} '{path}' does not exist")
+            return 1
+    if not ENGINE_DIR.is_dir():
+        print(f"error: the engine directory '{ENGINE_DIR}' does not exist")
+        return 1
+
+    print(f"\n{'='*50}")
+    print(f"SPSA Auto-Tuner Starting")
+    print(f"  cutechess:   {CUTECHESS}")
+    print(f"  engine:      {ENGINE_EXE}")
+    print(f"  stockfish:   {STOCKFISH}")
+    print(f"  engine dir:  {ENGINE_DIR}")
+    print(f"  book:        {BOOK_FILE}")
+    print(f"  time control:{TC}")
+    print(f"  games/eval:  {GAMES_PER_EVAL}")
+    print(f"{'='*50}\n")
 
     cleanup_pgns()
     state = load_state()
