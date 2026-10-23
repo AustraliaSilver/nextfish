@@ -27,6 +27,9 @@ MOVE_TIMEOUT = 120
 STARTUP_TIMEOUT = 60
 QUIT_TIMEOUT = 3
 
+# Pre-compiled regular expression for performance
+BESTMOVE_RE = re.compile(r"bestmove\s+(\S+)")
+
 
 class EngineError(RuntimeError):
     pass
@@ -100,7 +103,7 @@ class Engine:
                 return None
             if line is None:
                 return None
-            m = re.search(r"bestmove\s+(\S+)", line)
+            m = BESTMOVE_RE.search(line)
             if m:
                 return m.group(1)
 

@@ -83,6 +83,10 @@ REL_STEP_BOUND  = 0.10
 # ─── State Management ─────────────────────────────────────────────────────────
 DEFAULT_PARAMS = {"tm_center": 35, "tm_slope": 143, "tm_range_min": 95, "tm_range_max": 105, "white_threshold": 823, "black_threshold": 706}
 
+# Pre-compiled regular expressions for performance
+SCORE_RE = re.compile(r"Score of NextfishImproved vs Stockfish:\s+(\d+)\s+-\s+(\d+)\s+-\s+(\d+)")
+ELO_RE = re.compile(r"Elo difference:\s*([-+]?(?:inf|\d*\.?\d+))", re.IGNORECASE)
+
 
 class MatchError(RuntimeError):
     """Raised when a match could not be evaluated (timeout, crash, no games)."""
@@ -262,10 +266,10 @@ def run_match(params, pgn_name, openings_file):
     wins = losses = draws = 0
     elo = 0.0
     for line in r.stdout.splitlines():
-        m = re.search(r"Score of NextfishImproved vs Stockfish:\s+(\d+)\s+-\s+(\d+)\s+-\s+(\d+)", line)
+        m = SCORE_RE.search(line)
         if m:
             wins, losses, draws = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        m = re.search(r"Elo difference:\s*([-+]?(?:inf|\d*\.?\d+))", line, re.IGNORECASE)
+        m = ELO_RE.search(line)
         if m:
             elo = parse_elo(m.group(1))
 

@@ -11,6 +11,11 @@ import time
 from pathlib import Path
 
 ENGINE_OUTPUT_NAME = "stockfish.exe"
+
+# Pre-compiled regular expressions for performance
+SCORE_RE = re.compile(r"Score of NextfishImproved vs Stockfish:\s+(\d+)\s+-\s+(\d+)\s+-\s+(\d+)")
+ELO_RE = re.compile(r"Elo difference:\s+([-+]?\d*\.\d+|\d+)")
+LOS_RE = re.compile(r"LOS:\s+([-+]?\d*\.\d+|\d+)\s*%")
 MATCH_TIMEOUT = 7200
 
 
@@ -205,17 +210,17 @@ def run_cutechess(tc, games, pgn_file, concurrency=2, use_harenn=False, engine_p
         print(line, end='')
         sys.stdout.flush()
 
-        score_match = re.search(r"Score of NextfishImproved vs Stockfish:\s+(\d+)\s+-\s+(\d+)\s+-\s+(\d+)", line)
+        score_match = SCORE_RE.search(line)
         if score_match:
             wins = int(score_match.group(1))
             losses = int(score_match.group(2))
             draws = int(score_match.group(3))
 
-        elo_match = re.search(r"Elo difference:\s+([-+]?\d*\.\d+|\d+)", line)
+        elo_match = ELO_RE.search(line)
         if elo_match:
             elo = float(elo_match.group(1))
 
-        los_match = re.search(r"LOS:\s+([-+]?\d*\.\d+|\d+)\s*%", line)
+        los_match = LOS_RE.search(line)
         if los_match:
             los = float(los_match.group(1))
 
