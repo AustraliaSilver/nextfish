@@ -64,11 +64,11 @@ described below: 500 games, `10+0.1`, 1 thread, 512 MB hash, the UHO 2022 openin
 | Run | Result | Score | Elo diff | LOS |
 | :--- | :---: | :---: | :---: | :---: |
 | revision `be7b8af` (before the fixes) | 104W - 99L - 297D | 50.5% | +3.5 +/- 19.4 | 63.7% |
-| revision `8ffb2a1`, branch `main` | 99W - 107L - 294D | 49.2% | -5.6 +/- 19.5 | 28.9% |
-| revision `8ffb2a1`, branch `master` | 102W - 100L - 298D | 50.2% | +1.4 +/- 19.3 | 55.6% |
+| revision `e92e954`, branch `main` | 109W - 98L - 293D | 51.1% | +7.6 +/- 19.6 | 77.8% |
+| revision `e92e954`, branch `master` | 107W - 100L - 293D | 50.7% | +4.9 +/- 19.6 | 68.7% |
 
-The two runs of the fixed build add up to 201W - 207L - 592D over 1000 games, which is
-49.7% and **-2.1 +/- 13.8 Elo**. The difference to the previous revision is about 5 Elo
+The two runs of the fixed build add up to 216W - 198L - 586D over 1000 games, which is
+50.9% and **+6.3 +/- 13.9 Elo**. The difference to the previous revision is about 3 Elo
 with an uncertainty of roughly 24 Elo, so **the bug fixes did not change the strength of
 the engine**. They removed a wrong piece encoding that read past the end of the weight
 matrix, a search extension that could no longer decrease the depth, and a build that did
