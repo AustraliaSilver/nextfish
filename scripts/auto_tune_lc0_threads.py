@@ -21,6 +21,12 @@ from pathlib import Path
 
 DEFAULT_OPTION = "Lc0Policy_Threads"
 
+# Pre-compiled regular expressions for match output parsing
+SCORE_RE = re.compile(r"Score of .*?:\s*(\d+)\s*-\s*(\d+)\s*-\s*(\d+)\s*\[([0-9.]+)%\]\s*(\d+)")
+METRICS_RE = re.compile(
+    r"Elo difference:\s*([\-+0-9.infna]+)\s*\+/-\s*([0-9.infna]+),\s*LOS:\s*([0-9.]+)\s*%,\s*DrawRatio:\s*([0-9.]+)\s*%"
+)
+
 
 class MatchTimeout(RuntimeError):
     pass
@@ -68,19 +74,14 @@ def score_to_elo(score: float) -> float:
 
 
 def parse_match_output(output: str, candidate: int) -> MatchResult:
-    score_all = list(re.finditer(r"Score of .*?:\s*(\d+)\s*-\s*(\d+)\s*-\s*(\d+)\s*\[([0-9.]+)%\]\s*(\d+)", output))
+    score_all = list(SCORE_RE.finditer(output))
     if not score_all:
         raise RuntimeError("Could not parse fastchess score line.")
     w, l, d, s, g = score_all[-1].groups()
     # the fastchess score is a percentage, score_to_elo expects a fraction
     score = float(s) / 100.0
 
-    elo_all = list(
-        re.finditer(
-            r"Elo difference:\s*([\-+0-9.infna]+)\s*\+/-\s*([0-9.infna]+),\s*LOS:\s*([0-9.]+)\s*%,\s*DrawRatio:\s*([0-9.]+)\s*%",
-            output,
-        )
-    )
+    elo_all = list(METRICS_RE.finditer(output))
     if elo_all:
         e, ci, los, dr = elo_all[-1].groups()
         elo = float(e.replace("+", "")) if e not in ("inf", "+inf", "-inf", "nan") else score_to_elo(score)
