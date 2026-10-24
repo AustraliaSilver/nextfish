@@ -469,7 +469,7 @@ moves_loop:
         if (useDEECaptureLMR && capture && depth >= 2 && moveCount > 1) {
             if (depth < 12) {
                 Value adjSee = DEE::Evaluator::adjusted_see(pos, move);
-                if (adjSee < 0)
+                if (adjSee < -50)
                     r += 1024;
             }
         }

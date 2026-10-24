@@ -67,8 +67,8 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
 }
 
 bool Evaluator::should_prune_in_qs(const Position& pos, Move m, Value adjustedSee) {
-    // V16: Lowered threshold for more aggressive pruning
-    if (adjustedSee < -15) {
+    // Only prune captures that are clearly bad by both DEE and SEE
+    if (adjustedSee < -50) {
          if (!pos.see_ge(m, 0))
              return true;
     }
