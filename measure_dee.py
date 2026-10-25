@@ -20,7 +20,7 @@ NETS = "/workspace/app/src"
 
 FEATURES = {
     "ordering": ("Use DEE Capture Ordering", True, False),
-    "lmr": ("Use DEE Capture Pruning", True, False),
+    "pruning": ("Use DEE Capture Pruning", True, False),
     "lmr": ("Use DEE Capture LMR", True, False),
 }
 
@@ -68,7 +68,7 @@ def run_sprt(feature, games):
     cmd = ([CUTECHESS] +
            ["-engine"] + block_a +
            ["-engine"] + block_b +
-           ["-each", "tc=0.5+0.05",
+           ["-each", "tc=0.1+0.01",
             "-rounds", str(games // 2), "-repeat",
             "-concurrency", "4",
             "-openings", f"file={BOOK}", "format=pgn", "order=random",
