@@ -19,6 +19,11 @@ FASTCHESS = "./fastchess"
 # Ngưỡng chấp nhận: Elo > 0 và LOS >= 95%
 MIN_LOS = 95.0
 
+# Pre-compiled regular expressions
+LOS_RE = re.compile(r"LOS:\s*([0-9]*\.?[0-9]+)\s*%")
+ELO_RE = re.compile(r"Elo difference:\s*([-+]?[0-9]*\.?[0-9]+)")
+POINTS_RE = re.compile(r"Points:\s*[\d\.]+\s*\(([\d\.]+) %\)")
+
 def load_state():
     # Khởi tạo mặc định nếu file chưa tồn tại hoặc thiếu trường
     default_state = {
@@ -73,6 +78,15 @@ def restore_source():
         shutil.copy2(BACKUP_FILE, search_cpp)
         os.remove(BACKUP_FILE)
 
+WHITE_TIME_RE = re.compile(r"whiteTimeMultiplier = \(us == WHITE\) \? [\d\.]+ : 1.0;")
+BLACK_TIME_RE = re.compile(r"blackTimeMultiplier = \(us == BLACK && bestValue < -10 && bestValue > -100\) \? [\d\.]+ : 1.0;")
+COMPLEXITY_RE = re.compile(r"complexityMultiplier = \(mainThread->completedDepth >= 10 &&.*?\) \? [\d\.]+ : 1.0;", re.DOTALL)
+SINGULARITY_RE = re.compile(r"singularityCore = \(us == WHITE\) \? \d+ : 628;")
+BASE_OFFSET_RE = re.compile(r"baseOffset = \(us == WHITE\) \? \d+ : 1182;")
+OPTIMISM_BASE_RE = re.compile(r"int optimismBase = \(us == WHITE\) \? \d+ : 142;")
+CONTEMPT_WHITE_RE = re.compile(r"if \(pos\.side_to_move\(\) == WHITE\) v \+= \d+;")
+CONTEMPT_BLACK_RE = re.compile(r"else if \(pos\.side_to_move\(\) == BLACK\) v -= \d+;")
+
 def update_source_code(params):
     search_cpp = os.path.join(SRC_DIR, "search.cpp")
     with open(search_cpp, 'r') as f:
@@ -80,28 +94,28 @@ def update_source_code(params):
     original = content
 
     substitutions = [
-        (r"whiteTimeMultiplier = \(us == WHITE\) \? [\d\.]+ : 1.0;",
-         f"whiteTimeMultiplier = (us == WHITE) ? {round(params['whiteTimeMultiplier'], 2)} : 1.0;", 0),
-        (r"blackTimeMultiplier = \(us == BLACK && bestValue < -10 && bestValue > -100\) \? [\d\.]+ : 1.0;",
-         f"blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? {round(params['blackTimeMultiplier'], 2)} : 1.0;", 0),
-        (r"complexityMultiplier = \(mainThread->completedDepth >= 10 &&.*?\) \? [\d\.]+ : 1.0;",
-         f"complexityMultiplier = (mainThread->completedDepth >= 10 && (mainThread->rootMoves[0].pv[0] != prevBestMove || std::abs(avg - prevScore) > 20)) ? {round(params['complexityMultiplier'], 2)} : 1.0;", re.DOTALL),
-        (r"singularityCore = \(us == WHITE\) \? \d+ : 628;",
-         f"singularityCore = (us == WHITE) ? {int(params['singularityCore'])} : 628;", 0),
-        (r"baseOffset = \(us == WHITE\) \? \d+ : 1182;",
-         f"baseOffset = (us == WHITE) ? {int(params['baseOffset'])} : 1182;", 0),
-        (r"int optimismBase = \(us == WHITE\) \? \d+ : 142;",
-         f"int optimismBase = (us == WHITE) ? {int(params['optimismBase'])} : 142;", 0),
-        (r"if \(pos\.side_to_move\(\) == WHITE\) v \+= \d+;",
-         f"if (pos.side_to_move() == WHITE) v += {int(params['contempt'])};", 0),
-        (r"else if \(pos\.side_to_move\(\) == BLACK\) v -= \d+;",
-         f"else if (pos.side_to_move() == BLACK) v -= {int(params['contempt'])};", 0),
+        (WHITE_TIME_RE,
+         f"whiteTimeMultiplier = (us == WHITE) ? {round(params['whiteTimeMultiplier'], 2)} : 1.0;"),
+        (BLACK_TIME_RE,
+         f"blackTimeMultiplier = (us == BLACK && bestValue < -10 && bestValue > -100) ? {round(params['blackTimeMultiplier'], 2)} : 1.0;"),
+        (COMPLEXITY_RE,
+         f"complexityMultiplier = (mainThread->completedDepth >= 10 && (mainThread->rootMoves[0].pv[0] != prevBestMove || std::abs(avg - prevScore) > 20)) ? {round(params['complexityMultiplier'], 2)} : 1.0;"),
+        (SINGULARITY_RE,
+         f"singularityCore = (us == WHITE) ? {int(params['singularityCore'])} : 628;"),
+        (BASE_OFFSET_RE,
+         f"baseOffset = (us == WHITE) ? {int(params['baseOffset'])} : 1182;"),
+        (OPTIMISM_BASE_RE,
+         f"int optimismBase = (us == WHITE) ? {int(params['optimismBase'])} : 142;"),
+        (CONTEMPT_WHITE_RE,
+         f"if (pos.side_to_move() == WHITE) v += {int(params['contempt'])};"),
+        (CONTEMPT_BLACK_RE,
+         f"else if (pos.side_to_move() == BLACK) v -= {int(params['contempt'])};"),
     ]
 
-    for pattern, replacement, flags in substitutions:
-        new_content, count = re.subn(pattern, replacement, content, flags=flags)
+    for pattern, replacement in substitutions:
+        new_content, count = pattern.subn(replacement, content)
         if count == 0:
-            raise RuntimeError(f"Không tìm thấy mẫu trong search.cpp: {pattern}")
+            raise RuntimeError(f"Không tìm thấy mẫu trong search.cpp: {pattern.pattern}")
         content = new_content
 
     if content == original:
@@ -139,15 +153,15 @@ def run_match():
     output = result.stdout or ""
 
     los = float("nan")
-    los_match = re.search(r"LOS:\s*([0-9]*\.?[0-9]+)\s*%", output)
+    los_match = LOS_RE.search(output)
     if los_match:
         los = float(los_match.group(1))
 
-    elo_match = re.search(r"Elo difference:\s*([-+]?[0-9]*\.?[0-9]+)", output)
+    elo_match = ELO_RE.search(output)
     if elo_match:
         return float(elo_match.group(1)), los
 
-    match_pts = re.search(r"Points:\s*[\d\.]+\s*\(([\d\.]+) %\)", output)
+    match_pts = POINTS_RE.search(output)
     if match_pts:
         return score_to_elo(float(match_pts.group(1)) / 100.0), los
     return -999.0, los
