@@ -1,131 +1,117 @@
 name: HARENN Continuous Data Generation
 
 on:
-  push:
-    branches:
-      - main
   schedule:
-    - cron: '0 */5 * * *' # Every 5 hours
+    # Run every 6 hours automatically
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
-# Only one data-generation run may touch the "data" branch at a time.
-# cancel-in-progress: false -> a queued run waits instead of killing a run
-# that is in the middle of pushing to the data branch.
-concurrency:
-  group: harenn-datagen
-  cancel-in-progress: false
+permissions:
+  contents: write
 
 jobs:
   data-generation:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        worker_id: [1, 2, 3, 4, 5]
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: data
 
-      - name: Setup environment
+      - name: Setup Python & environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
         run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y g++ make python3-pip curl
-          # Modern Ubuntu ships a PEP-668 "externally managed" Python: the
-          # system pip refuses to install into it without --break-system-packages.
-          python3 -m pip install --break-system-packages python-chess numpy
-          python3 -c "import chess, numpy; print('python-chess', chess.__version__)"
+          python -m pip install --upgrade pip
+          pip install python-chess huggingface_hub
 
-      - name: Build HARENN Engine (PGO Optimized)
+      - name: Download Stockfish 18
         run: |
-          set -euo pipefail
-          cd src
-
-          # "make net" runs scripts/net.sh, which downloads the two NNUE nets
-          # referenced by src/evaluate.h (EvalFileDefaultNameBig / Small).
-          make net
-          for net in nn-c288c895ea92.nnue nn-37f18f62d772.nnue; do
-            if [ ! -f "$net" ]; then
-              if [ -f "../$net" ]; then
-                cp "../$net" "$net"
-              else
-                echo "Downloading $net"
-                curl -fsSL -o "$net" "https://tests.stockfishchess.org/api/nn/$net"
-              fi
-            fi
-          done
-          ls -l nn-*.nnue
-
-          # NOTE: the old "sed -i" namespace patches were removed on purpose.
-          # Three of the four patterns (HARENN::GuidanceProvider, HARENN::EvalResult
-          # in search.cpp, HARENN::GuidanceProvider in main.cpp) match nothing in
-          # the current sources, and the fourth only rewrites code that already
-          # compiles. If a real qualification is needed it has to be fixed in
-          # src/ (owned elsewhere), not patched by this workflow.
-
-          make ARCH=x86-64-avx2 profile-build -j"$(nproc)"
-          test -f stockfish
-          mv stockfish ../harenn_engine
-          cd ..
+          curl -L -o stockfish.tar https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2.tar
+          tar -xvf stockfish.tar
+          mv stockfish/stockfish-ubuntu-x86-64-avx2 ./harenn_engine
           chmod +x harenn_engine
+          chmod +x parallel_generate.py
 
-          # The engine resolves nextfish.harenn and the NNUE nets relative to
-          # its own directory, so they have to sit next to the executable.
-          cp src/nextfish.harenn ./nextfish.harenn
-          cp src/nn-c288c895ea92.nnue src/nn-37f18f62d772.nnue ./
-          ls -l harenn_engine nextfish.harenn nn-*.nnue
-
-      - name: Generate Data
+      - name: Generate Data (time-budgeted)
         run: |
-          set -euo pipefail
           mkdir -p data
-          echo "Starting data generation..."
+          python3 parallel_generate.py --engine ./harenn_engine --output ./data --games 100 --concurrency 2 --time-budget 16200 --worker-id ${{ matrix.worker_id }}
+          echo "=== files in data/ ==="
+          ls data/ | head -5
+          echo "total files: $(ls data/ | wc -l)"
 
-          # The generator lives in nextfish-harenn/, there is no copy in the
-          # repository root. Its CLI is: --engine/--output/--games/--concurrency
-          chmod +x nextfish-harenn/parallel_generate.py
-          python3 nextfish-harenn/parallel_generate.py \
-            --engine ./harenn_engine \
-            --output ./data \
-            --games 5 \
-            --concurrency 2
-
-      - name: Commit and Push Data
+      - name: Pack and Upload Data to Hugging Face Bucket
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          set -euo pipefail
-          git config --global user.name "HARENN Data Bot"
-          git config --global user.email "harenn-bot@users.noreply.github.com"
+          python3 - << 'EOF'
+          import os, glob, sys, json, time
+          from datetime import datetime
+          from huggingface_hub import HfApi
 
-          git fetch origin main
-          if git fetch origin data:refs/remotes/origin/data 2>/dev/null; then
-            git checkout -B data origin/data
-          else
-            echo "No remote data branch yet, creating it from main"
-            git checkout -B data
-          fi
+          token = os.environ.get("HF_TOKEN")
+          if not token:
+              print("::error::HF_TOKEN secret is not set in Repository Secrets!")
+              sys.exit(1)
 
-          # Merge main into the data branch. A conflicting merge must fail the
-          # job: committing a half-merged tree would corrupt the data branch.
-          if ! git merge origin/main -m "Merge main into data [skip ci]"; then
-            echo "::error::Merging main into data failed (conflicts?). Aborting without committing."
-            git merge --abort || true
-            exit 1
-          fi
+          files = glob.glob("data/*.json") + glob.glob("data/*.jsonl")
+          print(f"Total raw files generated by Worker: {len(files)}")
+          if not files:
+              print("No new data files generated to upload.")
+              sys.exit(0)
 
-          # The data branch tracks both the *.json and the *.jsonl batches.
-          shopt -s nullglob
-          data_files=(data/*.json data/*.jsonl)
-          if [ ${#data_files[@]} -gt 0 ]; then
-            git add -f "${data_files[@]}"
-          else
-            echo "::error::No data files found in data/ - nothing to commit"
-            exit 1
-          fi
+          # Pack all positions generated during the run into 1 single JSONL file
+          ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+          worker_id = "${{ matrix.worker_id }}"
+          run_id = "${{ github.run_id }}"
+          packed_filename = f"hnn_w{worker_id}_{run_id}_{ts}.jsonl"
+          packed_path = os.path.join("data", packed_filename)
 
-          timestamp=$(date +%Y%m%d_%H%M%S)
-          # Distinguish "nothing to commit" from "the commit failed".
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Add HARENN training data $timestamp [skip ci]"
-          fi
+          total_positions = 0
+          print(f"Packing all positions into single file: {packed_filename}...")
+          with open(packed_path, "w", encoding="utf-8") as out_f:
+              for f in files:
+                  if f == packed_path:
+                      continue
+                  if f.endswith(".json"):
+                      try:
+                          with open(f, "r", encoding="utf-8") as in_f:
+                              data = json.load(in_f)
+                              for p in data.get("positions", []):
+                                  out_f.write(json.dumps(p) + "\n")
+                                  total_positions += 1
+                      except Exception as e:
+                          print(f"Warning: skipped corrupted file {f}: {e}")
+                  elif f.endswith(".jsonl"):
+                      try:
+                          with open(f, "r", encoding="utf-8") as in_f:
+                              for line in in_f:
+                                  line = line.strip()
+                                  if line:
+                                      out_f.write(line + "\n")
+                                      total_positions += 1
+                      except Exception as e:
+                          print(f"Warning: skipped corrupted file {f}: {e}")
 
-          git push origin data
+          size_mb = os.path.getsize(packed_path) / (1024 * 1024)
+          print(f"Successfully packed {total_positions:,} positions into {packed_filename} ({size_mb:.2f} MB)")
+
+          # Upload single packed file to Hugging Face Bucket
+          api = HfApi(token=token)
+          bucket_id = "australia1/myrandombucket"
+          print(f"Uploading {packed_filename} to bucket '{bucket_id}'...")
+          t0 = time.time()
+          api.batch_bucket_files(bucket_id, add=[(packed_path, packed_filename)])
+          dt = time.time() - t0
+          print(f"Upload completed in {dt:.2f} seconds!")
+          EOF
