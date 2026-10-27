@@ -15,7 +15,7 @@ import math
 import random
 import struct
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Set
 from harenn_fen import fen_side_to_move, fen_move_number
 import numpy as np
 import torch
@@ -71,6 +71,7 @@ class HARENNDataset(Dataset):
     def __init__(self, data_dir: str):
         self.records: List[Dict[str, float]] = []
         self.game_ids: List[str] = []
+        self._seen_fens: Set[str] = set()
         self._load_data(data_dir)
 
     def _load_data(self, data_dir: str):
