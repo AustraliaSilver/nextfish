@@ -177,63 +177,43 @@ class ParallelGenerator:
 
 
     def analyze_full(self, board, engine):
-
         try:
-
             res8 = engine.analyse(board, chess.engine.Limit(depth=8))
+            res14_multi = engine.analyse(board, chess.engine.Limit(depth=14), multipv=2)
+            res18 = engine.analyse(board, chess.engine.Limit(depth=18))
 
-            res16_multi = engine.analyse(board, chess.engine.Limit(depth=16), multipv=3)
-
-            res20 = engine.analyse(board, chess.engine.Limit(depth=20))
-
-
-
-            if not isinstance(res16_multi, list): res16_multi = [res16_multi]
-
-
+            if not isinstance(res14_multi, list):
+                res14_multi = [res14_multi]
 
             m8 = res8.get("pv", [None])[0]
+            m14 = res14_multi[0].get("pv", [None])[0]
+            m18 = res18.get("pv", [None])[0]
 
-            m16 = res16_multi[0].get("pv", [None])[0]
-
-            m20 = res20.get("pv", [None])[0]
-
-
-
-            cp = res16_multi[0]["score"].relative.score(mate_score=10000) or 0
-
-            # Search instability labels: measure how much the engine's opinion
-            # changes when the search depth increases. A position whose eval
-            # swings or whose best move changes between depths is unresolved
-            # and benefits from more search.
-            cp20 = res20["score"].relative.score(mate_score=10000) or 0
+            cp = res14_multi[0]["score"].relative.score(mate_score=10000) or 0
+            cp18 = res18["score"].relative.score(mate_score=10000) or 0
             cp8 = res8["score"].relative.score(mate_score=10000) or 0
 
             # Eval swing between depths (absolute, in centipawns)
-            swing_8_16 = abs(cp8 - cp)
-            swing_16_20 = abs(cp - cp20)
-            max_swing = max(swing_8_16, swing_16_20)
+            swing_8_14 = abs(cp8 - cp)
+            swing_14_18 = abs(cp - cp18)
+            max_swing = max(swing_8_14, swing_14_18)
 
             # RHO (horizon risk): how much the eval moves between depths.
             # Normalized so that 200 cp of swing maps to 1.0.
             rho = min(max_swing / 200.0, 1.0)
 
-            # TAU (tactical complexity): how often the best move changes
-            # between depths. With 3 depths there are 2 transitions.
+            # TAU (tactical complexity): how often the best move changes between depths.
             transitions = 0
             changes = 0
-            if m8 is not None and m16 is not None:
+            if m8 is not None and m14 is not None:
                 transitions += 1
-                if m8 != m16:
+                if m8 != m14:
                     changes += 1
-            if m16 is not None and m20 is not None:
+            if m14 is not None and m18 is not None:
                 transitions += 1
-                if m16 != m20:
+                if m14 != m18:
                     changes += 1
-            if transitions > 0:
-                tau = changes / transitions
-            else:
-                tau = 0.0
+            tau = (changes / transitions) if transitions > 0 else 0.0
 
             # Bonus for near-zero eval (positions where the outcome is unclear)
             if abs(cp) < 30:
@@ -249,17 +229,17 @@ class ParallelGenerator:
 
             # RS (Confidence Score / Resolution): Measures how confident the
             # engine is in its evaluation and move choice compared to potential error/deviation.
-            # 1. Depth Stability: Eval deviation across depth 8, 16, and 20
-            max_eval_dev = max(abs(cp8 - cp), abs(cp - cp20), abs(cp8 - cp20))
+            # 1. Depth Stability: Eval deviation across depth 8, 14, and 18
+            max_eval_dev = max(abs(cp8 - cp), abs(cp - cp18), abs(cp8 - cp18))
             s_stability = max(0.0, 1.0 - (max_eval_dev / 150.0))
 
             # 2. Move Consistency: Agreement of best move across depths
-            if m8 is not None and m16 is not None and m20 is not None:
-                if m8 == m16 == m20:
+            if m8 is not None and m14 is not None and m18 is not None:
+                if m8 == m14 == m18:
                     s_agreement = 1.0
-                elif m16 == m20:
+                elif m14 == m18:
                     s_agreement = 0.75
-                elif m8 == m20:
+                elif m8 == m18:
                     s_agreement = 0.50
                 else:
                     s_agreement = 0.25
@@ -267,8 +247,8 @@ class ParallelGenerator:
                 s_agreement = 0.50
 
             # 3. Decision Margin: Dominance of best move over second best move in MultiPV
-            if len(res16_multi) >= 2 and 'score' in res16_multi[1] and res16_multi[1].get('pv'):
-                cp_second = res16_multi[1]['score'].relative.score(mate_score=10000) or 0
+            if len(res14_multi) >= 2 and 'score' in res14_multi[1] and res14_multi[1].get('pv'):
+                cp_second = res14_multi[1]['score'].relative.score(mate_score=10000) or 0
                 margin = max(0, cp - cp_second)
                 s_margin = min(1.0, margin / 80.0)
             else:
@@ -277,27 +257,27 @@ class ParallelGenerator:
             # Composite confidence score
             rs = 0.45 * s_stability + 0.35 * s_agreement + 0.20 * s_margin
             rs = max(0.05, min(0.99, rs))
-            m16, l16 = [r["pv"][0].uci() for r in res16_multi], [self.move_to_label(board, r["pv"][0]) for r in res16_multi]
 
-
-            # Reuse already analyzed moves from res20 to eliminate redundant searches
-            m20_uci = [m20.uci()] if m20 else []
-            l20_lbl = [self.move_to_label(board, m20)] if m20 else []
-
-
+            m14_uci = [r["pv"][0].uci() for r in res14_multi if r.get("pv")]
+            l14_lbl = [self.move_to_label(board, r["pv"][0]) for r in res14_multi if r.get("pv")]
+            m18_uci = [m18.uci()] if m18 else []
+            l18_lbl = [self.move_to_label(board, m18)] if m18 else []
 
             return {
-
-                "cp": cp, "tau": round(tau, 4), "rho": round(min(rho, 1.0), 4), 
-
+                "cp": cp,
+                "tau": round(tau, 4),
+                "rho": round(min(rho, 1.0), 4),
                 "rs": round(rs, 4),
-                "m16": m16, "l16": l16, "m20": m20_uci, "l20": l20_lbl, "m24": m20_uci, "l24": l20_lbl
-
+                "m16": m14_uci,
+                "l16": l14_lbl,
+                "m20": m18_uci,
+                "l20": l18_lbl,
+                "m24": m18_uci,
+                "l24": l18_lbl,
             }
 
-        except: return None
-
-
+        except Exception:
+            return None
 
     def worker_task(self, game_id):
 
@@ -306,6 +286,10 @@ class ParallelGenerator:
         worker_id = p_name.split('-')[-1] if '-' in p_name else "0"
 
         engine = chess.engine.SimpleEngine.popen_uci(self.engine_path)
+        try:
+            engine.configure({"Threads": 1, "Hash": 128})
+        except Exception:
+            pass
 
         positions, batch_num, board = [], 0, chess.Board()
 
