@@ -159,7 +159,7 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("HARE TM Range Max", Option(105, 100, 115));   // integer %
     options.add("HARE Ext Threshold White", Option(823, 500, 950));  // thousandths: 823 = 0.823
     options.add("HARE Ext Threshold Black", Option(706, 500, 950));  // thousandths: 706 = 0.706
-    options.add("Contempt", Option(8, 0, 50));
+    options.add("Contempt", Option(0, 0, 50));
 
     // Initialize HARENN controller
     HARENN::Controller::init(binaryDirectory);
