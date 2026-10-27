@@ -16,7 +16,7 @@ import random
 import struct
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
-from harenn_fen import fen_side_to_move, fen_move_number, game_id_from_name
+from harenn_fen import fen_side_to_move, fen_move_number
 import numpy as np
 import torch
 import torch.nn as nn
@@ -99,13 +99,13 @@ class HARENNDataset(Dataset):
         if not isinstance(file_data, dict) or 'positions' not in file_data:
             raise ValueError(f"{json_file}: expected a JSON object containing a 'positions' list")
 
-        game_id = game_id_from_name(json_file.stem)
+        game_id = json_file.stem  # Use full filename for uniqueness
         for index, pos in enumerate(file_data['positions']):
             self._add_record(pos, game_id, f"{json_file}[{index}]")
         return len(file_data['positions'])
 
     def _load_jsonl_file(self, jsonl_file: Path) -> int:
-        game_id = jsonl_file.stem
+        game_id = jsonl_file.stem  # Already unique per file
         game_index = 0
         prev_move_number = None
         count = 0
@@ -144,9 +144,14 @@ class HARENNDataset(Dataset):
             stm = fen_side_to_move(fen)
 
         eval_score = float(pos['eval_score'])
+        # Clamp mate scores to a finite range so they do not dominate the MSE loss
+        eval_score = max(-1000.0, min(1000.0, eval_score))
         if stm == 1:
             eval_score = -eval_score
 
+        if fen in self._seen_fens:
+            return  # Skip duplicate FEN
+        self._seen_fens.add(fen)
         self.records.append({
             'fen': fen,
             'eval': eval_score / 100.0,
