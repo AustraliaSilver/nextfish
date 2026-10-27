@@ -33,7 +33,7 @@ import chess
 
 import chess.engine
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 
 import multiprocessing
 
@@ -87,7 +87,8 @@ class TrainingPosition:
 
 class ParallelGenerator:
 
-    def __init__(self, engine_path, output_dir, depth=16, time_budget=None, worker_id=None):
+    def __init__(self, engine_path, output_dir, depth=16, time_budget=None, worker_id=None, batch_size=100):
+        self.batch_size = batch_size
         self.worker_id = worker_id
         self.time_budget = time_budget
         self.start_time = time.time()
@@ -301,6 +302,9 @@ class ParallelGenerator:
                 print(f"  [W{worker_id} | G{game_id}] Time budget exceeded, stopping", flush=True)
                 return total_game_pos
             for move_num in range(1, 100):
+                if self.time_budget and (time.time() - self.start_time) > self.time_budget:
+                    print(f"  [W{worker_id} | G{game_id}] Time budget reached mid-game, finishing game", flush=True)
+                    break
 
                 if board.is_game_over(): break
 
@@ -350,17 +354,21 @@ class ParallelGenerator:
 
                         positions.append(asdict(pos))
 
-                        if len(positions) >= 5:
-
+                        if len(positions) >= self.batch_size:
                             ts = time.strftime("%H%M%S")
-
                             worker_tag = f"w{self.worker_id}_" if self.worker_id else ""
                             rand_id = uuid.uuid4().hex[:6]
                             with open(self.output_dir / f"hnn_{worker_tag}g{game_id}_b{batch_num}_{ts}_{rand_id}.json", 'w') as f:
-
                                 json.dump({"positions": positions}, f, indent=2)
-
                             positions, batch_num = [], batch_num + 1
+
+            # Flush any remaining positions at the end of the game (guarantee no lost data)
+            if positions:
+                ts = time.strftime("%H%M%S")
+                worker_tag = f"w{self.worker_id}_" if self.worker_id else ""
+                rand_id = uuid.uuid4().hex[:6]
+                with open(self.output_dir / f"hnn_{worker_tag}g{game_id}_b{batch_num}_{ts}_{rand_id}.json", 'w') as f:
+                    json.dump({"positions": positions}, f, indent=2)
 
             return total_game_pos
 
@@ -377,6 +385,7 @@ def main():
     parser.add_argument("--output", "-o", default="D:/nextfish/data")
 
     parser.add_argument("--games", "-g", type=int, default=100)
+    parser.add_argument("--batch-size", "-b", type=int, default=100, help="Number of positions per JSON file (default: 100)")
 
     parser.add_argument("--concurrency", "-j", type=int, default=multiprocessing.cpu_count() - 1)
     parser.add_argument("--time-budget", type=int, default=None, help="Stop after N seconds (leave time for commit)")
@@ -386,23 +395,40 @@ def main():
 
     print(f"=== HARENN Turbo Generator V8 (Raw Data) ===")
 
-    gen = ParallelGenerator(args.engine, args.output, time_budget=args.time_budget, worker_id=args.worker_id)
+    gen = ParallelGenerator(
+        args.engine,
+        args.output,
+        time_budget=args.time_budget,
+        worker_id=args.worker_id,
+        batch_size=args.batch_size
+    )
 
     total_pos, start_time = 0, time.time()
 
     with ProcessPoolExecutor(max_workers=args.concurrency) as executor:
+        futures = set()
+        game_id = 0
 
-        futures = {executor.submit(gen.worker_task, i): i for i in range(args.games)}
+        # Prime the executor pool
+        initial_tasks = min(args.concurrency * 2, args.games)
+        for _ in range(initial_tasks):
+            futures.add(executor.submit(gen.worker_task, game_id))
+            game_id += 1
 
-        for future in as_completed(futures):
+        while futures:
+            time_up = args.time_budget and (time.time() - start_time) >= args.time_budget
 
-            res = future.result()
+            done, futures = wait(futures, return_when=FIRST_COMPLETED)
+            for f in done:
+                res = f.result()
+                total_pos += res
+                elapsed = time.time() - start_time
+                print(f"[{time.strftime('%H:%M:%S')}] Total Progress: {total_pos} Pos | Speed: {total_pos/elapsed:.2f} pos/s", flush=True)
 
-            total_pos += res
-
-            elapsed = time.time() - start_time
-
-            print(f"[{time.strftime('%H:%M:%S')}] Total Progress: {total_pos} Pos | Speed: {total_pos/elapsed:.2f} pos/s", flush=True)
+            # Keep feeding tasks if time is not up and more games remain
+            while not time_up and len(futures) < args.concurrency * 2 and game_id < args.games:
+                futures.add(executor.submit(gen.worker_task, game_id))
+                game_id += 1
 
 
 

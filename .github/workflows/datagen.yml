@@ -44,7 +44,7 @@ jobs:
       - name: Generate Data (time-budgeted)
         run: |
           mkdir -p data
-          python3 parallel_generate.py --engine ./harenn_engine --output ./data --games 100 --concurrency 2 --time-budget 16200 --worker-id ${{ matrix.worker_id }}
+          python3 parallel_generate.py --engine ./harenn_engine --output ./data --games 5000 --batch-size 100 --concurrency 2 --time-budget 16200 --worker-id ${{ matrix.worker_id }}
           echo "=== files in data/ ==="
           ls data/ | head -5
           echo "total files: $(ls data/ | wc -l)"
