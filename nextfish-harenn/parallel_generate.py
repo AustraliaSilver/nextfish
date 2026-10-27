@@ -279,9 +279,10 @@ class ParallelGenerator:
             rs = max(0.05, min(0.99, rs))
             m16, l16 = [r["pv"][0].uci() for r in res16_multi], [self.move_to_label(board, r["pv"][0]) for r in res16_multi]
 
-            m20, l20 = self.get_top_moves_safe(board, engine, 20)
 
-            m24, l24 = self.get_top_moves_safe(board, engine, 20)
+            # Reuse already analyzed moves from res20 to eliminate redundant searches
+            m20_uci = [m20.uci()] if m20 else []
+            l20_lbl = [self.move_to_label(board, m20)] if m20 else []
 
 
 
@@ -290,7 +291,7 @@ class ParallelGenerator:
                 "cp": cp, "tau": round(tau, 4), "rho": round(min(rho, 1.0), 4), 
 
                 "rs": round(rs, 4),
-                "m16": m16, "l16": l16, "m20": m20, "l20": l20, "m24": m24, "l24": l24
+                "m16": m16, "l16": l16, "m20": m20_uci, "l20": l20_lbl, "m24": m20_uci, "l24": l20_lbl
 
             }
 
