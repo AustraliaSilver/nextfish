@@ -12,7 +12,10 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, repo_root)
+sys.path.insert(0, os.path.join(repo_root, "tools"))
+sys.path.insert(0, os.path.join(repo_root, "nextfish-harenn"))
 
 import build_stockfish
 import check_spsa

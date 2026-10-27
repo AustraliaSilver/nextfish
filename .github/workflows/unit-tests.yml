@@ -35,7 +35,7 @@ jobs:
       - name: Compile every Python file
         run: |
           set -euo pipefail
-          for f in $(ls *.py tests/*.py scripts/*.py nextfish-harenn/*.py); do
+          for f in $(ls tests/*.py scripts/*.py tools/*.py nextfish-harenn/*.py); do
             python3 -m py_compile "$f"
           done
 
