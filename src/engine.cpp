@@ -157,8 +157,9 @@ Engine::Engine(std::optional<std::string> path) :
     options.add("HARE TM Slope", Option(143, 50, 300));       // deci-slope: 143 = 14.3
     options.add("HARE TM Range Min", Option(95, 85, 100));    // integer %
     options.add("HARE TM Range Max", Option(105, 100, 115));   // integer %
-    options.add("HARE Ext Threshold White", Option(823, 500, 950));  // thousandths: 823 = 0.823
-    options.add("HARE Ext Threshold Black", Option(706, 500, 950));  // thousandths: 706 = 0.706
+    options.add("HARE Ext Threshold White", Option(430, 100, 950));  // thousandths: 823 = 0.823
+    options.add("HARE Ext Threshold Black", Option(370, 100, 950));  // thousandths: 706 = 0.706
+    options.add("HARE Ext Max Depth", Option(18, 8, 20));
     options.add("Contempt", Option(0, 0, 50));
 
     // Initialize HARENN controller

@@ -39,8 +39,8 @@ namespace {
     std::atomic<float> tm_slope{14.3f};
     std::atomic<float> tm_range_min{95.0f};
     std::atomic<float> tm_range_max{105.0f};
-    std::atomic<float> ext_threshold_white{0.8228f};
-    std::atomic<float> ext_threshold_black{0.7060f};
+    std::atomic<float> ext_threshold_white{0.430f};
+    std::atomic<float> ext_threshold_black{0.370f};
 }
 
 void Controller::init(const std::string& binaryDirectory) {

@@ -197,6 +197,7 @@ void Search::Worker::iterative_deepening() {
     useDEECaptureOrdering = options["Use DEE Capture Ordering"];
     useDEECaptureLMR = options["Use DEE Capture LMR"];
     useDEECapturePruning = options["Use DEE Capture Pruning"];
+    hareExtMaxDepth = options["HARE Ext Max Depth"];
     HARENN::Controller::refresh_params(options);
 
     SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
@@ -457,7 +458,7 @@ moves_loop:
         // the parent, so it is only granted a limited number of times along
         // a principal variation. Without that bound a chain of consecutive
         // checks would descend at a constant depth up to MAX_PLY.
-        if (useDEE && PvNode && depth >= 6 && depth <= 12 && givesCheck
+        if (useDEE && PvNode && depth >= 6 && depth <= hareExtMaxDepth && givesCheck
             && ss->harennExtensions < MaxHarennExtensions) {
             if (!harennQueried) {
                 harennEval = HARENN::Controller::get_analysis(pos, numaAccessToken);

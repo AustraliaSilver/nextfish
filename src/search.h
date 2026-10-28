@@ -368,6 +368,7 @@ class Worker {
     bool useDEECaptureOrdering = true;
     bool useDEECaptureLMR = false;
     bool useDEECapturePruning = false;
+    int  hareExtMaxDepth = 18;
 
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
