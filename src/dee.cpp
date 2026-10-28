@@ -28,8 +28,9 @@ namespace DEE {
 // Dynamic Exchange Evaluation (DEE) Core
 // Grounded in Game-Theoretic Exchange Modeling:
 // 1. Absolute Pin Detection: Disqualifies pinned enemy defenders unable to legally recapture.
-// 2. Positional Aftermath Evaluation (PAE): Evaluates structural consequences (Bishop Pair, King Shield, Passed Pawns).
-// 3. Game-Theoretic Safe Filtering: Never boosts losing trades.
+// 2. Relative Pin Detection: Disqualifies defenders pinned to the enemy Queen.
+// 3. Positional Aftermath Evaluation (PAE): Evaluates structural consequences (Bishop Pair, King Shield, Passed Pawns).
+// 4. Game-Theoretic Safe Filtering: Never boosts losing trades.
 
 Value Evaluator::adjusted_see(const Position& pos, Move m) {
     if (!m) return VALUE_ZERO;
@@ -47,14 +48,13 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
 
     int score = 0;
 
-    // 1. PIN-AWARE TACTICAL EXCHANGE CORRECTION
+    Bitboard occupancy = pos.pieces() ^ from;
+    Bitboard themDefenders = pos.attackers_to(to, occupancy) & pos.pieces(them);
+
+    // 1A. ABSOLUTE PIN DETECTION (Pin to King)
     // Check if any defender of 'to' is pinned to the enemy King and thus unable to legally recapture.
     Bitboard themKingBlockers = pos.blockers_for_king(them);
-    if (themKingBlockers) {
-        Bitboard occupancy = pos.pieces() ^ from;
-        Bitboard attackers = pos.attackers_to(to, occupancy);
-        Bitboard themDefenders = attackers & pos.pieces(them);
-
+    if (themKingBlockers && (themDefenders & themKingBlockers)) {
         Square themKing = pos.square<KING>(them);
         Bitboard pinnedDefenders = themDefenders & themKingBlockers;
 
@@ -63,8 +63,28 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
             // If 'to' is NOT on the ray connecting King and the pinned defender,
             // the defender CANNOT legally move to 'to' to recapture!
             if (!(line_bb(themKing, psq) & to)) {
-                // Defender is completely paralyzed (illusion defender)
-                score += 25; // Tactical bonus for exploiting absolute pin
+                score += 25; // Defender is completely paralyzed
+            }
+        }
+    }
+
+    // 1B. RELATIVE PIN DETECTION (Pin to Queen)
+    // Check if an enemy defender is pinned to their Queen by one of our sliders.
+    // If that defender moves to 'to', our slider captures their Queen.
+    Bitboard themQueens = pos.pieces(them, QUEEN);
+    if (themQueens && themDefenders) {
+        Square themQueen = lsb(themQueens);
+        Bitboard snipers = ((attacks_bb<ROOK>(themQueen) & pos.pieces(us, QUEEN, ROOK))
+                          | (attacks_bb<BISHOP>(themQueen) & pos.pieces(us, QUEEN, BISHOP)));
+        Bitboard occ = pos.pieces() ^ snipers;
+
+        while (snipers) {
+            Square sniperSq = pop_lsb(snipers);
+            Bitboard b = between_bb(themQueen, sniperSq) & occ;
+            if (b && !more_than_one(b)) {
+                if ((b & themDefenders) && !(line_bb(themQueen, sniperSq) & to)) {
+                    score += 20; // Tactical bonus for exploiting pin to Queen
+                }
             }
         }
     }
