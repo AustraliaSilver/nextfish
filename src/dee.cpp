@@ -99,14 +99,17 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
         score += 15; // Destroying opponent's bishop pair advantage
     }
 
-    // B. King Shelter Breach: capturing pawns/defenders immediately adjacent to enemy King
+    // B. King Shelter Breach: capturing pawns/defenders adjacent or protecting enemy King
     Square themKing = pos.square<KING>(them);
-    if (distance(to, themKing) <= 1) {
+    int distThemKing = distance(to, themKing);
+    if (distThemKing <= 1) {
         if (capturedType == PAWN) {
             score += 20; // Shattering enemy King pawn shield
         } else if (capturedType != NO_PIECE_TYPE) {
             score += 15; // Removing close defender of the King
         }
+    } else if (distThemKing == 2 && capturedType >= KNIGHT && pos.see_ge(m, 0)) {
+        score += 10; // Removing key outer defender of the enemy King (e.g. Nf6/Nf3)
     }
 
     // C. Advanced Pawn Capture / Promotion Threat
@@ -156,7 +159,31 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
         }
     }
 
-    // 5. Safe Exchange Verification:
+    // 5. DEE 3.3 TEMPORAL DECAY MODULE (TDM)
+    // Evaluates exchange urgency: captures that neutralize an enemy piece threatening our King zone (distance <= 2)
+    // have high temporal decay (must be executed immediately before the attack matures).
+    Square ourKing = pos.square<KING>(us);
+    int distOurKing = distance(to, ourKing);
+    if (pos.see_ge(m, 0) && capturedType >= KNIGHT) {
+        if (distOurKing <= 1)
+            score += 25; // Imminent threat directly adjacent to our King
+        else if (distOurKing == 2)
+            score += 15; // Outer ring attacker defused
+    }
+
+    // 6. DEE-X: NIMZOWITSCH SPACE SQUEEZE (CTE / ENM)
+    // Avoid trading an active central piece for a defended passive/rim enemy piece in equal trades,
+    // which relieves the opponent's defensive cramp.
+    if (pos.see_ge(m, 0) && capturedType == movedType && movedType >= KNIGHT && movedType <= ROOK) {
+        bool ourPieceActive = (rank_of(from) >= RANK_4 && rank_of(from) <= RANK_5 && file_of(from) >= FILE_C && file_of(from) <= FILE_F);
+        bool enemyPassive = (relative_rank(them, to) <= RANK_2 || file_of(to) == FILE_A || file_of(to) == FILE_H);
+
+        if (ourPieceActive && enemyPassive && themDefenders) {
+            score -= 15; // Nimzowitsch penalty: do not relieve opponent's cramp by trading active for passive
+        }
+    }
+
+    // 7. Safe Exchange Verification:
     // If no tactical pin or positional aftermath was detected and the move loses material by SEE,
     // penalize to prevent suboptimal ordering.
     if (score == 0 && !pos.see_ge(m, 0)) {

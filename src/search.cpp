@@ -242,12 +242,15 @@ void Search::Worker::iterative_deepening() {
                 for (pvLast++; pvLast < rootMoves.size(); pvLast++) if (rootMoves[pvLast].tbRank != rootMoves[pvFirst].tbRank) break;
             }
             selDepth = 0;
-            delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000;
+            int moveStability = rootDepth - lastBestMoveDepth;
+            int stabilityDelta = moveStability <= 1 ? 4 : (moveStability >= 4 ? -1 : 0);
+            delta = std::max<int>(4, 5 + int(threadIdx % 8) + stabilityDelta + std::abs(rootMoves[pvIdx].meanSquaredScore) / 9000);
             Value avg = rootMoves[pvIdx].averageScore;
             alpha = std::max(avg - delta, -VALUE_INFINITE); beta = std::min(avg + delta, VALUE_INFINITE);
             int contempt = int(options["Contempt"]); int optimismBase = 142 * avg / (std::abs(avg) + 91);
             optimism[us] = optimismBase + contempt; optimism[~us] = -(optimismBase + contempt);
             int failedHighCnt = 0;
+            int reSearchCount = 0;
             while (true) {
                 Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
                 rootDelta = beta - alpha;
@@ -256,10 +259,26 @@ void Search::Worker::iterative_deepening() {
                 if (threads.stop) break;
                 if (mainThread && multiPV == 1 && (bestValue <= alpha || bestValue >= beta) && nodes > 10000000)
                     main_manager()->pv(*this, threads, tt, rootDepth);
-                if (bestValue <= alpha) { beta = alpha; alpha = std::max(bestValue - delta, -VALUE_INFINITE); failedHighCnt = 0; if (mainThread) mainThread->stopOnPonderhit = false; }
-                else if (bestValue >= beta) { alpha = std::max(beta - delta, alpha); beta = std::min(bestValue + delta, VALUE_INFINITE); ++failedHighCnt; }
+                int gap = 0;
+                if (bestValue <= alpha) {
+                    beta = (alpha + beta) / 2;
+                    gap = alpha - bestValue;
+                    alpha = std::max(bestValue - delta, -VALUE_INFINITE);
+                    failedHighCnt = 0;
+                    if (mainThread) mainThread->stopOnPonderhit = false;
+                }
+                else if (bestValue >= beta) {
+                    alpha = (alpha + beta) / 2;
+                    gap = bestValue - beta;
+                    beta = std::min(bestValue + delta, VALUE_INFINITE);
+                    ++failedHighCnt;
+                }
                 else break;
-                delta += delta / 3;
+                delta += delta / 3 + gap / 4;
+                if (++reSearchCount >= 3) {
+                    alpha = -VALUE_INFINITE;
+                    beta = VALUE_INFINITE;
+                }
             }
             std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
             if (mainThread && (threads.stop || pvIdx + 1 == multiPV || nodes > 10000000) && !(threads.abortedSearch && is_loss(rootMoves[0].uciScore)))
@@ -292,7 +311,7 @@ void Search::Worker::iterative_deepening() {
             if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))) {
                 if (mainThread->ponder) mainThread->stopOnPonderhit = true;
                 else threads.stop = true;
-            } else threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.50;
+            } else threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * ((completedDepth == lastBestMoveDepth || totBestMoveChanges >= 2) ? 0.58 : 0.50);
         }
         mainThread->iterValue[iterIdx] = bestValue; iterIdx = (iterIdx + 1) & 3;
     }
