@@ -31,7 +31,8 @@ namespace DEE {
 // 2. Relative Pin Detection: Disqualifies defenders pinned to the enemy Queen.
 // 3. Positional Aftermath Evaluation (PAE): Evaluates structural consequences (Bishop Pair, King Shield, Passed Pawns).
 // 4. Desperado Capture Priority: Prioritizes captures made by threatened/hanging pieces.
-// 5. Game-Theoretic Safe Filtering: Never boosts losing trades.
+// 5. Battery Firepower & X-Ray Support: Detects friendly batteries backing up the capture.
+// 6. Game-Theoretic Safe Filtering: Never boosts losing trades.
 
 Value Evaluator::adjusted_see(const Position& pos, Move m) {
     if (!m) return VALUE_ZERO;
@@ -132,7 +133,30 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
         }
     }
 
-    // 4. Safe Exchange Verification:
+    // 4. BATTERY FIREPOWER & X-RAY SUPPORT
+    // Detect if the capturing piece is backed up by a friendly slider directly behind 'from'
+    if (movedType >= BISHOP && pos.see_ge(m, 0)) {
+        Bitboard friendlySliders = (pos.pieces(us, ROOK, QUEEN) | pos.pieces(us, BISHOP)) ^ from;
+        Bitboard candidates = friendlySliders & line_bb(from, to);
+
+        while (candidates) {
+            Square sliderSq = pop_lsb(candidates);
+            // Verify alignment: 'from' must be between 'to' and 'sliderSq'
+            if ((between_bb(to, sliderSq) & from) && !(between_bb(from, sliderSq) & pos.pieces())) {
+                PieceType rearType = type_of(pos.piece_on(sliderSq));
+                bool orthogonal = (file_of(from) == file_of(to) || rank_of(from) == rank_of(to));
+                bool diagonal = !orthogonal;
+
+                if ((orthogonal && (rearType == ROOK || rearType == QUEEN)) ||
+                    (diagonal && (rearType == BISHOP || rearType == QUEEN))) {
+                    score += 15; // Battery X-Ray support bonus
+                    break;
+                }
+            }
+        }
+    }
+
+    // 5. Safe Exchange Verification:
     // If no tactical pin or positional aftermath was detected and the move loses material by SEE,
     // penalize to prevent suboptimal ordering.
     if (score == 0 && !pos.see_ge(m, 0)) {
