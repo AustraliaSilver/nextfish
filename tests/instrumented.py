@@ -18,6 +18,9 @@ from testing import (
 PATH = pathlib.Path(__file__).resolve().parent
 CWD = os.getcwd()
 
+INFO_DEPTH_RE = re.compile(r"info depth \d+ seldepth \d+ multipv \d+ score cp -?\d+ nodes \d+ nps \d+ hashfull \d+ tbhits \d+ time \d+ pv")
+INFO_DEPTH_WDL_RE = re.compile(r"info depth (\d+) seldepth \d+ multipv \d+ score cp -?\d+ wdl \d+ \d+ \d+ nodes \d+ nps \d+ hashfull \d+ tbhits \d+ time \d+ pv")
+
 
 def get_prefix(args):
     if args.valgrind:
@@ -264,8 +267,7 @@ class TestInteractive(EngineTestBase):
         self.stockfish.send_command("go depth 5")
 
         def callback(output):
-            regex = r"info depth \d+ seldepth \d+ multipv \d+ score cp -?\d+ nodes \d+ nps \d+ hashfull \d+ tbhits \d+ time \d+ pv"
-            if output.startswith("info depth") and not re.match(regex, output):
+            if output.startswith("info depth") and not INFO_DEPTH_RE.match(output):
                 assert False
             if output.startswith("bestmove"):
                 return True
@@ -284,10 +286,9 @@ class TestInteractive(EngineTestBase):
         def callback(output):
             nonlocal depth
 
-            regex = rf"info depth {depth} seldepth \d+ multipv \d+ score cp -?\d+ wdl \d+ \d+ \d+ nodes \d+ nps \d+ hashfull \d+ tbhits \d+ time \d+ pv"
-
             if output.startswith("info depth"):
-                if not re.match(regex, output):
+                match = INFO_DEPTH_WDL_RE.match(output)
+                if not match or int(match.group(1)) != depth:
                     assert False
                 depth += 1
 
