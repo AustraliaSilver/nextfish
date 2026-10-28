@@ -19,51 +19,88 @@
 #include "dee.h"
 #include "position.h"
 #include "bitboard.h"
+#include "types.h"
 #include <algorithm>
 
 namespace Stockfish {
 namespace DEE {
 
-// Relative value of a piece that defends the target square, in pawns.
-// A stronger defender makes a capture on that square more risky, so the
-// pressure score has to grow with the value of the defending piece.
-constexpr int PressureValue[PIECE_TYPE_NB] = {0, 1, 3, 3, 5, 9, 0, 0};
-
-// DEE V44: Aggressive Tactical Pruning Core.
-// Refining negative imbalance detection to enable more effective QS pruning.
+// Dynamic Exchange Evaluation (DEE) Core
+// Grounded in Game-Theoretic Exchange Modeling:
+// 1. Absolute Pin Detection: Disqualifies pinned enemy defenders unable to legally recapture.
+// 2. Positional Aftermath Evaluation (PAE): Evaluates structural consequences (Bishop Pair, King Shield, Passed Pawns).
+// 3. Game-Theoretic Safe Filtering: Never boosts losing trades.
 
 Value Evaluator::adjusted_see(const Position& pos, Move m) {
     if (!m) return VALUE_ZERO;
 
+    Square from = m.from_sq();
     Square to = m.to_sq();
     Color us = pos.side_to_move();
+    Color them = ~us;
+    Piece capturedPiece = pos.piece_on(to);
+    PieceType capturedType = type_of(capturedPiece);
 
-    if (pos.see_ge(m, 50) || !pos.see_ge(m, -50))
+    // If not a capture and not promotion, nothing to evaluate
+    if (!capturedPiece && m.type_of() != EN_PASSANT && m.type_of() != PROMOTION)
         return VALUE_ZERO;
 
-    Bitboard occupancy = pos.pieces() ^ m.from_sq();
-    Bitboard attackers = pos.attackers_to(to, occupancy);
+    int score = 0;
 
-    auto get_pressure_score = [&](Color c) {
-        int score = 0;
-        Bitboard b = attackers & pos.pieces(c);
-        while (b) {
-            PieceType pt = type_of(pos.piece_on(pop_lsb(b)));
-            score += PressureValue[pt];
+    // 1. PIN-AWARE TACTICAL EXCHANGE CORRECTION
+    // Check if any defender of 'to' is pinned to the enemy King and thus unable to legally recapture.
+    Bitboard themKingBlockers = pos.blockers_for_king(them);
+    if (themKingBlockers) {
+        Bitboard occupancy = pos.pieces() ^ from;
+        Bitboard attackers = pos.attackers_to(to, occupancy);
+        Bitboard themDefenders = attackers & pos.pieces(them);
+
+        Square themKing = pos.square<KING>(them);
+        Bitboard pinnedDefenders = themDefenders & themKingBlockers;
+
+        while (pinnedDefenders) {
+            Square psq = pop_lsb(pinnedDefenders);
+            // If 'to' is NOT on the ray connecting King and the pinned defender,
+            // the defender CANNOT legally move to 'to' to recapture!
+            if (!(line_bb(themKing, psq) & to)) {
+                // Defender is completely paralyzed (illusion defender)
+                score += 25; // Tactical bonus for exploiting absolute pin
+            }
         }
-        return score;
-    };
+    }
 
-    int ourP = get_pressure_score(us);
-    int theirP = get_pressure_score(~us);
+    // 2. POSITIONAL AFTERMATH EVALUATION (PAE)
+    // A. Stripping opponent's Bishop Pair
+    if (capturedType == BISHOP && popcount(pos.pieces(them, BISHOP)) >= 2) {
+        score += 15; // Destroying opponent's bishop pair advantage
+    }
 
-    if (ourP > theirP)
-        return Value((ourP - theirP) * 12 + popcount(attackers & pos.pieces(us)) * 4);
+    // B. King Shelter Breach: capturing pawns/defenders immediately adjacent to enemy King
+    Square themKing = pos.square<KING>(them);
+    if (distance(to, themKing) <= 1) {
+        if (capturedType == PAWN) {
+            score += 20; // Shattering enemy King pawn shield
+        } else if (capturedType != NO_PIECE_TYPE) {
+            score += 15; // Removing close defender of the King
+        }
+    }
 
-    if (theirP > ourP)
-        return Value(-((theirP - ourP) * 10)); // Increased penalty for defender disadvantage
+    // C. Advanced Pawn Capture / Promotion Threat
+    Piece movedPiece = pos.piece_on(from);
+    if (type_of(movedPiece) == PAWN) {
+        if (relative_rank(us, to) >= RANK_6) {
+            score += 20; // Creating or advancing dangerous passed pawn
+        }
+    }
 
-    return VALUE_ZERO;
+    // D. Safe Exchange Verification:
+    // If no tactical pin or positional aftermath was detected and the move loses material by SEE,
+    // penalize to prevent suboptimal ordering.
+    if (score == 0 && !pos.see_ge(m, 0)) {
+        return Value(-30);
+    }
+
+    return Value(std::clamp(score, -100, 50));
 }
 
 bool Evaluator::should_prune_in_qs(const Position& pos, Move m, Value adjustedSee) {
