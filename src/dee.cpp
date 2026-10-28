@@ -30,7 +30,8 @@ namespace DEE {
 // 1. Absolute Pin Detection: Disqualifies pinned enemy defenders unable to legally recapture.
 // 2. Relative Pin Detection: Disqualifies defenders pinned to the enemy Queen.
 // 3. Positional Aftermath Evaluation (PAE): Evaluates structural consequences (Bishop Pair, King Shield, Passed Pawns).
-// 4. Game-Theoretic Safe Filtering: Never boosts losing trades.
+// 4. Desperado Capture Priority: Prioritizes captures made by threatened/hanging pieces.
+// 5. Game-Theoretic Safe Filtering: Never boosts losing trades.
 
 Value Evaluator::adjusted_see(const Position& pos, Move m) {
     if (!m) return VALUE_ZERO;
@@ -41,6 +42,8 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
     Color them = ~us;
     Piece capturedPiece = pos.piece_on(to);
     PieceType capturedType = type_of(capturedPiece);
+    Piece movedPiece = pos.piece_on(from);
+    PieceType movedType = type_of(movedPiece);
 
     // If not a capture and not promotion, nothing to evaluate
     if (!capturedPiece && m.type_of() != EN_PASSANT && m.type_of() != PROMOTION)
@@ -106,14 +109,30 @@ Value Evaluator::adjusted_see(const Position& pos, Move m) {
     }
 
     // C. Advanced Pawn Capture / Promotion Threat
-    Piece movedPiece = pos.piece_on(from);
-    if (type_of(movedPiece) == PAWN) {
+    if (movedType == PAWN) {
         if (relative_rank(us, to) >= RANK_6) {
             score += 20; // Creating or advancing dangerous passed pawn
         }
     }
 
-    // D. Safe Exchange Verification:
+    // 3. DESPERADO CAPTURE PRIORITY
+    // If our piece on 'from' is hanging or under attack by a lesser enemy piece,
+    // prioritizing its capture salvages material before it can be lost.
+    if (movedType > PAWN) {
+        Bitboard themAttFrom = pos.attackers_to(from) & pos.pieces(them);
+        if (themAttFrom) {
+            bool isHanging = !(pos.attackers_to(from) & pos.pieces(us));
+            bool underLesserThreat = (themAttFrom & pos.pieces(them, PAWN))
+                || (movedType > BISHOP && (themAttFrom & pos.pieces(them, KNIGHT, BISHOP)))
+                || (movedType == QUEEN && (themAttFrom & pos.pieces(them, ROOK)));
+
+            if ((isHanging || underLesserThreat) && pos.see_ge(m, 0)) {
+                score += 15; // Desperado tactical salvage bonus
+            }
+        }
+    }
+
+    // 4. Safe Exchange Verification:
     // If no tactical pin or positional aftermath was detected and the move loses material by SEE,
     // penalize to prevent suboptimal ordering.
     if (score == 0 && !pos.see_ge(m, 0)) {
