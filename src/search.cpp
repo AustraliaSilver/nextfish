@@ -61,7 +61,7 @@ void SearchEngine::start_search(Position& pos, const SearchLimits& limits,
         GlobalTimeMan.initialize_move_budget(pos.game_ply(), popcount(pos.occupied()),
                                             root_harenn.tactical_complexity,
                                             root_harenn.horizon_risk,
-                                            root_moves.size());
+                                            root_moves.size(), 25, pos.is_in_check());
     }
 
     GlobalTT.new_search();
@@ -650,3 +650,5 @@ Value SearchEngine::alpha_beta(Position& pos, int depth, Value alpha, Value beta
 }
 
 } // namespace NextFish
+
+

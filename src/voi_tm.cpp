@@ -19,10 +19,13 @@ void VOITimeManager::init(int64_t time_remaining_ms, int64_t increment_ms, int m
     if (mtg == 1) {
         time_rem_ms = time_remaining_ms;
     } else {
-        int64_t safety = std::clamp(time_remaining_ms / 15, int64_t(30), int64_t(150));
+        int64_t safety = std::clamp(time_remaining_ms / 20, int64_t(20), int64_t(100));
         time_rem_ms = std::max(int64_t(5), time_remaining_ms - safety);
     }
     inc_ms = increment_ms;
+    if (opponent_time_ms > 0) {
+        opp_profile.record_opponent_move(opponent_time_ms, increment_ms, 0.35);
+    }
     opp_time_rem_ms = opponent_time_ms;
     moves_to_go = mtg;
     panic_mode = false;
@@ -30,7 +33,7 @@ void VOITimeManager::init(int64_t time_remaining_ms, int64_t increment_ms, int m
     prev_best_move = MOVE_NONE;
 }
 
-void VOITimeManager::initialize_move_budget(int ply, int piece_count, double tau, double rho, int legal_move_count) {
+void VOITimeManager::initialize_move_budget(int ply, int piece_count, double tau, double rho, int legal_move_count, int opponent_replies, bool check_given) {
     start_time = std::chrono::steady_clock::now();
 
     if (legal_move_count <= 1) {
@@ -47,6 +50,8 @@ void VOITimeManager::initialize_move_budget(int ply, int piece_count, double tau
         emergency_reserve_ms = static_cast<double>(time_rem_ms) * 0.98;
         return;
     }
+
+    predicted_opp_time_ms = opp_profile.predict_opponent_spent_ms(opp_time_rem_ms, inc_ms, tau, opponent_replies, check_given);
 
     double expected_rem_moves = 0.0;
     if (moves_to_go > 0) {
@@ -88,6 +93,15 @@ void VOITimeManager::initialize_move_budget(int ply, int piece_count, double tau
             // Guarantees we NEVER drain our bank or enter panic mode!
             hard_max_ms = std::min(hard_max_ms, static_cast<double>(inc_ms) * 1.06);
             emergency_reserve_ms = std::min(emergency_reserve_ms, static_cast<double>(inc_ms) * 1.15);
+        }
+    }
+
+    // Asymmetric Clock Pressure via Predicted Opponent Time:
+    // If opponent is predicted to spend heavily (predicted_opp_time_ms > 1.25x inc),
+    // we play briskly on clean moves to deprive them of thinking time and force clock bleed!
+    if (predicted_opp_time_ms > static_cast<double>(inc_ms) * 1.30 && time_rem_ms > 3000) {
+        if (tau < 0.40) {
+            base_alloc_ms = std::min(base_alloc_ms, static_cast<double>(inc_ms) * 0.65);
         }
     }
 
