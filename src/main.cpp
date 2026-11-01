@@ -1,47 +1,41 @@
-/*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
-
-  Stockfish is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  Stockfish is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#include <iostream>
-#include <memory>
-#include <cstdlib>
-
+#include "types.h"
 #include "bitboard.h"
-#include "misc.h"
 #include "position.h"
-#include "tune.h"
-#include "uci.h"
+#include "harenn.h"
+#include "winboard.h"
+#include <iostream>
 
-using namespace Stockfish;
+using namespace NextFish;
 
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((force_align_arg_pointer))
-#endif
-int main(int argc, char* argv[]) {
-    std::cout << engine_info() << std::endl;
+int main(int argc, char** argv) {
+    // Fast I/O
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(nullptr);
 
+    // Initialize bitboards & Zobrist hashing
     Bitboards::init();
-    Position::init();
+    init_zobrist();
 
-    auto uci = std::make_unique<UCIEngine>(argc, argv);
+    // Load neural network weights
+    std::string net_path = "Neuron Network/nextfish.harenn";
+    if (argc >= 2) {
+        net_path = argv[1];
+    }
 
-    Tune::init(uci->engine_options());
+    if (!GlobalHARENN.is_loaded()) {
+        GlobalHARENN.load_weights(net_path);
+    }
 
-    uci->loop();
+    std::cerr << "========================================\n";
+    std::cerr << " NEXUS-CHESS Grand Unified Engine       \n";
+    std::cerr << " Protocol: WinBoard / CECP v2           \n";
+    std::cerr << " Target: ~3700 Elo                      \n";
+    std::cerr << " HARENN Neural Network: " << (GlobalHARENN.is_loaded() ? "LOADED (AVX2)" : "NOT LOADED (Using Fallback HCE)") << "\n";
+    std::cerr << "========================================\n";
+
+    // Run WinBoard communication loop
+    auto protocol = std::make_unique<WinBoardProtocol>();
+    protocol->run_loop();
 
     return 0;
 }

@@ -1,73 +1,51 @@
-/*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
-
-  Stockfish is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  Stockfish is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#ifndef MOVEGEN_H_INCLUDED
-#define MOVEGEN_H_INCLUDED
-
-#include <algorithm>  // IWYU pragma: keep
-#include <cstddef>
+#pragma once
 
 #include "types.h"
+#include "position.h"
 
-namespace Stockfish {
+namespace NextFish {
 
-class Position;
+struct MoveList {
+    Move moves[256];
+    int count = 0;
+
+    void push_back(Move m) { moves[count++] = m; }
+    int size() const { return count; }
+    bool empty() const { return count == 0; }
+    void clear() { count = 0; }
+
+    Move operator[](int i) const { return moves[i]; }
+    Move& operator[](int i) { return moves[i]; }
+
+    Move* begin() { return moves; }
+    Move* end() { return moves + count; }
+    const Move* begin() const { return moves; }
+    const Move* end() const { return moves + count; }
+};
 
 enum GenType {
     CAPTURES,
     QUIETS,
     EVASIONS,
-    NON_EVASIONS,
-    LEGAL
+    ALL
 };
 
-struct ExtMove: public Move {
-    int value;
+template <GenType Type>
+void generate_moves(const Position& pos, MoveList& list);
 
-    void operator=(Move m) { data = m.raw(); }
+inline void generate_all_legal(const Position& pos, MoveList& list) {
+    MoveList pseudo;
+    if (pos.is_in_check()) {
+        generate_moves<EVASIONS>(pos, pseudo);
+    } else {
+        generate_moves<ALL>(pos, pseudo);
+    }
+    list.clear();
+    for (int i = 0; i < pseudo.size(); ++i) {
+        if (pos.is_legal(pseudo[i])) {
+            list.push_back(pseudo[i]);
+        }
+    }
+}
 
-    // Inhibit unwanted implicit conversions to Move
-    // with an ambiguity that yields to a compile error.
-    operator float() const = delete;
-};
-
-inline bool operator<(const ExtMove& f, const ExtMove& s) { return f.value < s.value; }
-
-template<GenType>
-Move* generate(const Position& pos, Move* moveList);
-
-// The MoveList struct wraps the generate() function and returns a convenient
-// list of moves. Using MoveList is sometimes preferable to directly calling
-// the lower level generate() function.
-template<GenType T>
-struct MoveList {
-
-    explicit MoveList(const Position& pos) :
-        last(generate<T>(pos, moveList)) {}
-    const Move* begin() const { return moveList; }
-    const Move* end() const { return last; }
-    size_t      size() const { return last - moveList; }
-    bool        contains(Move move) const { return std::find(begin(), end(), move) != end(); }
-
-   private:
-    Move moveList[MAX_MOVES], *last;
-};
-
-}  // namespace Stockfish
-
-#endif  // #ifndef MOVEGEN_H_INCLUDED
+} // namespace NextFish

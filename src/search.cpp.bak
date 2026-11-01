@@ -1,0 +1,642 @@
+#include "search.h"
+#include "movepicker.h"
+#include <algorithm>
+#include <sstream>
+#include <cstring>
+
+namespace NextFish {
+
+SearchEngine GlobalSearch;
+
+SearchEngine::SearchEngine() {
+    stopped.store(false);
+}
+
+void SearchEngine::stop() {
+    stopped.store(true);
+}
+
+void SearchEngine::check_time() {
+    if (current_limits.infinite) return;
+    if (current_limits.max_nodes > 0 && nodes_count >= current_limits.max_nodes) {
+        stopped.store(true);
+        return;
+    }
+    if (current_limits.time > 0) {
+        if (GlobalTimeMan.is_time_up(GlobalTimeMan.get_elapsed_ms())) {
+            stopped.store(true);
+        }
+    }
+}
+
+void SearchEngine::start_search(Position& pos, const SearchLimits& limits,
+                               std::function<void(int depth, Value score, int64_t time_ms, uint64_t nodes, const std::string& pv)> on_update,
+                               std::function<void(Move best_move)> on_finished) {
+    stopped.store(false);
+    current_limits = limits;
+    nodes_count = 0;
+
+    root_pawn_key = pos.pawn_hash_key();
+    root_material_key = pos.material_hash_key();
+
+    MoveList root_moves;
+    generate_all_legal(pos, root_moves);
+
+    if (root_moves.empty()) {
+        if (on_finished) on_finished(MOVE_NONE);
+        return;
+    }
+
+    if (root_moves.size() == 1) {
+        if (on_finished) on_finished(root_moves[0]);
+        return;
+    }
+
+    // Run root HARENN inference
+    HARENNOutput root_harenn = GlobalHARENN.evaluate(pos);
+
+    // Initialize VOI-TM
+    if (limits.time > 0) {
+        GlobalTimeMan.init(limits.time, limits.inc, limits.moves_to_go);
+        GlobalTimeMan.initialize_move_budget(pos.game_ply(), popcount(pos.occupied()),
+                                            root_harenn.tactical_complexity,
+                                            root_harenn.horizon_risk,
+                                            root_moves.size());
+    }
+
+    GlobalTT.new_search();
+
+    SearchStack stack[MAX_PLY];
+    std::memset(stack, 0, sizeof(stack));
+    std::memset(pv_length, 0, sizeof(pv_length));
+
+    Move best_move = root_moves[0];
+    Value prev_score = 0;
+    root_second_score = -VALUE_INFINITE;
+
+    int max_depth = std::min(MAX_PLY - 2, limits.depth);
+
+    for (int depth = 1; depth <= max_depth; ++depth) {
+        if (stopped.load(std::memory_order_relaxed)) break;
+
+        int64_t elapsed_ms = GlobalTimeMan.get_elapsed_ms();
+        if (limits.time > 0 && GlobalTimeMan.is_time_up(elapsed_ms)) {
+            break;
+        }
+
+        AspirationWindow window = GlobalAAW.compute_initial_window(prev_score, depth,
+                                                                 root_harenn.tactical_complexity,
+                                                                 root_harenn.horizon_risk);
+
+        Value score = 0;
+        Move iteration_best = MOVE_NONE;
+        bool iteration_completed = false;
+
+        while (true) {
+            Move search_best = MOVE_NONE;
+            score = alpha_beta(pos, depth, window.alpha, window.beta, 0, true, stack, search_best);
+
+            if (stopped.load(std::memory_order_relaxed)) break;
+
+            if (search_best.is_valid()) {
+                iteration_best = search_best;
+            }
+
+            if (score > window.alpha && score < window.beta) {
+                // Success within window
+                iteration_completed = true;
+                break;
+            }
+
+            bool fail_low = (score <= window.alpha);
+            Value margin = fail_low ? (window.alpha - score) : (score - window.beta);
+            GlobalTimeMan.on_aspiration_failure(fail_low, margin);
+            GlobalAAW.handle_failure(window, score, fail_low);
+        }
+
+        if (stopped.load(std::memory_order_relaxed) && depth > 1) {
+            break; // Stop iteration: preserve verified best_move from previous completed depth!
+        }
+
+        if (iteration_completed && iteration_best.is_valid()) {
+            best_move = iteration_best;
+            prev_score = score;
+        } else if (depth == 1 && iteration_best.is_valid()) {
+            best_move = iteration_best;
+            prev_score = score;
+        }
+
+        // Build PV string
+        std::string pv_str;
+        for (int i = 0; i < pv_length[0]; ++i) {
+            if (i > 0) pv_str += " ";
+            pv_str += move_to_string(pv_table[0][i]);
+        }
+
+        if (on_update) {
+            int64_t cur_time = GlobalTimeMan.get_elapsed_ms();
+            on_update(depth, score, cur_time, nodes_count, pv_str);
+        }
+
+        // VOI-TM iteration boundary check
+        if (limits.time > 0 && !limits.infinite) {
+            elapsed_ms = GlobalTimeMan.get_elapsed_ms();
+            if (!GlobalTimeMan.should_continue_next_iteration(depth, best_move, score, root_second_score,
+                                                             elapsed_ms, 0.70,
+                                                             root_harenn.tactical_complexity,
+                                                             root_harenn.horizon_risk)) {
+                break;
+            }
+        }
+    }
+
+    if (on_finished) {
+        on_finished(best_move);
+    }
+}
+
+Value SearchEngine::alpha_beta(Position& pos, int depth, Value alpha, Value beta, int ply,
+                              bool is_pv, SearchStack* ss, Move& out_best_move) {
+    if ((nodes_count & 127) == 0) {
+        check_time();
+    }
+
+    if (stopped.load(std::memory_order_relaxed)) {
+        return 0;
+    }
+
+    ss->current_move = MOVE_NONE;
+    if (ply + 2 < MAX_PLY) {
+        (ss + 2)->killers[0] = MOVE_NONE;
+        (ss + 2)->killers[1] = MOVE_NONE;
+    }
+
+    pv_length[ply] = 0;
+
+    // Repetition and rule draws
+    if (ply > 0 && pos.is_draw_by_rule()) {
+        return VALUE_DRAW;
+    }
+
+    if (ply >= MAX_PLY - 4) {
+        Value raw_eval = GlobalHARENN.evaluate_eval_only(pos);
+        Value mat_bal = pos.material_balance();
+        return static_cast<Value>(std::round(0.80 * raw_eval + 0.20 * mat_bal));
+    }
+
+    bool in_check = pos.is_in_check();
+    if (in_check && ply < 64) {
+        depth = std::min(depth + 1, 110);
+    }
+    depth = std::min(depth, 120);
+
+    // ═══ STAGE 1: TRANSITION TO DQRS-X AT LEAF (depth <= 0) ═══
+    if (depth <= 0) {
+        return GlobalDQRS.search(pos, alpha, beta, 32, ply, nodes_count);
+    }
+
+    nodes_count++;
+    uint64_t nodes_at_entry = nodes_count;
+
+    // ═══ STAGE 2: SMTTA PROBE (Transposition Table) ═══
+    bool has_repeated = pos.has_repeated(1);
+    SMTTAProbeResult tt_res = GlobalTT.probe(pos.hash_key(), depth, alpha, beta, ply,
+                                           pos.halfmove_clock(), has_repeated);
+
+    if (!is_pv && tt_res.cutoff && !ss->excluded_move.is_valid()) {
+        return tt_res.score;
+    }
+
+    Move best_move = MOVE_NONE;
+    Value best_score = -VALUE_INFINITE;
+    Value orig_alpha = alpha;
+
+    Move tried_quiets[128];
+    int tried_quiet_count = 0;
+    int moves_searched = 0;
+
+    Move prev_m = (ply > 0) ? (ss - 1)->current_move : MOVE_NONE;
+
+    // ═══ STAGE 2B: TT MOVE REFERENCE ═══
+    Move tt_m = tt_res.best_move;
+
+    // ═══ STAGE 3: HARENN INFERENCE (LAZY EVALUATION) ═══
+    HARENNOutput harenn_out;
+    SSFZREOutput ssfzre_out;
+    bool eval_computed = false;
+
+    auto ensure_eval = [&]() {
+        if (eval_computed) return;
+        eval_computed = true;
+
+        if (in_check) {
+            harenn_out.eval_score = 0;
+            harenn_out.tactical_complexity = 0.60;
+            harenn_out.horizon_risk = 0.60;
+            harenn_out.resolution_score = 0.50;
+            ss->static_eval = -VALUE_INFINITE;
+            ss->zugzwang_risk = 0.0;
+            return;
+        }
+
+        if (tt_res.cached_neural.valid && tt_res.cached_neural.eval_cp != 0) {
+            harenn_out.tactical_complexity = tt_res.cached_neural.tau;
+            harenn_out.horizon_risk = tt_res.cached_neural.rho;
+            harenn_out.resolution_score = tt_res.cached_neural.rs;
+            harenn_out.eval_score = tt_res.cached_neural.eval_cp;
+            ss->static_eval = tt_res.cached_neural.eval_cp;
+            ss->zugzwang_risk = GlobalSSFZRE.zugzwang_risk(pos);
+        } else {
+            if (depth >= 6) {
+                harenn_out = GlobalHARENN.evaluate(pos);
+            } else {
+                harenn_out.eval_score = GlobalHARENN.evaluate_eval_only(pos);
+                harenn_out.tactical_complexity = 0.45;
+                harenn_out.horizon_risk = 0.30;
+                harenn_out.resolution_score = 0.50;
+            }
+
+            Value mat_bal = pos.material_balance();
+            Value blended = static_cast<Value>(std::round(0.80 * harenn_out.eval_score + 0.20 * mat_bal));
+
+            // ═══ STAGE 4: SSFZRE FORTRESS & ZUGZWANG CORRECTION ═══
+            // Position-only correction: safe to cache in the transposition table.
+            ssfzre_out = GlobalSSFZRE.correct(pos, blended);
+            harenn_out.eval_score = ssfzre_out.corrected_eval;
+            ss->static_eval = ssfzre_out.corrected_eval;
+            ss->zugzwang_risk = ssfzre_out.zugzwang_risk;
+        }
+    };
+
+    ensure_eval();
+
+    bool improving = !in_check && ply >= 2 && (ss - 2)->static_eval > -VALUE_MATE_THRESHOLD
+                     && ss->static_eval >= (ss - 2)->static_eval;
+
+    // ═══ STAGE 5: UPAD NODE-LEVEL PRUNING (RFP & NMP) ═══
+    if (!in_check && !ss->excluded_move.is_valid()) {
+        UPADNodeDecision node_dec = GlobalUPAD.make_node_decision(pos, depth, beta, ss->static_eval,
+                                                                  harenn_out.tactical_complexity,
+                                                                  harenn_out.horizon_risk,
+                                                                  ss->zugzwang_risk, is_pv, improving);
+        if (node_dec.action == NODE_HARD_PRUNE) {
+            return node_dec.return_score;
+        }
+
+        // Razoring at shallow depths (depth <= 3)
+        if (!is_pv && depth <= 3 && ss->static_eval + 300 + 150 * depth <= alpha
+            && std::abs(alpha) < VALUE_MATE_THRESHOLD) {
+            Value qscore = GlobalDQRS.search(pos, alpha - 1, alpha, 12, ply, nodes_count);
+            if (qscore <= alpha) {
+                return qscore;
+            }
+        }
+
+        // Null Move Pruning (NMP)
+        if (!is_pv && depth >= 3 && ss->static_eval >= beta
+            && pos.non_pawn_material(pos.side_to_move()) >= 400) {
+
+            bool zugzwang_danger = (ss->zugzwang_risk >= 0.70);
+            if (!zugzwang_danger) {
+                int R = 3 + depth / 4 + std::min(3, (ss->static_eval - beta) / 200);
+                StateInfo null_st;
+                pos.make_null_move(null_st);
+
+                Move dummy_m = MOVE_NONE;
+                (ss + 1)->branch_fractional_ext = ss->branch_fractional_ext;
+                (ss + 1)->path_extensions = ss->path_extensions;
+                (ss + 1)->current_move = MOVE_NONE;
+                Value null_score = -alpha_beta(pos, depth - 1 - R, -beta, -beta + 1, ply + 1, false, ss + 1, dummy_m);
+
+                pos.unmake_null_move();
+
+                if (null_score >= beta) {
+                    return (null_score >= VALUE_MATE_THRESHOLD) ? beta : null_score;
+                }
+            }
+        }
+    }
+
+    // ═══ STAGE 5B: PROBCUT (TACTICAL CUTOFF ON HIGH ADVANTAGE) ═══
+    if (!is_pv && depth >= 8 && !in_check && !ss->excluded_move.is_valid()
+        && std::abs(beta) < VALUE_MATE_THRESHOLD - 500
+        && ss->static_eval >= beta + 180) {
+
+        Value prob_beta = std::min(beta + 180, VALUE_MATE_THRESHOLD - 500);
+        int prob_depth = depth - 4;
+
+        MoveList prob_moves;
+        generate_moves<CAPTURES>(pos, prob_moves);
+
+        for (int ci = 0; ci < prob_moves.size(); ++ci) {
+            Move cm = prob_moves[ci];
+            if (!pos.is_legal(cm)) continue;
+            if (pos.see(cm, 0) < 0) continue; // Prune losing captures in ProbCut
+
+            StateInfo prob_st;
+            pos.make_move(cm, prob_st);
+
+            (ss + 1)->branch_fractional_ext = ss->branch_fractional_ext;
+            (ss + 1)->path_extensions = ss->path_extensions;
+            (ss + 1)->excluded_move = MOVE_NONE;
+            Move dummy_child;
+            Value prob_score = -alpha_beta(pos, prob_depth - 1, -prob_beta, -prob_beta + 1, ply + 1, false, ss + 1, dummy_child);
+            pos.unmake_move(cm);
+
+            if (stopped.load(std::memory_order_relaxed)) {
+                return 0;
+            }
+
+            if (prob_score >= prob_beta) {
+                GlobalTT.store(pos.hash_key(), beta, ss->static_eval, cm, prob_depth, BOUND_LOWER,
+                               false, ply, 1, harenn_out.tactical_complexity,
+                               harenn_out.horizon_risk, harenn_out.resolution_score, 0,
+                               pos.halfmove_clock(), false);
+                return beta;
+            }
+        }
+    }
+
+    // Internal Iterative Reduction (IIR)
+    if (depth >= 4 && !tt_res.best_move.is_valid()) {
+        depth--;
+    }
+
+    // ═══ STAGE 6: TT MOVE FAST PATH (Cut-Node Acceleration) ═══
+    bool tt_m_valid = tt_m.is_valid() && tt_m != ss->excluded_move && pos.is_pseudo_legal(tt_m) && pos.is_legal(tt_m);
+    if (tt_m_valid) {
+        int move_idx = moves_searched++;
+        ss->current_move = tt_m;
+        bool is_capture = (pos.piece_on(tt_m.to()) != NO_PIECE) || (tt_m.type() == EN_PASSANT);
+
+        int ext_plies = 0;
+        double next_accum_ext = ss->branch_fractional_ext;
+        int next_path_ext = ss->path_extensions;
+
+        if (ply > 0 && depth >= 6 && !ss->excluded_move.is_valid()
+            && tt_res.best_move == tt_m && tt_res.depth >= depth - 3 && (tt_res.bound & BOUND_LOWER)
+            && std::abs(tt_res.score) < VALUE_MATE_THRESHOLD) {
+            ensure_eval();
+            CSFTEEvalResult csfte_res = GlobalCSFTE.evaluate(pos, tt_m, depth, ply, beta, tt_res.score,
+                                                            harenn_out, MOVE_NONE,
+                                                            ss->path_extensions);
+            if (csfte_res.action == CSFTE_FAST_PATH_EXTEND) {
+                int new_d = depth;
+                CSFTEEngine::apply_fractional_extension(depth - 1, csfte_res.delta_ext, next_accum_ext, ext_plies, new_d);
+                next_path_ext += ext_plies;
+            } else if (csfte_res.action == CSFTE_RUN_EXCLUDED_SEARCH) {
+                ss->excluded_move = tt_m;
+                Move dummy_m;
+                Value excl_score = alpha_beta(pos, csfte_res.singular_depth, csfte_res.singular_beta - 1,
+                                              csfte_res.singular_beta, ply, false, ss, dummy_m);
+                ss->excluded_move = MOVE_NONE;
+
+                if (excl_score < csfte_res.singular_beta) {
+                    double delta_ext = std::clamp(0.45 + 0.5 * harenn_out.horizon_risk, 0.4, 1.5);
+                    int new_d = depth;
+                    CSFTEEngine::apply_fractional_extension(depth - 1, delta_ext, next_accum_ext, ext_plies, new_d);
+                    next_path_ext += ext_plies;
+                } else if (excl_score >= beta) {
+                    return excl_score; // Multi-Cut
+                }
+            }
+        }
+
+        Piece moving_pc = pos.piece_on(tt_m.from());
+        Color us = pos.side_to_move();
+        bool is_passed_push = (type_of(moving_pc) == PAWN && pos.pawn_is_passed(us, tt_m.from()));
+        bool is_advanced_passed = is_passed_push && ((us == WHITE && rank_of(tt_m.to()) >= RANK_6) || (us == BLACK && rank_of(tt_m.to()) <= RANK_3));
+        if (is_advanced_passed && ext_plies == 0) ext_plies = 1;
+
+        if (!is_capture && tt_m.type() != PROMOTION && tried_quiet_count < 128) {
+            tried_quiets[tried_quiet_count++] = tt_m;
+        }
+
+        StateInfo& next_st = search_states[ply];
+        pos.make_move(tt_m, next_st);
+        (ss + 1)->branch_fractional_ext = next_accum_ext;
+        (ss + 1)->path_extensions = next_path_ext;
+        (ss + 1)->excluded_move = MOVE_NONE;
+        Move dummy_child;
+        Value score = -alpha_beta(pos, depth - 1 + ext_plies, -beta, -alpha, ply + 1, is_pv, ss + 1, dummy_child);
+        pos.unmake_move(tt_m);
+
+        if (stopped.load(std::memory_order_relaxed)) return 0;
+
+        if (score > best_score) {
+            best_score = score;
+            best_move = tt_m;
+            if (score > alpha) {
+                alpha = score;
+                pv_table[ply][0] = tt_m;
+                for (int j = 0; j < pv_length[ply + 1]; ++j) pv_table[ply][j + 1] = pv_table[ply + 1][j];
+                pv_length[ply] = pv_length[ply + 1] + 1;
+                if (score >= beta) {
+                    GlobalTT.store(pos.hash_key(), beta, ss->static_eval, tt_m, depth, BOUND_LOWER,
+                                   is_pv, ply, nodes_count - nodes_at_entry,
+                                   harenn_out.tactical_complexity, harenn_out.horizon_risk,
+                                   harenn_out.resolution_score, 0, pos.halfmove_clock(), false);
+                    if (!is_capture) {
+                        GlobalHAMO.update_on_cutoff(pos, tt_m, depth, ply, prev_m, tried_quiets, tried_quiet_count);
+                        ss->killers[1] = ss->killers[0];
+                        ss->killers[0] = tt_m;
+                    }
+                    return beta; // EARLY CUTOFF! ~85% of Cut-nodes exit right here!
+                }
+            }
+        }
+    }
+
+    // ═══ STAGE 7: STAGED MOVE PICKER (ON-DEMAND SELECTION) ═══
+    ensure_eval();
+    MovePicker picker(pos, tt_m, ss->killers[0], ss->killers[1], prev_m, in_check);
+
+    Move m;
+    while ((m = picker.next_move()).is_valid()) {
+        if (m == ss->excluded_move || (tt_m_valid && m == tt_m)) continue;
+
+        int move_idx = moves_searched++;
+        ss->current_move = m;
+        bool is_capture = (pos.piece_on(m.to()) != NO_PIECE) || (m.type() == EN_PASSANT);
+
+        // 7A: CSFTE Singular Extension for the best move (if move_idx == 0)
+        int ext_plies = 0;
+        double next_accum_ext = ss->branch_fractional_ext;
+        int next_path_ext = ss->path_extensions;
+
+        if (move_idx == 0 && ply > 0 && depth >= 6 && !ss->excluded_move.is_valid()
+            && tt_res.best_move == m && tt_res.depth >= depth - 3 && (tt_res.bound & BOUND_LOWER)
+            && std::abs(tt_res.score) < VALUE_MATE_THRESHOLD) {
+            CSFTEEvalResult csfte_res = GlobalCSFTE.evaluate(pos, m, depth, ply, beta, tt_res.score,
+                                                            harenn_out, MOVE_NONE,
+                                                            ss->path_extensions);
+            if (csfte_res.action == CSFTE_FAST_PATH_EXTEND) {
+                int new_d = depth;
+                CSFTEEngine::apply_fractional_extension(depth - 1, csfte_res.delta_ext, next_accum_ext, ext_plies, new_d);
+                next_path_ext += ext_plies;
+            } else if (csfte_res.action == CSFTE_RUN_EXCLUDED_SEARCH) {
+                ss->excluded_move = m;
+                Move dummy_m;
+                Value excl_score = alpha_beta(pos, csfte_res.singular_depth, csfte_res.singular_beta - 1,
+                                              csfte_res.singular_beta, ply, false, ss, dummy_m);
+                ss->excluded_move = MOVE_NONE;
+
+                if (excl_score < csfte_res.singular_beta) {
+                    double delta_ext = std::clamp(0.45 + 0.5 * harenn_out.horizon_risk, 0.4, 1.5);
+                    int new_d = depth;
+                    CSFTEEngine::apply_fractional_extension(depth - 1, delta_ext, next_accum_ext, ext_plies, new_d);
+                    next_path_ext += ext_plies;
+                } else if (excl_score >= beta) {
+                    return excl_score; // Multi-Cut
+                }
+            }
+        }
+
+        bool gives_check = pos.gives_check(m);
+        bool is_killer = (m == ss->killers[0] || m == ss->killers[1]);
+        Piece moving_pc = pos.piece_on(m.from());
+        Color us = pos.side_to_move();
+        bool is_passed_push = (type_of(moving_pc) == PAWN && pos.pawn_is_passed(us, m.from()));
+        bool is_advanced_passed = is_passed_push && ((us == WHITE && rank_of(m.to()) >= RANK_6) || (us == BLACK && rank_of(m.to()) <= RANK_3));
+        if (is_advanced_passed && ext_plies == 0) {
+            ext_plies = 1;
+        }
+
+        // 7B: UPAD move-level pruning
+        UPADMoveDecision move_dec = GlobalUPAD.make_move_decision(pos, m, move_idx, depth, alpha,
+                                                                  ss->static_eval, gives_check,
+                                                                  is_capture, in_check, is_pv, improving, is_killer);
+        if (move_dec.action == MOVE_HARD_PRUNE) {
+            continue;
+        }
+
+        // 7C: HARE dynamic reduction
+        int reduction = 0;
+        if (move_idx >= 1 && depth >= 3 && !in_check && !gives_check && !is_passed_push) {
+            if (!is_capture && m.type() != PROMOTION) {
+                int hist = GlobalHAMO.get_history(pos, m, prev_m);
+                reduction = GlobalHARE.compute_reduction(pos, m, move_idx, depth, harenn_out, is_pv, is_killer, improving, hist);
+            } else if (is_capture && move_idx >= 4) {
+                if (pos.see(m, 0) < 0) {
+                    reduction = 1;
+                    if (!is_pv) reduction++;
+                } else if (move_idx >= 8) {
+                    reduction = 1;
+                }
+            }
+        }
+
+        if (!is_capture && m.type() != PROMOTION && tried_quiet_count < 128) {
+            tried_quiets[tried_quiet_count++] = m;
+        }
+
+        // 7D: PVS Search
+        int child_depth = std::max(0, depth - 1 + ext_plies - reduction);
+        StateInfo& next_st = search_states[ply];
+        pos.make_move(m, next_st);
+
+        (ss + 1)->branch_fractional_ext = next_accum_ext;
+        (ss + 1)->path_extensions = next_path_ext;
+        (ss + 1)->excluded_move = MOVE_NONE;
+        Move dummy_child;
+        Value score = 0;
+
+        if (move_idx == 0) {
+            score = -alpha_beta(pos, depth - 1 + ext_plies, -beta, -alpha, ply + 1, is_pv, ss + 1, dummy_child);
+        } else {
+            // Scout search with zero window
+            score = -alpha_beta(pos, child_depth, -(alpha + 1), -alpha, ply + 1, false, ss + 1, dummy_child);
+
+            // Re-search if failed high and reduced
+            if (score > alpha && reduction > 0) {
+                score = -alpha_beta(pos, depth - 1 + ext_plies, -(alpha + 1), -alpha, ply + 1, false, ss + 1, dummy_child);
+            }
+
+            // Full window re-search for PV nodes
+            if (score > alpha && score < beta && is_pv) {
+                score = -alpha_beta(pos, depth - 1 + ext_plies, -beta, -alpha, ply + 1, true, ss + 1, dummy_child);
+            }
+        }
+
+        pos.unmake_move(m);
+
+        if (stopped.load(std::memory_order_relaxed)) {
+            return 0;
+        }
+
+        if (score > best_score) {
+            if (ply == 0 && best_score > -VALUE_INFINITE) {
+                root_second_score = best_score;
+            }
+            best_score = score;
+            best_move = m;
+
+            if (score > alpha) {
+                alpha = score;
+
+                // Update PV line
+                pv_table[ply][0] = m;
+                int max_copy = std::min(pv_length[ply + 1], MAX_PLY - 2 - ply);
+                for (int j = 0; j < max_copy; ++j) {
+                    pv_table[ply][j + 1] = pv_table[ply + 1][j];
+                }
+                pv_length[ply] = max_copy + 1;
+
+                if (score >= beta) {
+                    // Update killers in search stack
+                    if (!is_capture && m.type() != PROMOTION) {
+                        if (ss->killers[0] != m) {
+                            ss->killers[1] = ss->killers[0];
+                            ss->killers[0] = m;
+                        }
+                    }
+                    // Beta cutoff! Update HAMO killers & histories
+                    GlobalHAMO.update_on_cutoff(pos, m, depth, ply, prev_m, tried_quiets, tried_quiet_count);
+                    break;
+                }
+            }
+        } else if (ply == 0 && score > root_second_score) {
+            root_second_score = score;
+        }
+    }
+
+    if (moves_searched == 0) {
+        if (in_check) {
+            return mated_in(ply); // Checkmate
+        }
+        return VALUE_DRAW; // Stalemate
+    }
+
+    if (best_score == -VALUE_INFINITE) {
+        // All moves were pruned / excluded: this is a fail-low node with no
+        // proven best move, so it must never be stored as an exact score.
+        best_score = alpha;
+        best_move = MOVE_NONE;
+    }
+
+    out_best_move = best_move;
+
+    // ═══ STAGE 8: SMTTA STORE ═══
+    if (!ss->excluded_move.is_valid()) {
+        ensure_eval();
+        BoundType b_type;
+        if (!best_move.is_valid()) {
+            b_type = BOUND_UPPER;
+        } else {
+            b_type = (best_score >= beta) ? BOUND_LOWER
+                   : ((best_score > orig_alpha) ? BOUND_EXACT : BOUND_UPPER);
+        }
+        uint64_t subtree_work = nodes_count - nodes_at_entry;
+        bool path_draw = (best_score == 0 && ssfzre_out.fortress_prob > 0.70);
+        Value tt_eval = in_check ? 0 : ss->static_eval;
+
+        GlobalTT.store(pos.hash_key(), best_score, tt_eval, best_move, depth, b_type,
+                       is_pv, ply, subtree_work, harenn_out.tactical_complexity,
+                       harenn_out.horizon_risk, harenn_out.resolution_score, 0,
+                       pos.halfmove_clock(), path_draw);
+    }
+
+    return best_score;
+}
+
+} // namespace NextFish

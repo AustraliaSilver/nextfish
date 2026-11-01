@@ -1,434 +1,544 @@
-/*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
-
-  Stockfish is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  Stockfish is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 #include "harenn.h"
-#include "position.h"
-#include "bitboard.h"
-#include "dee.h"
-#include "numa.h"
-#include <algorithm>
-#include <atomic>
-#include <cmath>
-#include <cstring>
 #include <fstream>
 #include <iostream>
-#include <vector>
+#include <cstring>
 #include <immintrin.h>
-#include <functional>
+#include <cstdlib>
 
-namespace Stockfish {
+namespace NextFish {
 
-namespace HARENN {
+HARENNEvaluator GlobalHARENN;
 
-namespace {
-    constexpr int SIGMOID_TABLE_SIZE = 1024;
-    constexpr float SIGMOID_SCALE = 100.0f;
-    constexpr float SIGMOID_OFFSET = SIGMOID_TABLE_SIZE / 2.0f;
+static constexpr int FC2_QSCALE = 1;
 
-    // Architectural limits of the shipped HARENN architecture. The loader
-    // rejects any file that does not respect them, so a malformed or hostile
-    // .harenn can never drive an out-of-bounds access.
-    constexpr int MAX_HIDDEN1 = 512;    // fc1.cols
-    constexpr int MAX_HIDDEN2 = 256;    // fc2.rows
-    constexpr int REQUIRED_FC1_ROWS = 768;  // 64 squares * 12 piece codes
+static void* aligned_alloc_64(size_t size) {
+#if defined(_MSC_VER) || defined(__MINGW32__)
+    return _aligned_malloc(size, 64);
+#else
+    void* ptr = nullptr;
+    if (posix_memalign(&ptr, 64, size) != 0) return nullptr;
+    return ptr;
+#endif
+}
 
-    static float sigmoid_table[SIGMOID_TABLE_SIZE];
-    static std::atomic<bool> sigmoid_table_initialized{false};
+static void aligned_free_64(void* ptr) {
+#if defined(_MSC_VER) || defined(__MINGW32__)
+    _aligned_free(ptr);
+#else
+    free(ptr);
+#endif
+}
 
-    void init_sigmoid_table() {
-        bool expected = false;
-        if (!sigmoid_table_initialized.compare_exchange_strong(expected, true))
+HARENNEvaluator::HARENNEvaluator() {
+    eval_cache = new EvalCacheEntry[EVAL_CACHE_SIZE]();
+    const char* paths[] = {
+        "Neuron Network/nextfish_hkb.harenn",
+        "Neuron Network/nextfish.harenn",
+        "Neuron Network/nextfish_halfka.harenn",
+        "../Neuron Network/nextfish_hkb.harenn",
+        "../Neuron Network/nextfish.harenn",
+        "../Neuron Network/nextfish_halfka.harenn",
+        "Neuron Network/nexfish.harenn",
+        "C:\\Users\\hunga\\OneDrive\\Desktop\\NEXUS-CHESS\\Neuron Network\\nextfish_hkb.harenn",
+        "C:\\Users\\hunga\\OneDrive\\Desktop\\NEXUS-CHESS\\Neuron Network\\nextfish.harenn",
+        "C:\\Users\\hunga\\OneDrive\\Desktop\\NEXUS-CHESS\\Neuron Network\\nextfish_halfka.harenn"
+    };
+    for (const char* p : paths) {
+        if (load_weights(p)) {
+            std::cerr << "Loaded HARENN weights successfully from: " << p << "\n";
             return;
-        for (int i = 0; i < SIGMOID_TABLE_SIZE; ++i) {
-            float x = (i - SIGMOID_OFFSET) / SIGMOID_SCALE;
-            sigmoid_table[i] = 1.0f / (1.0f + std::exp(-x));
         }
     }
+    std::cerr << "WARNING: Could not load HARENN weights from any known location. Using classical evaluation fallback!\n";
+}
 
-    inline float fast_sigmoid(float x) {
-        if (!std::isfinite(x)) return x > 0.0f ? 1.0f : 0.0f;
-        int idx = static_cast<int>(x * SIGMOID_SCALE + SIGMOID_OFFSET);
-        idx = std::clamp(idx, 0, SIGMOID_TABLE_SIZE - 1);
-        return sigmoid_table[idx];
+HARENNEvaluator::~HARENNEvaluator() {
+    delete[] eval_cache;
+    if (fc1_weights) aligned_free_64(fc1_weights);
+    if (fc1_biases) aligned_free_64(fc1_biases);
+    if (fc2_weights) aligned_free_64(fc2_weights);
+    if (fc2_biases) aligned_free_64(fc2_biases);
+    if (fc2_transposed) aligned_free_64(fc2_transposed);
+    if (fc2_int8) aligned_free_64(fc2_int8);
+    if (eval_weights) aligned_free_64(eval_weights);
+    if (tau_weights) aligned_free_64(tau_weights);
+    if (rho_weights) aligned_free_64(rho_weights);
+    if (rs_weights) aligned_free_64(rs_weights);
+}
+
+void HARENNEvaluator::clear_cache() {
+    if (eval_cache) {
+        std::memset(eval_cache, 0, EVAL_CACHE_SIZE * sizeof(EvalCacheEntry));
     }
 }
 
-bool Network::load(const std::string& filename) {
-    std::ifstream f(filename, std::ios::binary | std::ios::ate);
-    if (!f) return false;
+bool HARENNEvaluator::load_weights(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) return false;
 
-    std::streamsize file_size = f.tellg();
-    if (file_size < 12) return false; // Magic (4) + eval_mean (4) + eval_std (4)
-
+    f.seekg(0, std::ios::end);
+    size_t file_sz = f.tellg();
     f.seekg(0, std::ios::beg);
+    if (file_sz < 1500000) return false;
 
-    std::vector<char> buffer(file_size);
-    if (!f.read(buffer.data(), file_size)) return false;
-    f.close();
+    char magic[4];
+    f.read(magic, 4);
+    if (std::memcmp(magic, "HKB4", 4) == 0) {
+        hkb_mode = true;
+        halfka_mode = true;
+    } else if (std::memcmp(magic, "HKA4", 4) == 0) {
+        hkb_mode = false;
+        halfka_mode = true;
+    } else if (std::memcmp(magic, "HNN4", 4) == 0) {
+        hkb_mode = false;
+        halfka_mode = false;
+    } else {
+        return false;
+    }
 
-    const char* ptr = buffer.data();
-    const char* end = ptr + file_size;
+    f.read(reinterpret_cast<char*>(&eval_mean), sizeof(float));
+    f.read(reinterpret_cast<char*>(&eval_std), sizeof(float));
 
-    // Parse magic
-    if (std::string(ptr, 4) != "HNN4") return false;
-    ptr += 4;
+    int r1 = 0, c1 = 0;
+    f.read(reinterpret_cast<char*>(&r1), 4);
+    f.read(reinterpret_cast<char*>(&c1), 4);
+    if (hkb_mode) {
+        if (r1 != 5632 || c1 != 512) return false;
+    } else if (halfka_mode) {
+        if (r1 != 45056 || c1 != 512) return false;
+    } else {
+        if (r1 != 768 || c1 != 1024) return false;
+    }
+    hidden1_dim = c1;
 
-    // Parse mean and std
-    std::memcpy(&eval_mean, ptr, 4); ptr += 4;
-    std::memcpy(&eval_std, ptr, 4); ptr += 4;
+    if (fc1_weights) { aligned_free_64(fc1_weights); fc1_weights = nullptr; }
+    if (fc1_biases) { aligned_free_64(fc1_biases); fc1_biases = nullptr; }
 
-    auto load_layer = [&](Layer& layer, bool bias_size_is_cols) {
-        if (end - ptr < 8) return false;
-        std::memcpy(&layer.rows, ptr, 4); ptr += 4;
-        std::memcpy(&layer.cols, ptr, 4); ptr += 4;
+    fc1_weights = static_cast<int16_t*>(aligned_alloc_64(static_cast<size_t>(r1) * c1 * sizeof(int16_t)));
+    fc1_biases = static_cast<int32_t*>(aligned_alloc_64(c1 * sizeof(int32_t)));
 
-        // 64-bit arithmetic: rows*cols can overflow a 32-bit int for a
-        // malicious header, and the byte-count checks below would then pass
-        // with a bogus length.
-        const int64_t size = (int64_t)layer.rows * (int64_t)layer.cols;
-        const int64_t bias_size = bias_size_is_cols ? layer.cols : layer.rows;
+    f.read(reinterpret_cast<char*>(fc1_weights), static_cast<size_t>(r1) * c1 * sizeof(int16_t));
+    f.read(reinterpret_cast<char*>(fc1_biases), c1 * sizeof(int32_t));
 
-        if (layer.rows <= 0 || layer.cols <= 0) return false;
-        if (size <= 0 || size > (int64_t) 1 << 30) return false;
-        if (bias_size <= 0 || bias_size > (int64_t) 1 << 20) return false;
-        if ((int64_t)(end - ptr) < size * 2 + bias_size * 4) return false;
+    int r2 = 0, c2 = 0;
+    f.read(reinterpret_cast<char*>(&r2), 4);
+    f.read(reinterpret_cast<char*>(&c2), 4);
+    if (c2 != 1024) return false;
+    if (r2 != 32 && r2 != 64 && r2 != 128 && r2 != 256 && r2 != 512) return false;
+    hidden2_dim = r2;
 
-        layer.weights.resize(size);
-        std::memcpy(layer.weights.data(), ptr, size * 2); ptr += size * 2;
+    if (fc2_weights) { aligned_free_64(fc2_weights); fc2_weights = nullptr; }
+    if (fc2_biases) { aligned_free_64(fc2_biases); fc2_biases = nullptr; }
+    if (fc2_transposed) { aligned_free_64(fc2_transposed); fc2_transposed = nullptr; }
+    if (fc2_int8) { aligned_free_64(fc2_int8); fc2_int8 = nullptr; }
 
-        layer.bias.resize(bias_size);
-        std::memcpy(layer.bias.data(), ptr, bias_size * 4); ptr += bias_size * 4;
+    fc2_weights = static_cast<int16_t*>(aligned_alloc_64(hidden2_dim * 1024 * sizeof(int16_t)));
+    fc2_biases = static_cast<int32_t*>(aligned_alloc_64(hidden2_dim * sizeof(int32_t)));
+
+    f.read(reinterpret_cast<char*>(fc2_weights), hidden2_dim * 1024 * sizeof(int16_t));
+    f.read(reinterpret_cast<char*>(fc2_biases), hidden2_dim * sizeof(int32_t));
+
+    fc2_transposed = static_cast<int16_t*>(aligned_alloc_64(1024 * hidden2_dim * sizeof(int16_t)));
+    for (int r = 0; r < hidden2_dim; ++r) {
+        for (int c = 0; c < 1024; ++c) {
+            fc2_transposed[c * hidden2_dim + r] = fc2_weights[r * 1024 + c];
+        }
+    }
+
+    fc2_int8 = static_cast<int8_t*>(aligned_alloc_64(hidden2_dim * 1024 * sizeof(int8_t)));
+    for (size_t i = 0; i < static_cast<size_t>(hidden2_dim) * 1024ull; ++i) {
+        int q = (static_cast<int>(fc2_weights[i]) + (fc2_weights[i] >= 0 ? FC2_QSCALE / 2 : -(FC2_QSCALE / 2))) / FC2_QSCALE;
+        fc2_int8[i] = static_cast<int8_t>(std::clamp(q, -127, 127));
+    }
+
+    auto load_head = [&](int16_t*& w, int32_t& b) -> bool {
+        int rh = 0, ch = 0;
+        f.read(reinterpret_cast<char*>(&rh), 4);
+        f.read(reinterpret_cast<char*>(&ch), 4);
+        if (rh != 1 || ch != hidden2_dim) return false;
+        if (w) { aligned_free_64(w); w = nullptr; }
+        w = static_cast<int16_t*>(aligned_alloc_64(hidden2_dim * sizeof(int16_t)));
+        f.read(reinterpret_cast<char*>(w), hidden2_dim * sizeof(int16_t));
+        f.read(reinterpret_cast<char*>(&b), sizeof(int32_t));
         return true;
     };
 
-    if (!load_layer(fc1, true)) return false;
-    if (!load_layer(fc2, false)) return false;
-    if (!load_layer(eval_head, false)) return false;
-    if (!load_layer(tau_head, false)) return false;
-    if (!load_layer(rho_head, false)) return false;
-    if (!load_layer(rs_head, false)) return false;
+    if (!load_head(eval_weights, eval_bias)) return false;
+    if (!load_head(tau_weights, tau_bias)) return false;
+    if (!load_head(rho_weights, rho_bias)) return false;
+    if (!load_head(rs_weights, rs_bias)) return false;
 
-    // Architectural invariants. The inference code below indexes these
-    // dimensions without further checks, so a file that violates them is
-    // rejected here rather than being allowed to read out of bounds.
-    if (fc1.rows < REQUIRED_FC1_ROWS) return false;
-    if (fc1.cols <= 0 || fc1.cols > MAX_HIDDEN1) return false;
-    if (fc2.rows <= 0 || fc2.rows > MAX_HIDDEN2) return false;
-    if (fc2.cols != fc1.cols) return false;
-    if (fc1.bias.size() != (size_t) fc1.cols) return false;
-    if (fc2.bias.size() != (size_t) fc2.rows) return false;
+    if (!f.good()) return false;
 
-    const Layer* heads[4] = {&eval_head, &tau_head, &rho_head, &rs_head};
-    for (const Layer* h : heads) {
-        if (h->rows != 1) return false;
-        if (h->cols != fc2.rows) return false;
-        if (h->weights.size() != (size_t) h->cols) return false;
-        if (h->bias.size() != 1) return false;
-    }
-
+    loaded = true;
     return true;
 }
 
-namespace {
-    // Shared hidden layer computation for lazy evaluation (2-layer architecture)
-    void compute_hidden_layer(const int* active_features, int count,
-                              const Layer& fc1, const Layer& fc2,
-                              int32_t* h1, int32_t* h2) {
-        const int out_features1 = fc1.cols;
-        const int out_features2 = fc2.rows; // fc2 is (out_features2, out_features1)
+__attribute__((always_inline)) static inline int32_t hsum256_ps_epi32(const __m256i& v) {
+    __m128i vlow = _mm256_castsi256_si128(v);
+    __m128i vhigh = _mm256_extracti128_si256(v, 1);
+    __m128i sum128 = _mm_add_epi32(vlow, vhigh);
+    sum128 = _mm_hadd_epi32(sum128, sum128);
+    sum128 = _mm_hadd_epi32(sum128, sum128);
+    return _mm_cvtsi128_si32(sum128);
+}
 
-        std::fill(h1, h1 + out_features1, 0);
-
-        // First layer (sparse -> dense) - AVX2 optimized
-        for (int i = 0; i < count; ++i) {
-            const int feat_idx = active_features[i];
-            if (feat_idx < 0 || feat_idx >= fc1.rows) continue;
-            const int16_t* feat_weights = &fc1.weights[(size_t) feat_idx * out_features1];
-
-            int j = 0;
-#if defined(USE_AVX2)
-            for (; j <= out_features1 - 8; j += 8) {
-                __m128i w_vec_16 = _mm_loadu_si128((const __m128i*)(feat_weights + j));
-                __m256i w_vec = _mm256_cvtepi16_epi32(w_vec_16);
-                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1 + j));
-                h1_vec = _mm256_add_epi32(h1_vec, w_vec);
-                _mm256_storeu_si256((__m256i*)(h1 + j), h1_vec);
-            }
-#endif
-            // Fallback for remainder
-            for (; j < out_features1; ++j) {
-                h1[j] += feat_weights[j];
-            }
-        }
-
-        // Bias + ClippedReLU for first layer (clamped to [0, 128] which represents [0.0, 1.0] float)
-        // AVX2 optimized
-        {
-            int j = 0;
-#if defined(USE_AVX2)
-            __m256i zero_vec = _mm256_setzero_si256();
-            __m256i max_vec = _mm256_set1_epi32(128);
-            for (; j <= out_features1 - 8; j += 8) {
-                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1 + j));
-                __m256i bias_vec = _mm256_loadu_si256((const __m256i*)(fc1.bias.data() + j));
-                __m256i val_vec = _mm256_add_epi32(h1_vec, bias_vec);
-                val_vec = _mm256_max_epi32(zero_vec, val_vec);
-                val_vec = _mm256_min_epi32(max_vec, val_vec);
-                _mm256_storeu_si256((__m256i*)(h1 + j), val_vec);
-            }
-#endif
-            for (; j < out_features1; ++j) {
-                h1[j] = std::clamp(h1[j] + fc1.bias[j], 0, 128);
-            }
-        }
-
-        // Second layer (dense -> dense) - AVX2 optimized.
-        // The accumulator is 64-bit: the theoretical maximum is
-        // 512 * 128 * 32767 which overflows a 32-bit accumulator.
-        std::fill(h2, h2 + out_features2, 0);
-        const int16_t* w2 = fc2.weights.data();
-        const int32_t* bias2_ptr = fc2.bias.data();
-
-        for (int i = 0; i < out_features2; ++i) {
-            int64_t sum = bias2_ptr[i];
-            const int16_t* w2_row = &w2[(size_t) i * out_features1];
-
-            int j = 0;
-#if defined(USE_AVX2)
-            for (; j <= out_features1 - 8; j += 8) {
-                __m256i h1_vec = _mm256_loadu_si256((const __m256i*)(h1 + j));
-                __m128i w2_vec_16 = _mm_loadu_si128((const __m128i*)(w2_row + j));
-                __m256i w2_vec = _mm256_cvtepi16_epi32(w2_vec_16);
-                __m256i prod = _mm256_mullo_epi32(h1_vec, w2_vec);
-                int32_t prod_arr[8];
-                _mm256_storeu_si256((__m256i*) prod_arr, prod);
-                for (int k = 0; k < 8; ++k)
-                    sum += (int64_t) prod_arr[k];
-            }
-#endif
-
-            // Remainder loop
-            for (; j < out_features1; ++j) {
-                sum += (int64_t) h1[j] * w2_row[j];
-            }
-
-            h2[i] = (int32_t) std::clamp(sum, (int64_t) 0, (int64_t) 16384);
-        }
-    }
-
-    float run_head_single(const int32_t* h2, int out_features, const Layer& head) {
-        int64_t sum = head.bias[0];
-        const int16_t* w = head.weights.data();
-        const int32_t* h2_ptr = h2;
-
-        int j = 0;
-#if defined(USE_AVX2)
-        for (; j <= out_features - 8; j += 8) {
-            __m256i h2_vec = _mm256_loadu_si256((const __m256i*)(h2_ptr + j));
-            __m128i w_vec_16 = _mm_loadu_si128((const __m128i*)(w + j));
-            __m256i w_vec = _mm256_cvtepi16_epi32(w_vec_16);
-            __m256i prod = _mm256_mullo_epi32(h2_vec, w_vec);
-            int32_t prod_arr[8];
-            _mm256_storeu_si256((__m256i*) prod_arr, prod);
-            for (int k = 0; k < 8; ++k)
-                sum += (int64_t) prod_arr[k];
-        }
-#endif
-
-        for (; j < out_features; ++j) {
-            sum += (int64_t) h2_ptr[j] * w[j];
-        }
-
-        return (float) sum / (128.0f * 128.0f * 128.0f);
+void HARENNEvaluator::add_feature(int32_t* acc, int feat) const {
+    if (feat < 0 || feat >= 768) return;
+    const int16_t* w_row = &fc1_weights[feat * 1024];
+    for (int i = 0; i < 1024; i += 16) {
+        __m128i w16_0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w_row[i]));
+        __m128i w16_1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w_row[i + 8]));
+        __m256i w32_0 = _mm256_cvtepi16_epi32(w16_0);
+        __m256i w32_1 = _mm256_cvtepi16_epi32(w16_1);
+        __m256i a0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i]));
+        __m256i a1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 8]));
+        a0 = _mm256_add_epi32(a0, w32_0);
+        a1 = _mm256_add_epi32(a1, w32_1);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i]), a0);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i + 8]), a1);
     }
 }
 
-EvalResult Network::forward(const int* active_features, int count) const {
-    const int out_features1 = fc1.cols;
-    const int out_features2 = fc2.rows;
-    if (out_features1 <= 0 || out_features1 > MAX_HIDDEN1 || out_features2 <= 0
-        || out_features2 > MAX_HIDDEN2)
-        return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
-    int32_t h1[MAX_HIDDEN1];
-    int32_t h2[MAX_HIDDEN2];
-
-    compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-
-    EvalResult res;
-    res.eval = run_head_single(h2, out_features2, eval_head) * eval_std + eval_mean;
-    res.tau  = fast_sigmoid(run_head_single(h2, out_features2, tau_head));
-    res.rho  = fast_sigmoid(run_head_single(h2, out_features2, rho_head));
-    res.rs   = fast_sigmoid(run_head_single(h2, out_features2, rs_head));
-
-    return res;
-}
-
-float Network::compute_eval(const int* active_features, int count) const {
-    const int out_features1 = fc1.cols;
-    const int out_features2 = fc2.rows;
-    if (out_features1 <= 0 || out_features1 > MAX_HIDDEN1 || out_features2 <= 0
-        || out_features2 > MAX_HIDDEN2)
-        return 0.0f;
-    int32_t h1[MAX_HIDDEN1];
-    int32_t h2[MAX_HIDDEN2];
-    compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return run_head_single(h2, out_features2, eval_head) * eval_std + eval_mean;
-}
-
-float Network::compute_tau(const int* active_features, int count) const {
-    const int out_features1 = fc1.cols;
-    const int out_features2 = fc2.rows;
-    if (out_features1 <= 0 || out_features1 > MAX_HIDDEN1 || out_features2 <= 0
-        || out_features2 > MAX_HIDDEN2)
-        return 0.5f;
-    int32_t h1[MAX_HIDDEN1];
-    int32_t h2[MAX_HIDDEN2];
-    compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return fast_sigmoid(run_head_single(h2, out_features2, tau_head));
-}
-
-float Network::compute_rho(const int* active_features, int count) const {
-    const int out_features1 = fc1.cols;
-    const int out_features2 = fc2.rows;
-    if (out_features1 <= 0 || out_features1 > MAX_HIDDEN1 || out_features2 <= 0
-        || out_features2 > MAX_HIDDEN2)
-        return 0.5f;
-    int32_t h1[MAX_HIDDEN1];
-    int32_t h2[MAX_HIDDEN2];
-    compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return fast_sigmoid(run_head_single(h2, out_features2, rho_head));
-}
-
-float Network::compute_rs(const int* active_features, int count) const {
-    const int out_features1 = fc1.cols;
-    const int out_features2 = fc2.rows;
-    if (out_features1 <= 0 || out_features1 > MAX_HIDDEN1 || out_features2 <= 0
-        || out_features2 > MAX_HIDDEN2)
-        return 0.5f;
-    int32_t h1[MAX_HIDDEN1];
-    int32_t h2[MAX_HIDDEN2];
-    compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    return fast_sigmoid(run_head_single(h2, out_features2, rs_head));
-}
-
-std::pair<float, float> Network::compute_rho_and_rs(const int* active_features, int count) const {
-    const int out_features1 = fc1.cols;
-    const int out_features2 = fc2.rows;
-    if (out_features1 <= 0 || out_features1 > MAX_HIDDEN1 || out_features2 <= 0
-        || out_features2 > MAX_HIDDEN2) {
-        return {0.5f, 0.5f};
+void HARENNEvaluator::sub_feature(int32_t* acc, int feat) const {
+    if (feat < 0 || feat >= 768) return;
+    const int16_t* w_row = &fc1_weights[feat * 1024];
+    for (int i = 0; i < 1024; i += 16) {
+        __m128i w16_0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w_row[i]));
+        __m128i w16_1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w_row[i + 8]));
+        __m256i w32_0 = _mm256_cvtepi16_epi32(w16_0);
+        __m256i w32_1 = _mm256_cvtepi16_epi32(w16_1);
+        __m256i a0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i]));
+        __m256i a1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 8]));
+        a0 = _mm256_sub_epi32(a0, w32_0);
+        a1 = _mm256_sub_epi32(a1, w32_1);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i]), a0);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i + 8]), a1);
     }
-    int32_t h1[MAX_HIDDEN1];
-    int32_t h2[MAX_HIDDEN2];
-    compute_hidden_layer(active_features, count, fc1, fc2, h1, h2);
-    float rho = fast_sigmoid(run_head_single(h2, out_features2, rho_head));
-    float rs  = fast_sigmoid(run_head_single(h2, out_features2, rs_head));
-    return {rho, rs};
 }
 
-static Network* global_net = nullptr;
-static std::atomic<bool> model_loaded{false};
-
-void GuidanceProvider::init(const std::string& binaryDirectory) {
-    init_sigmoid_table();
-
-    if (!global_net) {
-        global_net = new Network();
-    }
-
-    // Resolve the model next to the executable first, then fall back to the
-    // working directory so the engine also works when started from a folder
-    // that merely contains the model.
-    std::string path = binaryDirectory + "nextfish.harenn";
-    bool loaded = global_net->load(path);
+void HARENNEvaluator::compute_accumulator_halfka(const Position& pos, int32_t* acc_w, int32_t* acc_b) const {
     if (!loaded) {
-        loaded = global_net->load("nextfish.harenn");
-        if (loaded)
-            sync_cout << "info string HARENN: model loaded from the working directory" << sync_endl;
+        std::memset(acc_w, 0, 512 * sizeof(int32_t));
+        std::memset(acc_b, 0, 512 * sizeof(int32_t));
+        return;
     }
+    std::memcpy(acc_w, fc1_biases, 512 * sizeof(int32_t));
+    std::memcpy(acc_b, fc1_biases, 512 * sizeof(int32_t));
 
-    if (loaded) {
-        model_loaded = true;
-        sync_cout << "info string HARENN: Full 4-Head Model loaded successfully" << sync_endl;
-    } else {
-        model_loaded = false;
-        sync_cout << "info string HARENN: Failed to load model 'nextfish.harenn'. Place it "
-                     "next to the executable or in the working directory." << sync_endl;
-    }
-}
+    Square w_ksq = pos.king_square(WHITE);
+    Square b_ksq = pos.king_square(BLACK);
 
-bool GuidanceProvider::is_model_loaded() {
-    return model_loaded.load(std::memory_order_acquire);
-}
-
-namespace {
-    // Piece-square feature encoding. It must stay bit-identical to
-    // train_harenn.py's PIECE_MAP, otherwise the network sees different
-    // features at inference time than it was trained on:
-    //   white pawn/knight/bishop/rook/queen/king -> 0..5
-    //   black pawn/knight/bishop/rook/queen/king -> 6..11
-    // With W_PAWN=1..W_KING=6 and B_PAWN=9..B_KING=14 this is pc-1 for
-    // white and pc-3 for black. The 12 codes per square are packed as
-    // py_sq * 12 + py_pc, so py_pc must stay below 12.
-    inline int encode_piece(Piece pc) {
-        return (pc <= W_KING) ? (int) pc - 1 : (int) pc - 3;
-    }
-
-    // Extract the active features of a position. Returns the number of
-    // features written to 'out'.
-    int extract_features(const Position& pos, int* out) {
-        int count = 0;
-        Bitboard pieces = pos.pieces();
-        while (pieces) {
-            Square sq = pop_lsb(pieces);
-            Piece pc = pos.piece_on(sq);
-            if (pc != NO_PIECE) {
-                int py_sq = (int) sq ^ 56;  // Convert bottom-up to top-down (a1->a8 rank flip)
-                int py_pc = encode_piece(pc);
-                out[count++] = py_sq * 12 + py_pc;
+    for (int sq = 0; sq < 64; ++sq) {
+        Piece pc = pos.piece_on(static_cast<Square>(sq));
+        if (pc != NO_PIECE) {
+            if (pc != W_KING) {
+                int feat_w = make_feature(w_ksq, pc, static_cast<Square>(sq), WHITE, hkb_mode);
+                add_feature_halfka(acc_w, feat_w);
+            }
+            if (pc != B_KING) {
+                int feat_b = make_feature(b_ksq, pc, static_cast<Square>(sq), BLACK, hkb_mode);
+                add_feature_halfka(acc_b, feat_b);
             }
         }
-        return count;
     }
 }
 
-EvalResult GuidanceProvider::query(const Position& pos, NumaReplicatedAccessToken numaToken) {
-    (void) numaToken;
-    if (!is_model_loaded() || !global_net) {
-        return EvalResult{0.0f, 0.0f, 0.0f, 0.0f};
+void HARENNEvaluator::add_feature_halfka(int32_t* acc, int feat) const {
+    int max_feat = hkb_mode ? 5632 : 45056;
+    if (feat < 0 || feat >= max_feat) return;
+    const int16_t* w = &fc1_weights[static_cast<size_t>(feat) * 512];
+    for (int i = 0; i < 512; i += 16) {
+        __m128i w_lo = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w[i]));
+        __m128i w_hi = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w[i + 8]));
+        __m256i w_lo32 = _mm256_cvtepi16_epi32(w_lo);
+        __m256i w_hi32 = _mm256_cvtepi16_epi32(w_hi);
+        __m256i a_lo = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i]));
+        __m256i a_hi = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 8]));
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i]), _mm256_add_epi32(a_lo, w_lo32));
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i + 8]), _mm256_add_epi32(a_hi, w_hi32));
     }
-    int active_features[64];
-    int count = extract_features(pos, active_features);
-
-    return global_net->forward(active_features, count);
 }
 
-std::pair<float, float> GuidanceProvider::query_rho_and_rs(const Position& pos, NumaReplicatedAccessToken numaToken) {
-    (void) numaToken;
-    if (!is_model_loaded() || !global_net) {
-        return {0.5f, 0.5f};
+void HARENNEvaluator::sub_feature_halfka(int32_t* acc, int feat) const {
+    int max_feat = hkb_mode ? 5632 : 45056;
+    if (feat < 0 || feat >= max_feat) return;
+    const int16_t* w = &fc1_weights[static_cast<size_t>(feat) * 512];
+    for (int i = 0; i < 512; i += 16) {
+        __m128i w_lo = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w[i]));
+        __m128i w_hi = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&w[i + 8]));
+        __m256i w_lo32 = _mm256_cvtepi16_epi32(w_lo);
+        __m256i w_hi32 = _mm256_cvtepi16_epi32(w_hi);
+        __m256i a_lo = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i]));
+        __m256i a_hi = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 8]));
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i]), _mm256_sub_epi32(a_lo, w_lo32));
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&acc[i + 8]), _mm256_sub_epi32(a_hi, w_hi32));
     }
-    int active_features[64];
-    int count = extract_features(pos, active_features);
-
-    return global_net->compute_rho_and_rs(active_features, count);
 }
 
-} // namespace HARENN
+void HARENNEvaluator::compute_accumulator(const Position& pos, int32_t* acc) const {
+    if (!loaded) {
+        std::memset(acc, 0, 1024 * sizeof(int32_t));
+        return;
+    }
+    std::memcpy(acc, fc1_biases, 1024 * sizeof(int32_t));
+    for (int sq = 0; sq < 64; ++sq) {
+        Piece pc = pos.piece_on(static_cast<Square>(sq));
+        if (pc != NO_PIECE) {
+            Square py_sq = flip_rank(static_cast<Square>(sq));
+            int feat = py_sq * 12 + static_cast<int>(pc);
+            add_feature(acc, feat);
+        }
+    }
+}
 
-} // namespace Stockfish
+static inline int32_t hsum_epi32_8(__m256i v) {
+    __m128i lo = _mm256_castsi256_si128(v);
+    __m128i hi = _mm256_extracti128_si256(v, 1);
+    __m128i s = _mm_add_epi32(lo, hi);
+    s = _mm_hadd_epi32(s, s);
+    s = _mm_hadd_epi32(s, s);
+    return _mm_cvtsi128_si32(s);
+}
+
+void HARENNEvaluator::pack_accumulator(const int32_t* acc, uint8_t* h1_u8) const {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i max_val = _mm256_set1_epi32(128);
+    for (int i = 0; i < 1024; i += 32) {
+        __m256i a0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i]));
+        __m256i a1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 8]));
+        __m256i a2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 16]));
+        __m256i a3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 24]));
+
+        a0 = _mm256_min_epi32(_mm256_max_epi32(a0, zero), max_val);
+        a1 = _mm256_min_epi32(_mm256_max_epi32(a1, zero), max_val);
+        a2 = _mm256_min_epi32(_mm256_max_epi32(a2, zero), max_val);
+        a3 = _mm256_min_epi32(_mm256_max_epi32(a3, zero), max_val);
+
+        __m256i p01 = _mm256_packs_epi32(a0, a1);
+        p01 = _mm256_permute4x64_epi64(p01, 0xD8);
+
+        __m256i p23 = _mm256_packs_epi32(a2, a3);
+        p23 = _mm256_permute4x64_epi64(p23, 0xD8);
+
+        __m256i u8 = _mm256_packus_epi16(p01, p23);
+        u8 = _mm256_permute4x64_epi64(u8, 0xD8);
+
+        _mm256_store_si256(reinterpret_cast<__m256i*>(&h1_u8[i]), u8);
+    }
+}
+
+void HARENNEvaluator::pack_accumulator_512(const int32_t* acc, uint8_t* h1_u8) const {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i max_val = _mm256_set1_epi32(128);
+    for (int i = 0; i < 512; i += 32) {
+        __m256i a0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i]));
+        __m256i a1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 8]));
+        __m256i a2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 16]));
+        __m256i a3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&acc[i + 24]));
+
+        a0 = _mm256_min_epi32(_mm256_max_epi32(a0, zero), max_val);
+        a1 = _mm256_min_epi32(_mm256_max_epi32(a1, zero), max_val);
+        a2 = _mm256_min_epi32(_mm256_max_epi32(a2, zero), max_val);
+        a3 = _mm256_min_epi32(_mm256_max_epi32(a3, zero), max_val);
+
+        __m256i p01 = _mm256_packs_epi32(a0, a1);
+        p01 = _mm256_permute4x64_epi64(p01, 0xD8);
+
+        __m256i p23 = _mm256_packs_epi32(a2, a3);
+        p23 = _mm256_permute4x64_epi64(p23, 0xD8);
+
+        __m256i u8 = _mm256_packus_epi16(p01, p23);
+        u8 = _mm256_permute4x64_epi64(u8, 0xD8);
+
+        _mm256_store_si256(reinterpret_cast<__m256i*>(&h1_u8[i]), u8);
+    }
+}
+
+void HARENNEvaluator::forward_layer2(const uint8_t* h1_u8, int16_t* h2) const {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i max_16384 = _mm256_set1_epi32(16384);
+    const __m256i ones = _mm256_set1_epi16(1);
+
+    alignas(64) int32_t sum_col[512];
+
+    for (int j = 0; j < hidden2_dim; j += 2) {
+        const int8_t* w_row0 = &fc2_int8[j * 1024];
+        const int8_t* w_row1 = &fc2_int8[(j + 1) * 1024];
+        __m256i acc0 = _mm256_setzero_si256();
+        __m256i acc1 = _mm256_setzero_si256();
+
+        for (int c = 0; c < 1024; c += 32) {
+            __m256i h = _mm256_load_si256(reinterpret_cast<const __m256i*>(&h1_u8[c]));
+            __m256i w0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(&w_row0[c]));
+            __m256i w1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(&w_row1[c]));
+
+            __m256i p0 = _mm256_maddubs_epi16(h, w0);
+            __m256i p1 = _mm256_maddubs_epi16(h, w1);
+
+            acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(p0, ones));
+            acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(p1, ones));
+        }
+
+        sum_col[j] = hsum_epi32_8(acc0) * FC2_QSCALE + fc2_biases[j];
+        sum_col[j + 1] = hsum_epi32_8(acc1) * FC2_QSCALE + fc2_biases[j + 1];
+    }
+
+    for (int j = 0; j < hidden2_dim; j += 16) {
+        __m256i s0 = _mm256_load_si256(reinterpret_cast<const __m256i*>(&sum_col[j]));
+        __m256i s1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(&sum_col[j + 8]));
+        s0 = _mm256_min_epi32(_mm256_max_epi32(s0, zero), max_16384);
+        s1 = _mm256_min_epi32(_mm256_max_epi32(s1, zero), max_16384);
+        __m256i packed = _mm256_packs_epi32(s0, s1);
+        packed = _mm256_permute4x64_epi64(packed, 0b11011000);
+        _mm256_store_si256(reinterpret_cast<__m256i*>(&h2[j]), packed);
+    }
+}
+
+HARENNOutput HARENNEvaluator::evaluate(const int32_t* acc, Color stm) const {
+    if (!loaded) {
+        HARENNOutput out;
+        return out;
+    }
+
+    alignas(64) uint8_t h1_u8[1024];
+    if (halfka_mode) {
+        const int32_t* friendly_acc = (stm == WHITE) ? &acc[0] : &acc[512];
+        const int32_t* opponent_acc = (stm == WHITE) ? &acc[512] : &acc[0];
+        pack_accumulator_512(friendly_acc, &h1_u8[0]);
+        pack_accumulator_512(opponent_acc, &h1_u8[512]);
+    } else {
+        pack_accumulator(acc, h1_u8);
+    }
+
+    alignas(64) int16_t h2[512] = {0};
+    forward_layer2(h1_u8, h2);
+
+    auto compute_head = [&](const int16_t* head_w, int32_t head_b) -> double {
+        __m256i sum_v = _mm256_setzero_si256();
+        for (int i = 0; i < hidden2_dim; i += 16) {
+            __m256i w = _mm256_load_si256(reinterpret_cast<const __m256i*>(&head_w[i]));
+            __m256i in = _mm256_load_si256(reinterpret_cast<const __m256i*>(&h2[i]));
+            __m256i prod = _mm256_madd_epi16(w, in);
+            sum_v = _mm256_add_epi32(sum_v, prod);
+        }
+        int64_t total = static_cast<int64_t>(hsum256_ps_epi32(sum_v)) + head_b;
+        return static_cast<double>(total) / 2097152.0;
+    };
+
+    double raw_eval = compute_head(eval_weights, eval_bias);
+    double raw_tau = compute_head(tau_weights, tau_bias);
+    double raw_rho = compute_head(rho_weights, rho_bias);
+    double raw_rs = compute_head(rs_weights, rs_bias);
+
+    HARENNOutput out;
+    double eval_pawns = raw_eval * eval_std + eval_mean;
+    double eval_cp = eval_pawns * 100.0;
+    if (!halfka_mode && stm == BLACK) {
+        eval_cp = -eval_cp;
+    }
+    out.eval_score = static_cast<Value>(std::round(eval_cp));
+    out.tactical_complexity = 1.0 / (1.0 + std::exp(-raw_tau));
+    out.horizon_risk = 1.0 / (1.0 + std::exp(-raw_rho));
+    out.resolution_score = 1.0 / (1.0 + std::exp(-raw_rs));
+
+    return out;
+}
+
+Value HARENNEvaluator::evaluate_eval_only(const int32_t* acc, Color stm) const {
+    if (!loaded) return 0;
+
+    alignas(64) uint8_t h1_u8[1024];
+    if (halfka_mode) {
+        const int32_t* friendly_acc = (stm == WHITE) ? &acc[0] : &acc[512];
+        const int32_t* opponent_acc = (stm == WHITE) ? &acc[512] : &acc[0];
+        pack_accumulator_512(friendly_acc, &h1_u8[0]);
+        pack_accumulator_512(opponent_acc, &h1_u8[512]);
+    } else {
+        pack_accumulator(acc, h1_u8);
+    }
+
+    alignas(64) int16_t h2[512] = {0};
+    forward_layer2(h1_u8, h2);
+
+    __m256i sum_v = _mm256_setzero_si256();
+    for (int i = 0; i < hidden2_dim; i += 16) {
+        __m256i w = _mm256_load_si256(reinterpret_cast<const __m256i*>(&eval_weights[i]));
+        __m256i in = _mm256_load_si256(reinterpret_cast<const __m256i*>(&h2[i]));
+        __m256i prod = _mm256_madd_epi16(w, in);
+        sum_v = _mm256_add_epi32(sum_v, prod);
+    }
+    int64_t total = static_cast<int64_t>(hsum256_ps_epi32(sum_v)) + eval_bias;
+    double raw_eval = static_cast<double>(total) / 2097152.0;
+
+    double eval_pawns = raw_eval * eval_std + eval_mean;
+    double eval_cp = eval_pawns * 100.0;
+    if (!halfka_mode && stm == BLACK) {
+        eval_cp = -eval_cp;
+    }
+    return static_cast<Value>(std::round(eval_cp));
+}
+
+HARENNOutput HARENNEvaluator::evaluate(const Position& pos) const {
+    if (!loaded) {
+        HARENNOutput out;
+        out.eval_score = evaluate_fallback(pos);
+        return out;
+    }
+
+    Key k = pos.hash_key();
+    size_t idx = k & (EVAL_CACHE_SIZE - 1);
+    if (eval_cache && eval_cache[idx].key == k) {
+        HARENNOutput out;
+        out.eval_score = eval_cache[idx].eval;
+        out.tactical_complexity = eval_cache[idx].tau ? (eval_cache[idx].tau / 255.0) : 0.45;
+        out.horizon_risk = eval_cache[idx].rho ? (eval_cache[idx].rho / 255.0) : 0.30;
+        out.resolution_score = eval_cache[idx].rs ? (eval_cache[idx].rs / 255.0) : 0.50;
+        return out;
+    }
+
+    HARENNOutput out = evaluate(pos.accumulator(), pos.side_to_move());
+    if (eval_cache) {
+        eval_cache[idx].key = k;
+        eval_cache[idx].eval = static_cast<int16_t>(out.eval_score);
+        eval_cache[idx].tau = static_cast<uint8_t>(std::clamp(static_cast<int>(out.tactical_complexity * 255.0), 1, 255));
+        eval_cache[idx].rho = static_cast<uint8_t>(std::clamp(static_cast<int>(out.horizon_risk * 255.0), 0, 255));
+        eval_cache[idx].rs = static_cast<uint8_t>(std::clamp(static_cast<int>(out.resolution_score * 255.0), 0, 255));
+    }
+
+    return out;
+}
+
+Value HARENNEvaluator::evaluate_eval_only(const Position& pos) const {
+    if (!loaded) return evaluate_fallback(pos);
+
+    Key k = pos.hash_key();
+    size_t idx = k & (EVAL_CACHE_SIZE - 1);
+    if (eval_cache && eval_cache[idx].key == k) {
+        return eval_cache[idx].eval;
+    }
+
+    Value eval = evaluate_eval_only(pos.accumulator(), pos.side_to_move());
+    if (eval_cache) {
+        eval_cache[idx].key = k;
+        eval_cache[idx].eval = static_cast<int16_t>(eval);
+    }
+
+    return eval;
+}
+
+Value HARENNEvaluator::evaluate_fallback(const Position& pos) const {
+    constexpr int PieceVals[] = { 100, 320, 330, 500, 900, 20000 };
+    int score = 0;
+    for (int sq = 0; sq < 64; ++sq) {
+        Piece pc = pos.piece_on(static_cast<Square>(sq));
+        if (pc != NO_PIECE) {
+            int val = PieceVals[type_of(pc)];
+            if (color_of(pc) == WHITE) score += val;
+            else score -= val;
+        }
+    }
+    return (pos.side_to_move() == WHITE) ? score : -score;
+}
+
+} // namespace NextFish
