@@ -1,9 +1,9 @@
 name: HARENN Continuous Data Generation
 
 on:
-  schedule:
-    # Run every 6 hours automatically
-    - cron: '0 */6 * * *'
+  # schedule:
+  #   # Run every 6 hours automatically
+  #   - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:
